@@ -87,6 +87,7 @@ class AnnotationenEditor(ttk.Frame):
 
         # Canvas-Breite in Pixel (nach Update!)
         self.tokens_frame.update_idletasks()
+        self.tokens_frame.config(width=2000, height=800)  # Testgröße
         canvas_width = self.canvas.winfo_width()
         if canvas_width <= 0:
             canvas_width = 800  # Fallback bei Fensterstart
@@ -125,7 +126,9 @@ class AnnotationenEditor(ttk.Frame):
         self.tokens_frame.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self.canvas.configure(bg="lightgrey")
-      
+        # token_rows = (len(self.tokens_data) // 20) + 1  # grobe Schätzung
+        # self.tokens_frame.config(width=2000, height=token_rows * 40)
+
     def build_annotation_buttons(self):
         pass
         # # Löschen vorheriger Buttons
