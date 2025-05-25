@@ -12,7 +12,7 @@ class AnnotationenEditor(ttk.Frame):
         super().__init__(notebook)
         self.notebook = notebook
         self.dateipfad_json = dateipfad_json
-        self.renderer = AnnotationRenderer()
+        self.renderer = AnnotationRenderer(max_width=680)  # Max. Breite Canvas-Teil anpassen
         self.tokens = []
         self._load_tokens()
         self._build_widgets()
@@ -37,57 +37,54 @@ class AnnotationenEditor(ttk.Frame):
         vsb.pack(side='right', fill='y')
         self.canvas.configure(yscrollcommand=vsb.set)
 
-        # Frame in Canvas (optional)
-        self.inner = tk.Frame(self.canvas)
-        self.win = self.canvas.create_window((0,0), window=self.inner, anchor='nw')
-        self.inner.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
-        self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig(self.win, width=e.width))
+        # Scrollregion aktualisieren, wenn das Canvas konfiguriert wird
+        self.canvas.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
 
         # Rechter Bereich: Annotationinspector etc.
-        self.annotation_frame = ttk.Frame(self, width=total_w-token_w, height=total_h)
+        self.annotation_frame = ttk.Frame(self, width=total_w - token_w, height=total_h)
         self.annotation_frame.place(x=token_w, y=0)
 
         # Zeichne alles
         self._draw_all()
 
+        self.canvas.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
     def _draw_all(self):
         self.canvas.delete('all')
-        font = tkFont.nametofont('TkDefaultFont')
-        x, y = 10, 10
-        line_h = font.metrics('linespace') + 20
-        max_w = self.canvas.winfo_reqwidth() - 20
-        prev_line = None
+        self.renderer.reset_positions()  # Positionen intern zurücksetzen
 
+        # Rechte Seite vorher leeren
+        for child in self.annotation_frame.winfo_children():
+            child.destroy()
+
+        # Die Tokens einzeln rendern, der Renderer kümmert sich um Zeilenumbruch & Position
         for idx, tok in enumerate(self.tokens):
-            token = tok.get('token', '')
-            zeile = tok.get('zeile', 0)
-
-            # Zeilenumbruch-Token
-            if token == '':
-                x = 10
-                y += line_h
-                prev_line = None
-                continue
-
-            # Neue Zeile, wenn Linienwechsel oder Überlauf
-            if zeile != prev_line or x + font.measure(token) > max_w:
-                x = 10
-                y += line_h
-
-            # Verwendung von AnnotationRenderer
-            self.renderer.render_on_canvas(
-                canvas=self.canvas,
+            self.renderer.render(
+                gui_parent=self.canvas,
                 idx=idx,
-                element=tok,
-                x_pos=x,
-                y_pos=y,
-                prev_line=prev_line
+                dict_element=tok
             )
-
-            # Klick-Event per Tag binden
+            # Klick-Event per Tag binden: ruft _on_token_click auf
             tag = f'token_{idx}'
-            self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: print(f"Token {i} clicked"))
+            self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
 
-            # Abstand zum nächsten Token
-            x += font.measure(token) + 10
-            prev_line = zeile
+        # Optional: Text oben links zum Test
+        # self.canvas.create_text(10, 10, anchor='nw', text="Testinhalt", fill='black')
+
+    def _on_token_click(self, idx):
+        # Wenn Token angeklickt wird, zeige rechts die Annotationen zu diesem Token
+        token = self.tokens[idx]
+        # Rechte Seite vorher leeren
+        for child in self.annotation_frame.winfo_children():
+            child.destroy()
+
+        tk.Label(self.annotation_frame, text=f"Token {idx}: '{token.get('token','')}'", font=('Arial', 14, 'bold')).pack(anchor='w', pady=5)
+
+        # Beispiel: Alle Annotationen (Schlüssel außer "token") als Buttons anzeigen
+        for key, value in token.items():
+            if key == 'token':
+                continue
+            btn_text = f"{key}: {value}"
+            btn = ttk.Button(self.annotation_frame, text=btn_text)
+            btn.pack(anchor='w', pady=2, padx=5)

@@ -7,83 +7,119 @@ import tkinter.font as tkFont
 
 import Eingabe.config as config # Importiere das komplette config-Modul
 
+_rgb = lambda rgb: "#%02x%02x%02x" % rgb
+    
+
 class AnnotationRenderer:
-    def __init__(self, ignore_annotations=None, ignore_ig=False):
+    def __init__(self, ignore_annotations=None, ignore_ig=False, max_width=680):
         self.ignore_annotations = set(a.lower() for a in (ignore_annotations or []))
         self.ignore_ig = ignore_ig
+        self.max_width = max_width
+
+        self.x_pos = 10
+        self.y_pos = 10
+        self.line_text_height = 30  # Höhe pro Textzeile (kann dynamisch bestimmt werden)
         self._to_hex = lambda rgb: "#%02x%02x%02x" % rgb
+        
+    def reset_positions(self):
+        self.x_pos = 10
+        self.y_pos = 10
 
-    def render_on_canvas(self, canvas, idx, element, x_pos, y_pos, prev_line):
-        """
-        Zeichnet ein Token + Marker auf den gegebenen Canvas bei (x_pos, y_pos).
-        """
+    def render(self, idx=0, dict_element=None, gui_parent=None, pdf_canvas=None):
+        if gui_parent is not None:
+            return self.render_on_canvas(gui_parent, idx, dict_element)
+        # PDF-Modus o.ä. ggf. später
+
+    def render_on_canvas(self, canvas, idx, element):
         token = element.get('token', '')
-        annotation_str = element.get('annotation', '')
-        annotations = [a.strip().lower() for a in annotation_str.split(',') if a.strip().lower() not in self.ignore_annotations]
 
-        # Prüfe Sonderfälle für Überschrift oder Legende
-        ist_ue = element.get('KapitelName') is None and element.get('WortNr', 0) == 0
-        ist_leg = False  # ggf. anpassen falls du Legenden hast
+    # Zeilenumbruch, wenn Annotation "zeilenumbruch" enthält oder Token leer ist
+        
+        annotation = element.get("annotation", "")
 
-        font = self._get_gui_font(annotation_str, ist_ue, ist_leg)
-        fg = 'black'
-        if 'person' in annotations and hasattr(config, 'FARBE_PERSON'):
-            fg = self._to_hex(config.FARBE_PERSON)
+        if token == '' or 'zeilenumbruch' in annotation:
+            self.x_pos = 10
+            self.y_pos += self.line_text_height 
+            return
 
-        # Text zeichnen mit Tag
+        # Bestimme Font und Textbreite (Tkinter Font benötigt Canvas oder config)
+      
+        font = self._get_gui_font( element)
+        text_width = font.measure(token)
+        text_height = font.metrics("linespace")
+
+        # Zeilenumbruch, wenn kein Platz mehr
+        if self.x_pos + text_width > self.max_width:
+            self.x_pos = 10
+            self.y_pos += self.line_text_height
+
+        # Text zeichnen
         tag = f'token_{idx}'
-        canvas.create_text(x_pos, y_pos,
+        canvas.create_text(self.x_pos, self.y_pos,
                            anchor='nw', text=token,
-                           font=font, fill=fg,
+                           font=font, fill='black',
                            tags=(tag,))
 
-        # Marker drüber zeichnen
-        text_w = font.measure(token)
-        self._draw_markers(canvas, element, x_pos, y_pos, text_w, font, prev_line)
+        self._draw_markers_on_canvas(canvas, element, self.x_pos, self.y_pos, font)
 
-    def _get_gui_font(self, betonung, ist_ue, ist_leg):
-        betonung = betonung or ''
-        if ist_ue:
-            if 'hauptbetonung' in betonung:
+        # Position für nächsten Token verschieben
+        self.x_pos += text_width + 10
+
+    def _get_gui_font(self, element = None) -> tkFont.Font:
+        """
+        Liefert ein tkinter-Font-Objekt basierend auf den config-Schriftarten
+        und -größen für Überschrift, Legende oder Standardtext.
+        """
+
+
+        betonung = element.get("betonung","")
+        annotation = element.get("Annotation","")
+
+        # PDF-Helper gibt uns Fontname / Size, hier erstellen wir das tkFont
+        if "überschrift" in annotation.lower():
+
+            if "hauptbetonung" in betonung:
                 fam = config.SCHRIFTART_UEBERSCHRIFT_HAUPT
-            elif 'nebenbetonung' in betonung:
+            elif "nebenbetonung" in betonung:
                 fam = config.SCHRIFTART_UEBERSCHRIFT_NEBEN
             else:
                 fam = config.SCHRIFTART_UEBERSCHRIFT
             size = config.UEBERSCHRIFT_GROESSE
-        elif ist_leg:
-            if 'hauptbetonung' in betonung:
+
+        elif  "legende" in annotation.lower():
+            if "hauptbetonung" in betonung:
                 fam = config.SCHRIFTART_LEGENDE_HAUPT
-            elif 'nebenbetonung' in betonung:
+            elif "nebenbetonung" in betonung:
                 fam = config.SCHRIFTART_LEGENDE_NEBEN
             else:
                 fam = config.SCHRIFTART_LEGENDE
             size = config.LEGENDE_GROESSE
+
         else:
-            if 'hauptbetonung' in betonung:
+            if "hauptbetonung" in betonung:
                 fam = config.SCHRIFTART_BETONUNG_HAUPT
-            elif 'nebenbetonung' in betonung:
+            elif "nebenbetonung" in betonung:
                 fam = config.SCHRIFTART_BETONUNG_NEBEN
             else:
                 fam = config.SCHRIFTART_STANDARD
             size = config.TEXT_GROESSE
+
+        # Erstelle und gib den Font zurück
         return tkFont.Font(family=fam, size=size)
 
-    def _draw_markers(self, c, e, x_pos, y_pos, text_width, font, prev_line):
-        # Werte holen
-        pause = e.get("pause", "").lower()
-        spannung = e.get("spannung", "").lower()
-        gedanken = e.get("gedanken", "").lower()
+    def _draw_markers_on_canvas(self, c, e, x_pos, y_pos, font):
+        # Werte aus dict
+        pause = e.get("Pause", "").lower()
+        spannung = e.get("Spannung", "").lower()
+        gedanken = e.get("Gedanken", "").lower()
         token = e.get("token", "")
-        zeile = e.get("zeile", 0)
+
+        text_width = font.measure(token)
+        text_height = font.metrics("linespace")
 
         oy = getattr(config, "MARKER_OFFSET_Y", 5)
         w = getattr(config, "MARKER_BREITE_KURZ", 6)
         h = getattr(config, "MARKER_BREITE_KURZ", 6)
-
-        # Keine Linie bei Zeilenwechsel
-        if zeile != prev_line:
-            return
 
         mid_x = x_pos + text_width / 2 - w / 2
 
@@ -127,7 +163,7 @@ class AnnotationRenderer:
                 ig_start = font.measure(token) - font.measure("ig")
                 yline = y_pos + height // 2 + font.metrics("linespace") // 2 - 2
                 c.create_line(x_pos + ig_start, yline, x_pos + ig_start + font.measure("ig"), yline,
-                              fill=color_ug, width=line_w)
+                                fill=color_ug, width=line_w)
             # Binnen
             for i in range(len(token) - 2):
                 if token[i:i + 2].lower() == "ig" and i != len(token) - 2:
@@ -145,7 +181,7 @@ class AnnotationRenderer:
         if "staupause" in pause:
             color_spu = self._to_hex(getattr(config, "FARBE_STAUPAUSE", (0, 255, 0)))
             c.create_rectangle(mid_x, y_pos + height // 2 + oy, mid_x + w, y_pos + height // 2 + oy + h,
-                               fill=color_spu, width=0)
+                                fill=color_spu, width=0)
 
         if "pause_gedanken" in gedanken:
             color_gp = self._to_hex(getattr(config, "FARBE_GEDANKENPAUSE", (0, 0, 255)))
