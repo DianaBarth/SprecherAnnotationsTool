@@ -95,7 +95,7 @@ def auto_git_commit():
 if __name__ == "__main__":
     # Haupttool
     loggerKomplett = LogManager('meinlog_Komplett.log',False)
-    loggerLetzte = LogManager('meinLog_lezterDurchlauf',True)
+    loggerLetzte = LogManager('meinLog_lezterDurchlauf.log',True)
 
     print("-------------------------------------------------------------------------------------------")
     print("NEUSTART Sprecher-Annotationen-Tool")
