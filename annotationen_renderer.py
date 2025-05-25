@@ -8,11 +8,12 @@ import tkinter.font as tkFont
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 class AnnotationRenderer:
-    def __init__(self, ignore_annotations=None):
+    def __init__(self, ignore_annotations=None, ignore_ig=False):
         """
         ignore_annotations: Liste von Annotation-Namen (case-insensitiv), die ignoriert werden sollen
         """
         self.ignore_annotations = set(a.lower() for a in (ignore_annotations or []))
+        self.ignore_ig = ignore_ig
 
     def render(self, idx =0, dict_element ={}, gui_parent=None, pdf_canvas=None, x=0, y=0, text_width=0):
         """
@@ -47,65 +48,54 @@ class AnnotationRenderer:
     def _render_gui(self, idx, dict_element, annotations, parent, x_pos, y_pos):
         token = dict_element.get("token", "")
         
-        if len(token)>0:
+        # Breite und Höhe des Canvas bestimmen
+        font = tkFont.nametofont("TkDefaultFont")
+        text_width = font.measure(token)
+        pixel_breite = max(20, text_width + 20)
+        height = font.metrics("linespace") + 10
 
-            font = tkFont.nametofont("TkDefaultFont")
-            pixel_breite = max(20, font.measure(token) + 10)
-            zeichen_anzahl = len(token)
+        # Canvas anlegen
+        canvas = tk.Canvas(parent, width=pixel_breite, height=height, highlightthickness=1, bd=0)
+        canvas.place(x=x_pos, y=y_pos)
 
-            # Debug-Prints
-            print(f"[DEBUG] Token: '{token}'")
-            print(f"[DEBUG] Position: x={x_pos}, y={y_pos}")
-            print(f"[DEBUG] Breite (px): {pixel_breite}")
-            print(f"[DEBUG] Zeichenlänge: {zeichen_anzahl}")
-            print(f"[DEBUG] Annotationen: {annotations}")
+        token_style = self._bestimme_token_button_style(annotations)
+        # Text zeichnen
+        _ = canvas.create_text(10, height//2, anchor="w", text=token,
+                                    font=token_style.get('font', ('Arial', 10)),
+                                    fill=token_style.get('fg', 'black'))
 
-            btn_style = self._bestimme_token_button_style(annotations)
-            token_btn = tk.Button(parent, text=token,
-                                fg=btn_style.get('fg', 'black'),
-                                font=btn_style.get('font', ('Arial', 10)))
-            token_btn.config(relief="solid", borderwidth=1)
-            token_btn.place(x=x_pos, y=y_pos, width=pixel_breite, height=30)
+        # ig-Style nur, wenn self.ignore_ig False
+        if not self.ignore_ig:
+            # 1) Unterstreiche das 'ig' am Wortende
+            if token.lower().endswith("ig"):
+                # Breite bis zum 'ig'-Start
+                ig_start = text_width - font.measure("ig")
+                y_line = height//2 + font.metrics("linespace")//2 - 2
+                canvas.create_line(10 + ig_start, y_line, 10 + ig_start + font.measure("ig"), y_line)
 
-            print(f"[DEBUG] #{idx}: Token-Button für '{token}' erstellt an ({x_pos}, {y_pos}) mit Breite {pixel_breite}")
+            # 2) Für jedes Binnen-'ig' (außer am Ende) einen Punkt malen
+            for i in range(len(token)-2):
+                if token[i:i+2].lower() == "ig" and i != len(token)-2:
+                    # X-Position: Breite des Texts bis einschließlich i
+                    xpos = 10 + font.measure(token[:i+1])
+                    ypos = height//2 + font.metrics("linespace")//2
+                    # Punkt
+                    r = 2
+                    canvas.create_oval(xpos - r, ypos, xpos + r, ypos + 2*r, fill="black", outline="")
 
-            return {
-                'token_button': token_btn,
-                'marker_buttons': [],
-                'pixel_breite': pixel_breite + 10
-            }
-        else:
-            return {
-                'token_button': None  ,
-                'marker_buttons': [],
-                'pixel_breite': 0
-            }
-        # # 2) Marker-Buttons für Bilder oder hartkodierte Marker:
-        # marker_buttons = []
+        # Klick-Verhalten wie ein Button
+        def on_click(event, idx=idx):
+            # Hier kannst du deine Klick-Logik unterbringen,
+            # z.B. token markieren, Annotationen anzeigen, etc.
+            print(f"Token #{idx} '{token}' geklickt")
+        canvas.bind("<Button-1>", on_click)
 
-        # # Durch alle Annotationen aus config durchgehen, für Match marker erzeugen
-        # for aufgabe_id, annotationen_liste in config.AUFGABEN_ANNOTATIONEN.items():
-        #     for annot in annotationen_liste:
-        #         name = annot.get('name')
-        #         if not name:
-        #             continue
-        #         name_lower = name.lower()
-        #         if name_lower in annotations:
-        #             verwende_hartkodiert = annot.get('VerwendeHartKodiert', True)
-        #             bild = annot.get('bild')
+        # Rückgabe ähnlich wie vorher
+        return {
+            'canvas': canvas,
+            'pixel_breite': pixel_breite
+        }
 
-        #             if not verwende_hartkodiert and bild:
-        #                 # Bild-Button
-        #                 btn = self._create_image_button(parent, bild)
-        #             else:
-        #                 # Hartkodierter Marker-Button als farbiger Text
-        #                 btn = self._create_hartkodierter_marker_button(parent, annot.get('HartKodiert', 'Marker'))
-        #             marker_buttons.append(btn)
-
-        # # 3) Unterstreiche 'ig' am Wortende und setze Punktierung auf Binnen-'ig'
-        # self._style_ig_in_token_button(token, token_btn)
-
-        # return {"token_button": token_btn, "marker_buttons": marker_buttons}
 
     def _bestimme_token_button_style(self, annotations):
         """
@@ -311,23 +301,3 @@ class AnnotationRenderer:
 
 
 
-if __name__ == "__main__":  
-    import tkinter as tk
-
-    root = tk.Tk()
-    renderer = AnnotationRenderer(ignore_annotations=["test"])
-
-    token_data = {
-        "token": "Wichtig",
-        "annotation": "Hauptbetonung, Person, Starten"
-    }
-
-    frame = tk.Frame(root)
-    frame.pack()
-
-    result = renderer.render(token_data, gui_parent=frame)
-    result['token_button'].pack(side="left")
-    for mb in result['marker_buttons']:
-        mb.pack(side="left")
-
-    root.mainloop()

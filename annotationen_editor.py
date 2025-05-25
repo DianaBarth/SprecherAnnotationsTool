@@ -13,7 +13,7 @@ class AnnotationenEditor(ttk.Frame):
     def __init__(self, parent, notebook, dateipfad_json):
         super().__init__(parent)
 
-        self.annotationsrenderer = AnnotationRenderer()
+        self.annotationsrenderer = AnnotationRenderer() # hier später ignorelist + ig-ignore eintragen!
         self.notebook = notebook
         self.dateipfad_json = dateipfad_json
 
@@ -119,8 +119,8 @@ class AnnotationenEditor(ttk.Frame):
                 
             result = self.annotationsrenderer.render(idx, eintrag, self.tokens_frame,None,x_pos,y_pos)
 
-            if result["token_button"]:
-                self.token_buttons.append(result['token_button'])
+            if result["canvas"]:
+                self.token_buttons.append(result['canvas'])
                 x_pos += result['pixel_breite']
     
         self.tokens_frame.update_idletasks()
