@@ -50,7 +50,7 @@ class AnnotationRenderer:
         if len(token)>0:
 
             font = tkFont.nametofont("TkDefaultFont")
-            pixel_breite = max(40, font.measure(token) + 20)
+            pixel_breite = max(20, font.measure(token) + 10)
             zeichen_anzahl = len(token)
 
             # Debug-Prints

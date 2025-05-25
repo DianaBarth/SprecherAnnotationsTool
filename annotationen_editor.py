@@ -112,8 +112,9 @@ class AnnotationenEditor(ttk.Frame):
                 y_pos += 70
                 
             result = self.annotationsrenderer.render(idx, eintrag, self.tokens_frame,None,x_pos,y_pos)
-            self.token_buttons.append(result['token_button'])
-            x_pos += result['pixel_breite']
+            if result["token_button"]:
+                self.token_buttons.append(result['token_button'])
+                x_pos += result['pixel_breite']
     
         self.tokens_frame.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))

@@ -3,16 +3,16 @@ import logging
 import os
 from datetime import datetime, timedelta
 import tkinter.messagebox as messagebox
-import Eingabe.config as config # Importiere das komplette config-Modul
+import Eingabe.config as config  # Importiere das komplette config-Modul
 
 class LogManager:
-    def __init__(self, logfile_path='meinlog.log',allesLoeschen =False):
+    def __init__(self, logfile_path='meinlog.log', allesLoeschen=False):
         self.logfile_path = logfile_path
         self._patch_messagebox_done = False
         self.allesLoeschen = allesLoeschen
         self.setup_logging()
         self.patch_messagebox()
-        
+
     def cleanup_old_log_entries(self):
         if not os.path.exists(self.logfile_path):
             return
@@ -58,9 +58,8 @@ class LogManager:
         messagebox.showerror = logged_showerror
 
     def setup_logging(self):
-           # Logdatei komplett leeren (Neu starten)
-
-        if  self.allesLoeschen:
+        # Logdatei komplett leeren (Neu starten)
+        if self.allesLoeschen:
             with open(self.logfile_path, 'w', encoding='utf-8') as f:
                 pass  # Datei öffnen im 'w'-Modus leert sie
         else:
@@ -72,13 +71,16 @@ class LogManager:
         if logger.hasHandlers():
             logger.handlers.clear()
 
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
-                                      datefmt='%Y-%m-%d %H:%M:%S')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
 
         file_handler = logging.FileHandler(self.logfile_path, mode='a', encoding='utf-8')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
+        # Nur wenn allesLoeschen == False auch StreamHandler hinzufügen
         if not self.allesLoeschen:
             stream_handler = logging.StreamHandler(sys.stdout)
             stream_handler.setFormatter(formatter)
@@ -102,5 +104,26 @@ class LogManager:
                         self.logger.log(self.level, self._buffer.strip())
                     self._buffer = ""
 
-            sys.stdout = StreamToLogger(logger, logging.INFO)
-            sys.stderr = StreamToLogger(logger, logging.ERROR)
+            class TeeStream:
+                def __init__(self, stream1, stream2):
+                    self.stream1 = stream1  # z.B. original sys.stdout
+                    self.stream2 = stream2  # z.B. Logger-Wrapper
+
+                def write(self, data):
+                    self.stream1.write(data)
+                    self.stream1.flush()
+                    self.stream2.write(data)
+                    self.stream2.flush()
+
+                def flush(self):
+                    self.stream1.flush()
+                    self.stream2.flush()
+
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+
+            stream_logger_out = StreamToLogger(logger, logging.INFO)
+            stream_logger_err = StreamToLogger(logger, logging.ERROR)
+
+            sys.stdout = TeeStream(original_stdout, stream_logger_out)
+            sys.stderr = TeeStream(original_stderr, stream_logger_err)
