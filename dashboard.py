@@ -1003,8 +1003,8 @@ class DashBoard(ttk.Frame):
                         task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
                         print(f"[DEBUG] Plane {task_name} für {kapitel_name}")
 
-                        prompt = self.lade_prompt_datei(aufgaben_id) + "\n" + \
-                            self.kapitel_config.kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+                        prompt = self.lade_prompt_datei(aufgaben_id) + "\n" + self.kapitel_config.kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+                        print(f"(Aufgabenstellung {aufgaben_key}: {prompt})")
 
                         modell_name = None
                         if hasattr(self, "model_selection_boxes") and aufgaben_id in self.model_selection_boxes:
