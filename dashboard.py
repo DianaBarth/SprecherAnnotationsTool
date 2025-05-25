@@ -1097,7 +1097,7 @@ class DashBoard(ttk.Frame):
                 pfad_satz = os.path.join(ordner["satz"], dateiname)
 
                 # Fortschritt aktualisieren
-                self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, fortschritt)
+                #self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, fortschritt)
 
                 # Verarbeitung starten mit Callback
                 daten_verarbeiten(
@@ -1107,13 +1107,15 @@ class DashBoard(ttk.Frame):
                     ordner["ki"],
                     aufgaben_id,
                     self.force_var,
-                    lambda w: self.aktualisiere_laufende_ki_tasks(
-                        kapitel_name, task_label, min(1.0, fortschritt + w / anzahl)
-                    )
+                    None
                 )
+                    #lambda w: self.aktualisiere_laufende_ki_tasks(
+                     #   kapitel_name, task_label, min(1.0, fortschritt + w / anzahl)
+             #       )
+          #      )
 
             # Task als abgeschlossen markieren
-            self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, 1.0)
+       #     self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, 1.0)
             self.laufende_ki_tasks[kapitel_name].discard(aufgaben_id)
 
             # Spinner für diese Aufgabe deaktivieren
