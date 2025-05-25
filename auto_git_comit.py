@@ -93,8 +93,9 @@ def auto_git_commit():
     root.destroy()
 
 if __name__ == "__main__":
-    #Haupttool
-    logger = LogManager('meinlog.log')
+    # Haupttool
+    loggerKomplett = LogManager('meinlog_Komplett.log',False)
+    loggerLetzte = LogManager('meinLog_lezterDurchlauf',True)
 
     print("-------------------------------------------------------------------------------------------")
     print("NEUSTART Sprecher-Annotationen-Tool")
@@ -106,5 +107,17 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Fehler im Haupttool: {e}")
     else:
-        # Nur wenn kein Fehler
-        auto_git_commit()
+        # Nur wenn kein Fehler im Log (Zeile mit "Error") vorhanden ist, committen
+        def log_enthaelt_error(logdatei):
+            if not os.path.exists(logdatei):
+                return False
+            with open(logdatei, "r", encoding="utf-8") as f:
+                for zeile in f:
+                    if "Error" in zeile:
+                        return True
+            return False
+
+        if not log_enthaelt_error('meinLog_lezterDurchlauf.log'):
+            auto_git_commit()
+        else:
+            print("Commit übersprungen: 'Error' im Log gefunden.")

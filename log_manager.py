@@ -6,17 +6,17 @@ import tkinter.messagebox as messagebox
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 class LogManager:
-    def __init__(self, logfile_path='meinlog.log'):
+    def __init__(self, logfile_path='meinlog.log',allesLoeschen =False):
         self.logfile_path = logfile_path
         self._patch_messagebox_done = False
-        
+        self.allesLoeschen = allesLoeschen
         self.setup_logging()
         self.patch_messagebox()
         
     def cleanup_old_log_entries(self):
         if not os.path.exists(self.logfile_path):
             return
-        one_week_ago = datetime.now() - timedelta(minutes=5)
+        one_week_ago = datetime.now() - timedelta(days=7)
         kept_lines = []
         with open(self.logfile_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -58,7 +58,13 @@ class LogManager:
         messagebox.showerror = logged_showerror
 
     def setup_logging(self):
-        self.cleanup_old_log_entries()
+           # Logdatei komplett leeren (Neu starten)
+
+        if  self.allesLoeschen:
+            with open(self.logfile_path, 'w', encoding='utf-8') as f:
+                pass  # Datei öffnen im 'w'-Modus leert sie
+        else:
+            self.cleanup_old_log_entries()
 
         logger = logging.getLogger()
         logger.setLevel(logging.DEBUG)
@@ -73,27 +79,28 @@ class LogManager:
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-        stream_handler = logging.StreamHandler(sys.stdout)
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+        if not self.allesLoeschen:
+            stream_handler = logging.StreamHandler(sys.stdout)
+            stream_handler.setFormatter(formatter)
+            logger.addHandler(stream_handler)
 
-        class StreamToLogger:
-            def __init__(self, logger, level):
-                self.logger = logger
-                self.level = level
-                self._buffer = ""
+            class StreamToLogger:
+                def __init__(self, logger, level):
+                    self.logger = logger
+                    self.level = level
+                    self._buffer = ""
 
-            def write(self, buf):
-                self._buffer += buf
-                while "\n" in self._buffer:
-                    line, self._buffer = self._buffer.split("\n", 1)
-                    if line.strip():
-                        self.logger.log(self.level, line.strip())
+                def write(self, buf):
+                    self._buffer += buf
+                    while "\n" in self._buffer:
+                        line, self._buffer = self._buffer.split("\n", 1)
+                        if line.strip():
+                            self.logger.log(self.level, line.strip())
 
-            def flush(self):
-                if self._buffer.strip():
-                    self.logger.log(self.level, self._buffer.strip())
-                self._buffer = ""
+                def flush(self):
+                    if self._buffer.strip():
+                        self.logger.log(self.level, self._buffer.strip())
+                    self._buffer = ""
 
-        sys.stdout = StreamToLogger(logger, logging.INFO)
-        sys.stderr = StreamToLogger(logger, logging.ERROR)
+            sys.stdout = StreamToLogger(logger, logging.INFO)
+            sys.stderr = StreamToLogger(logger, logging.ERROR)
