@@ -1,0 +1,25 @@
+Aufgabe 1: Direkte Rede & sprechende Person erkennen
+
+Gegeben ist ein JSON mit Tokens eines literarischen Satzes eines Kapitels. Jedes Objekt enthält:  
+- "KapitelNummer": Nummer des Kapitels  
+- "WortNr": Position des Tokens im Kapitel  
+- "token": Wort oder Satzzeichen  
+
+Erkenne zusammenhängende Abschnitte direkter Rede. Gib die sprechende Person an, welche pro Kapitel möglch sind, siehst du ggf. unten hinter der "Beispiel Ausgabe". 
+Wenn wörtliche Rede erkennbar, aber Person unbekannt, gib "Unbekannt" aus.  
+Gib nur ein JSON-Array zurück. Falls keine Rede gefunden werden, gib [] zurück.  
+Fasse gleiche Personen in zusammenhängenden Wörtern zusammen. 
+
+Beispiel Eingabe:  
+[
+  {"KapitelNummer": "1", "WortNr": 1, "token": "„"},
+  {"KapitelNummer": "1", "WortNr": 2, "token": "Hallo"},
+  {"KapitelNummer": "1", "WortNr": 3, "token": "“,"},
+  {"KapitelNummer": "1", "WortNr": 4, "token": "sagte"},
+  {"KapitelNummer": "1", "WortNr": 5, "token": "Maria"}
+]
+
+Beispiel Ausgabe:  
+[
+  {"KapitelNummer": "1", "WortNr": "1:3", "Person": "Maria"}
+]

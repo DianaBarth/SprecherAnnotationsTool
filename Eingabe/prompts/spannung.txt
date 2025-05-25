@@ -1,0 +1,42 @@
+Gegeben ist ein JSON mit Tokens eines literarischen Satzes eines Kapitels. Jedes Objekt enthält:
+- "KapitelNummer": Nummer des Kapitels
+- "WortNr": die Position des Tokens im Kapitel
+- "token": das Wort oder Satzzeichen
+ 
+    
+Bestimme Spannungsphasen im Text: 'Starten', 'Halten', 'Stoppen'."
+Setze dabei maximal 2 Spannungsbögen pro lange, Satz, 1 bei mittleren, bei kurzen kann "Halten" auch entfallen.
+Verwende lieber weniger Spannungsbögen als zu viele.
+
+[
+  {"KapitelNummer": "1", "WortNr": 1, "token": "Plötzlich"},
+  {"KapitelNummer": "1", "WortNr": 2, "token": "hörte"},
+  {"KapitelNummer": "1", "WortNr": 3, "token": "sie"},
+  {"KapitelNummer": "1", "WortNr": 4, "token": "ein"},
+  {"KapitelNummer": "1", "WortNr": 5, "token": "Rascheln"},
+  {"KapitelNummer": "1", "WortNr": 6, "token": "–"},
+  {"KapitelNummer": "1", "WortNr": 7, "token": "sie"},
+  {"KapitelNummer": "1", "WortNr": 8, "token": "hielt"},
+  {"KapitelNummer": "1", "WortNr": 9, "token": "den"},
+  {"KapitelNummer": "1", "WortNr": 10, "token": "Atem"},
+  {"KapitelNummer": "1", "WortNr": 11, "token": "an"},
+  {"KapitelNummer": "1", "WortNr": 12, "token": "und"},
+  {"KapitelNummer": "1", "WortNr": 13, "token": "starrte"},
+  {"KapitelNummer": "1", "WortNr": 14, "token": "ins"},
+  {"KapitelNummer": "1", "WortNr": 15, "token": "Dunkel"},
+  {"KapitelNummer": "1", "WortNr": 16, "token": ","},
+  {"KapitelNummer": "1", "WortNr": 17, "token": "doch"},
+  {"KapitelNummer": "1", "WortNr": 18, "token": "dann"},
+  {"KapitelNummer": "1", "WortNr": 19, "token": "entspannte"},
+  {"KapitelNummer": "1", "WortNr": 20, "token": "sich"},
+  {"KapitelNummer": "1", "WortNr": 21, "token": "die"},
+  {"KapitelNummer": "1", "WortNr": 22, "token": "Stille"},
+  {"KapitelNummer": "1", "WortNr": 23, "token": "."}
+]
+
+[
+  {"KapitelNummer": "1", "WortNr": "1:5", "Spannung": "Starten"}
+  {"KapitelNummer": "1", "WortNr": "6:16", "Spannung": "Halten"}
+  {"KapitelNummer": "1", "WortNr": "17:23", "Spannung": "Stoppen"}
+
+]
