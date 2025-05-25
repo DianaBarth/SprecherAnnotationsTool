@@ -7,7 +7,6 @@ import tkinter.font as tkFont
 
 import Eingabe.config as config # Importiere das komplette config-Modul
 
-
 class AnnotationRenderer:
     def __init__(self, ignore_annotations=None, ignore_ig=False):
         self.ignore_annotations = set(a.lower() for a in (ignore_annotations or []))
@@ -22,11 +21,11 @@ class AnnotationRenderer:
         annotation_str = element.get('annotation', '')
         annotations = [a.strip().lower() for a in annotation_str.split(',') if a.strip().lower() not in self.ignore_annotations]
 
-        # Font und Stil
-        ist_ue = element.get('KapitelName') is None and element.get('WortNr',0)==0
-        ist_leg = False
-        betonung = annotation_str
-        font = self._get_gui_font(betonung, ist_ue, ist_leg)
+        # Prüfe Sonderfälle für Überschrift oder Legende
+        ist_ue = element.get('KapitelName') is None and element.get('WortNr', 0) == 0
+        ist_leg = False  # ggf. anpassen falls du Legenden hast
+
+        font = self._get_gui_font(annotation_str, ist_ue, ist_leg)
         fg = 'black'
         if 'person' in annotations and hasattr(config, 'FARBE_PERSON'):
             fg = self._to_hex(config.FARBE_PERSON)
@@ -38,7 +37,7 @@ class AnnotationRenderer:
                            font=font, fill=fg,
                            tags=(tag,))
 
-        # Marker drüber
+        # Marker drüber zeichnen
         text_w = font.measure(token)
         self._draw_markers(canvas, element, x_pos, y_pos, text_w, font, prev_line)
 
@@ -70,19 +69,94 @@ class AnnotationRenderer:
             size = config.TEXT_GROESSE
         return tkFont.Font(family=fam, size=size)
 
-    def _draw_markers(self, canvas, e, x_pos, y_pos, text_w, font, prev_line):
-        # Beispiel: Zeilenwechsel
-        zeile = e.get('zeile', 0)
+    def _draw_markers(self, c, e, x_pos, y_pos, text_width, font, prev_line):
+        # Werte holen
+        pause = e.get("pause", "").lower()
+        spannung = e.get("spannung", "").lower()
+        gedanken = e.get("gedanken", "").lower()
+        token = e.get("token", "")
+        zeile = e.get("zeile", 0)
+
+        oy = getattr(config, "MARKER_OFFSET_Y", 5)
+        w = getattr(config, "MARKER_BREITE_KURZ", 6)
+        h = getattr(config, "MARKER_BREITE_KURZ", 6)
+
+        # Keine Linie bei Zeilenwechsel
         if zeile != prev_line:
             return
-        # Beispiel Spannungsbogen Starten
-        spann = e.get('Spannung','').lower()
-        if spann == 'starten':
-            color = self._to_hex(config.FARBE_SPANNUNG)
-            lw = getattr(config, 'LINIENBREITE_STANDARD', 1)
-            # einfacher Bogen über Token und nächsten
-            canvas.create_arc(x_pos, y_pos-10, x_pos+text_w*2, y_pos+10,
-                              style='arc', outline=color, width=lw)
-        # Weitere Marker analog implementieren...
 
-    
+        mid_x = x_pos + text_width / 2 - w / 2
+
+        # Spannung zeichnen
+        color_sp = self._to_hex(getattr(config, "FARBE_SPANNUNG", (255, 0, 0)))
+        line_w = getattr(config, "LINIENBREITE_STANDARD", 1)
+        height = font.metrics("linespace")
+
+        if spannung == "starten":
+            pts = []
+            for i in range(11):
+                t = i / 10
+                xi = x_pos + t * text_width
+                yi = y_pos + height // 2 + oy + t * getattr(config, "SPANNUNG_NEIGUNG", 3)
+                pts.append((xi, yi))
+            for p1, p2 in zip(pts, pts[1:]):
+                c.create_line(*p1, *p2, fill=color_sp, width=line_w)
+
+        elif spannung == "halten":
+            y = y_pos + height // 2 + oy
+            c.create_line(x_pos, y, x_pos + text_width, y, fill=color_sp, width=line_w)
+
+        elif spannung == "stoppen":
+            xend = x_pos + text_width
+            ymid = y_pos + height // 2 + oy
+            c.create_oval(xend, ymid, xend + 1, ymid + 1, outline=color_sp)
+            pts = []
+            for i in range(11):
+                t = i / 10
+                xi = x_pos + t * text_width
+                yi = ymid - t * getattr(config, "SPANNUNG_NEIGUNG", 3)
+                pts.append((xi, yi))
+            for p1, p2 in zip(pts, pts[1:]):
+                c.create_line(*p1, *p2, fill=color_sp, width=line_w)
+
+        # ig-Unterstreichung/Punktierung
+        if not self.ignore_ig:
+            color_ug = self._to_hex(getattr(config, "FARBE_UNTERSTREICHUNG", (0, 0, 0)))
+            # Wortende
+            if token.lower().endswith("ig"):
+                ig_start = font.measure(token) - font.measure("ig")
+                yline = y_pos + height // 2 + font.metrics("linespace") // 2 - 2
+                c.create_line(x_pos + ig_start, yline, x_pos + ig_start + font.measure("ig"), yline,
+                              fill=color_ug, width=line_w)
+            # Binnen
+            for i in range(len(token) - 2):
+                if token[i:i + 2].lower() == "ig" and i != len(token) - 2:
+                    xpos = x_pos + font.measure(token[:i + 1])
+                    ypos = y_pos + height // 2 + font.metrics("linespace") // 2
+                    c.create_oval(xpos - 2, ypos, xpos + 2, ypos + 4, fill=color_ug, outline="")
+
+        # Pausen
+        if "atempause" in pause:
+            yline = y_pos + height // 2 + oy + h + 2
+            color_ap = self._to_hex(getattr(config, "FARBE_ATEMPAUSE", (255, 0, 0)))
+            length = getattr(config, "MARKER_BREITE_LANG", 12) * 2
+            c.create_line(mid_x, yline, mid_x + length, yline, fill=color_ap, width=line_w)
+
+        if "staupause" in pause:
+            color_spu = self._to_hex(getattr(config, "FARBE_STAUPAUSE", (0, 255, 0)))
+            c.create_rectangle(mid_x, y_pos + height // 2 + oy, mid_x + w, y_pos + height // 2 + oy + h,
+                               fill=color_spu, width=0)
+
+        if "pause_gedanken" in gedanken:
+            color_gp = self._to_hex(getattr(config, "FARBE_GEDANKENPAUSE", (0, 0, 255)))
+            cx = mid_x + w / 2
+            cy = y_pos + height // 2 + oy + h / 2
+            r = w / 2
+            c.create_oval(cx - r, cy - r, cx + r, cy + r, fill=color_gp, width=0)
+
+        # Gedankenschluss
+        if "gedanken_ende" in gedanken and "pause_gedanken" not in gedanken:
+            color_ge = self._to_hex(getattr(config, "FARBE_GEDANKENENDE", (0, 0, 0)))
+            off = w / 2
+            c.create_line(mid_x, y_pos + height // 2 + oy, mid_x + w, y_pos + height // 2 + oy, fill=color_ge, width=line_w)
+            c.create_line(mid_x, y_pos + height // 2 + oy + h, mid_x + w, y_pos + height // 2 + oy + h, fill=color_ge, width=line_w)
