@@ -2,7 +2,6 @@ import os
 import json
 import tkinter as tk
 from tkinter import ttk
-import tkinter.font as tkFont
 
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
@@ -12,77 +11,80 @@ class AnnotationenEditor(ttk.Frame):
         super().__init__(notebook)
         self.notebook = notebook
         self.dateipfad_json = dateipfad_json
-        self.renderer = AnnotationRenderer(max_width=680)  # Max. Breite Canvas-Teil anpassen
-        self.tokens = []
-        self._load_tokens()
-        self._build_widgets()
+        self.renderer = AnnotationRenderer(max_breite=680)  # Max. Breite des Canvas für Tokens
+        self.json_dicts = []  # Liste mit Token-Dictionaries aus JSON
+        self._lade_json_daten()
+        self._erstelle_widgets()
 
-    def _load_tokens(self):
+    def _lade_json_daten(self):
+        """Lädt die JSON-Daten aus der angegebenen Datei."""
         with open(self.dateipfad_json, 'r', encoding='utf-8') as f:
-            self.tokens = json.load(f)
+            self.json_dicts = json.load(f)
 
-    def _build_widgets(self):
-        # Gesamtgröße
-        total_w, total_h = 1000, 700
-        self.place(width=total_w, height=total_h)
+    def _erstelle_widgets(self):
+        """Erstellt die Widgets (Canvas links, Frame rechts) und richtet Scrollbar ein."""
+        gesamt_breite, gesamt_hoehe = 1000, 700
+        self.place(width=gesamt_breite, height=gesamt_hoehe)
 
-        # Linker Bereich: Canvas für Tokens + Marker
-        token_w = 700
-        frame = tk.Frame(self, width=token_w, height=total_h)
-        frame.place(x=0, y=0)
+        # Linke Seite: Canvas für Tokens mit vertikalem Scrollbalken
+        token_breite = 700
+        linker_frame = tk.Frame(self, width=token_breite, height=gesamt_hoehe)
+        linker_frame.place(x=0, y=0)
 
-        self.canvas = tk.Canvas(frame, width=token_w, height=total_h, bg='white')
+        self.canvas = tk.Canvas(linker_frame, width=token_breite, height=gesamt_hoehe, bg='white')
         self.canvas.pack(side='left', fill='both', expand=True)
-        vsb = ttk.Scrollbar(frame, orient='vertical', command=self.canvas.yview)
-        vsb.pack(side='right', fill='y')
-        self.canvas.configure(yscrollcommand=vsb.set)
 
-        # Scrollregion aktualisieren, wenn das Canvas konfiguriert wird
+        scrollbar = ttk.Scrollbar(linker_frame, orient='vertical', command=self.canvas.yview)
+        scrollbar.pack(side='right', fill='y')
+
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        # Scrollregion aktualisieren, wenn Canvasgröße sich ändert
         self.canvas.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox('all')))
 
-        # Rechter Bereich: Annotationinspector etc.
-        self.annotation_frame = ttk.Frame(self, width=total_w - token_w, height=total_h)
-        self.annotation_frame.place(x=token_w, y=0)
+        # Rechte Seite: Frame für Annotationen/Details
+        self.annotation_frame = ttk.Frame(self, width=gesamt_breite - token_breite, height=gesamt_hoehe)
+        self.annotation_frame.place(x=token_breite, y=0)
 
-        # Zeichne alles
-        self._draw_all()
+        # Zeichne alle Tokens mit Marker
+        self._zeichne_alle_tokens()
 
+        # Scrollregion initial setzen
         self.canvas.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
-    def _draw_all(self):
+    def _zeichne_alle_tokens(self):
+        """Löscht und zeichnet alle Token-Elemente auf dem Canvas neu."""
         self.canvas.delete('all')
-        self.renderer.reset_positions()  # Positionen intern zurücksetzen
+        self.renderer.positionen_zuruecksetzen()  # Interne Positionen im Renderer zurücksetzen
 
-        # Rechte Seite vorher leeren
+        # Rechts die Annotationen löschen
         for child in self.annotation_frame.winfo_children():
             child.destroy()
 
-        # Die Tokens einzeln rendern, der Renderer kümmert sich um Zeilenumbruch & Position
-        for idx, tok in enumerate(self.tokens):
-            self.renderer.render(
-                gui_parent=self.canvas,
-                idx=idx,
-                dict_element=tok
+        # Jeden Token einzeln rendern
+        for idx, json_dict in enumerate(self.json_dicts):
+            self.renderer.rendern(
+                index=idx,
+                gui_canvas=self.canvas,
+                dict_element=json_dict
             )
-            # Klick-Event per Tag binden: ruft _on_token_click auf
+            # Klick-Event für jeden Token-Tag binden, um Detailanzeige zu starten
             tag = f'token_{idx}'
             self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
 
-        # Optional: Text oben links zum Test
-        # self.canvas.create_text(10, 10, anchor='nw', text="Testinhalt", fill='black')
-
     def _on_token_click(self, idx):
-        # Wenn Token angeklickt wird, zeige rechts die Annotationen zu diesem Token
-        token = self.tokens[idx]
+        """Wird aufgerufen, wenn ein Token im Canvas angeklickt wird."""
+        json_dict = self.json_dicts[idx]
+
         # Rechte Seite vorher leeren
         for child in self.annotation_frame.winfo_children():
             child.destroy()
 
-        tk.Label(self.annotation_frame, text=f"Token {idx}: '{token.get('token','')}'", font=('Arial', 14, 'bold')).pack(anchor='w', pady=5)
+        # Token-Info anzeigen
+        tk.Label(self.annotation_frame, text=f"Token {idx}: '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).pack(anchor='w', pady=5)
 
-        # Beispiel: Alle Annotationen (Schlüssel außer "token") als Buttons anzeigen
-        for key, value in token.items():
+        # Beispiel: Alle Annotationen (Schlüssel außer 'token') als Buttons anzeigen
+        for key, value in json_dict.items():
             if key == 'token':
                 continue
             btn_text = f"{key}: {value}"
