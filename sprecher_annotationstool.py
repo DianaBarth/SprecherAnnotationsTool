@@ -13,12 +13,12 @@ import Eingabe.config as config # Importiere das komplette config-Modul
 class SprecherAnnotationsTool(tk.Tk):
     """Hauptanwendung mit Tab-Notebook"""
 
-    def __init__(self):
+    def __init__(self, logger):
         super().__init__()
         self.title("Sprecher-Annotationen-Tool")
 
         # HuggingFace Client initialisieren
-        self.client = HuggingFaceClient()
+        self.client = HuggingFaceClient(logger)
 
         # Notebook anlegen, mit grid platzieren
         self.notebook = ttk.Notebook(self)
@@ -40,11 +40,11 @@ class SprecherAnnotationsTool(tk.Tk):
 
 
 if __name__ == "__main__":
-    logger = LogManager('meinlog.log')
+    logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 
     print("-------------------------------------------------------------------------------------------")
     print("NEUSTART Sprecher-Annotationen-Tool")
     print("-------------------------------------------------------------------------------------------")
 
-    app = SprecherAnnotationsTool()
+    app = SprecherAnnotationsTool(logger)
     app.mainloop()

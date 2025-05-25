@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import threading
 import Eingabe.config as config  # falls weiterhin gebraucht
 
@@ -72,38 +72,49 @@ class InstallationModellwahl(ttk.Frame):
         frm = ttk.Frame(self)
         frm.grid(row=0, column=0, sticky="ew", pady=5, padx=10)
         frm.columnconfigure(1, weight=1)
-        frm.columnconfigure(3, weight=0)
+        frm.columnconfigure(4, weight=0)
 
         ttk.Label(frm, text="Sprache:").grid(row=0, column=0, sticky="w")
-
         self.language_var = tk.StringVar(value="Deutsch / German")
         self.language_cb = ttk.Combobox(
             frm, textvariable=self.language_var,
-            values=[
-                "Deutsch / German", "English / English", "Français / French",
-                "multi / Multilingual"
+            values=["","Multilingual","Deutsch / German", "English / English", "Français / French",
+               
             ],
-            state="readonly", width=25
+            state="readonly", width=20
         )
         self.language_cb.grid(row=0, column=1, sticky="ew", padx=(5, 0))
-        self.language_cb.bind("<<ComboboxSelected>>", lambda _: self.update_model_list())
+        # self.language_cb.bind("<<ComboboxSelected>>", lambda _: self.update_model_list())
 
         self.add_language_btn = ttk.Button(frm, text="+", width=3, command=self._add_language)
         self.add_language_btn.grid(row=0, column=2, padx=5)
 
         btn_close = ttk.Button(frm, text="✖️", width=3, command=self.hide_tab)
-        btn_close.grid(row=0, column=3, sticky="e")
+        btn_close.grid(row=0, column=4, sticky="e")
 
-        ttk.Label(frm, text="Model-Filter:").grid(row=1, column=0, sticky="w")
+        ttk.Label(frm, text="Modell-Filter:").grid(row=1, column=0, sticky="w")
         self.filter_var = tk.StringVar(value="t5")
         self.filter_cb = ttk.Combobox(
             frm, textvariable=self.filter_var,
-            values=self.client.get_model_filters(), 
-            width=25
+            values=self.client.get_model_filters(),
+            width=20
         )
         self.filter_cb.grid(row=1, column=1, sticky="ew", padx=5)
-        self.filter_cb.bind("<<ComboboxSelected>>", lambda _: self.update_model_list())
-        self.filter_cb.bind("<Return>", lambda e: self.update_model_list())
+        # self.filter_cb.bind("<<ComboboxSelected>>", lambda _: self.update_model_list())
+        # self.filter_cb.bind("<Return>", lambda e: self.update_model_list())
+
+     
+        ttk.Label(frm, text="Name filtern:").grid(row=1, column=2, sticky="w", padx=(10, 0))
+
+        self.name_filter_var = tk.StringVar()
+        self.name_filter_entry = ttk.Entry(frm, textvariable=self.name_filter_var, width=20)
+        self.name_filter_entry.grid(row=1, column=3, sticky="ew")
+
+        # self.name_filter_entry.bind("<Return>", lambda e: self.update_model_list())
+
+        # Button neben Entry zum expliziten Auslösen der Suche
+        self.search_button = ttk.Button(frm, text="Suchen", width=8, command=self.update_model_list)
+        self.search_button.grid(row=1, column=4, sticky="w", padx=(5, 0))
 
         frm_model = ttk.Frame(self)
         frm_model.grid(row=1, column=0, sticky="ew", pady=10, padx=10)
@@ -142,7 +153,7 @@ class InstallationModellwahl(ttk.Frame):
             self.notebook.hide(self)
 
     def _add_language(self):
-        new_lang = tk.simpledialog.askstring(
+        new_lang = simpledialog.askstring(
             "Sprache hinzufügen",
             "Gib die Sprache ein im Format 'Landessprache / Englisch',\nz.B. 'Ελληνικά / Greek':"
         )
@@ -154,12 +165,25 @@ class InstallationModellwahl(ttk.Frame):
                 self.language_var.set(new_lang)
                 self.update_model_list()
 
+   
     def update_model_list(self):
         if self._loading:
             return
-        langs = [p.strip().lower() for p in self.language_var.get().split("/")]
-        filt = self.filter_var.get().lower()
-        models = self.client.get_available_models(model_filter=filt, language_keywords=langs)
+        langs = [p.strip().lower() for p in self.language_var.get().split("/") if p.strip()]
+        filt = self.filter_var.get().strip()
+        name_filter = self.name_filter_var.get().strip()
+
+        if not filt or filt.lower() == "none":
+            filt = None
+        if not langs:
+            langs = None
+        if not name_filter:
+            name_filter = None
+
+        print(f"[DEBUG] GUI-Eingabe: filter={filt}, Sprache={langs}, name_filter={name_filter}")
+
+        models = self.client.get_available_models(model_filter=filt, language_keywords=langs, name_filter=name_filter)
+
         self.model_cb["values"] = models
         if models:
             self.model_var.set(models[0])
@@ -169,6 +193,7 @@ class InstallationModellwahl(ttk.Frame):
             self.model_var.set("")
             self.info_lbl.config(text="Keine Modelle gefunden.")
             self.load_btn.state(["disabled"])
+
 
     def _update_training_widgets(self):
         if not hasattr(self, "train_btn"):
@@ -204,70 +229,51 @@ class InstallationModellwahl(ttk.Frame):
                 self.client.train_model_from_file(
                     train_file_path=file_path,
                     epochs=3,
-                    batch_size=8,
+                    batch_size=4,
                     learning_rate=5e-5,
                     progress_callback=progress_update
                 )
 
-                self.status_lbl.config(text="Training erfolgreich beendet.")
+                self.status_lbl.config(text="Training abgeschlossen.")
             except Exception as e:
-                print(f"Training fehlgeschlagen: {e}")
-                self.status_lbl.config(text=f"Training fehlgeschlagen: {e}")
-            finally:
-                self.train_progress.config(value=0)
+                self.status_lbl.config(text=f"Fehler beim Training: {e}")
 
         threading.Thread(target=training_task, daemon=True).start()
 
     def update_model_info(self):
-        name = self.model_var.get()
-        if not name:
+        model_name = self.model_var.get()
+        if not model_name:
             self.info_lbl.config(text="")
             return
-        info = self.client.get_model_info(name)
-        if info.get("Error"):
-            self.info_lbl.config(text=f"Fehler: {info['Error']}")
-        else:
-            txt = (
-                f"Größe: {info['Model Size (MB)']} MB\n"
-                f"Parameter: {info['Number of Parameters']}\n"
-                f"Architektur: {info['Architecture']}\n"
-                f"Tokenizer: {info['Tokenizer Class']}"
-            )
-            self.info_lbl.config(text=txt)
+        info = self.client.get_model_info(model_name)
+        self.info_lbl.config(text=info)
 
     def lade_huggingface_modell(self):
-        if self._loading:
+        model_name = self.model_var.get()
+        if not model_name:
+            messagebox.showwarning("Keine Modellauswahl", "Bitte wähle ein Modell aus der Liste.")
             return
-        name = self.model_var.get()
-        if not name:
-            return
-        self._loading = True
+
         self.load_btn.state(["disabled"])
-        self.status_lbl.config(text="Lade Modell…")
+        self.status_lbl.config(text=f"Lade Modell {model_name}...")
         self.progress.config(mode="indeterminate")
-        self.progress.start(10)
-        threading.Thread(target=self._load_thread, args=(name,), daemon=True).start()
+        self.progress.start()
 
-    def _load_thread(self, name: str):
-        try:
-            self.client.set_model(name)
-            self.after(0, lambda: self._on_loaded(name))
-        except Exception as e:
-            print(f"Laden fehlgeschlagen: {e}")
-            self.after(0, lambda e=e: self._on_load_fail(e))
+        def load_task():
+            try:
+                self.client.set_model(model_name)
+                self.client.check_and_load_model()
+                self.after(0, lambda: self.status_lbl.config(text=f"Modell {model_name} geladen."))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Fehler", f"Fehler beim Laden des Modells:\n{e}"))
+                self.after(0, lambda: self.status_lbl.config(text="Fehler beim Laden des Modells."))
+            finally:
+                self.after(0, self._loading_finished)
 
-    def _on_loaded(self, name: str):
-        self._loading = False
-        self.progress.stop()
-        self.progress.config(mode="determinate", value=100)
-        self.status_lbl.config(text=f"'{name}' wurde erfolgreich geladen.")
-        self.load_btn.state(["!disabled"])
-        self._update_training_widgets()
+        threading.Thread(target=load_task, daemon=True).start()
 
-    def _on_load_fail(self, err: Exception):
-        self._loading = False
+    def _loading_finished(self):
         self.progress.stop()
         self.progress.config(mode="determinate", value=0)
-        self.status_lbl.config(text=f"Modell laden fehlgeschlagen: {err}")
-        messagebox.showerror("Fehler", f"Modell laden fehlgeschlagen:\n{err}")
         self.load_btn.state(["!disabled"])
+        self._update_training_widgets()

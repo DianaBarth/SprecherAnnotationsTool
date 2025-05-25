@@ -6,7 +6,6 @@ import itertools
 import time
 from pathlib import Path
 from typing import List, Optional, Callable, Dict, Any
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import T5Tokenizer, T5ForConditionalGeneration
@@ -20,11 +19,12 @@ class HuggingFaceClient:
     führt Textgenerierung aus und ermöglicht Training auf lokalen Dateien.
     """
 
-    def __init__(self):
+    def __init__(self, log_manager = None):
         self.model_name: Optional[str] = None
         self.model: Optional[T5ForConditionalGeneration] = None
         self.tokenizer: Optional[T5Tokenizer] = None
         self.hf_api = HfApi()
+        self.log_manager = log_manager
 
         if not self.is_huggingface_installed():
             print("[INFO] Hugging Face Transformers ist nicht installiert. KI wird deaktiviert...")
@@ -88,31 +88,48 @@ class HuggingFaceClient:
         outputs = self.model.generate(inputs["input_ids"], max_length=max_length, num_return_sequences=1)
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
+  
     def get_available_models(
-        self,
-        model_filter: Optional[str] = None,
-        language_keywords: Optional[List[str]] = None,
-        limit: int = 1000
-    ) -> List[str]:
+            self,
+            model_filter: Optional[str] = None,
+            language_keywords: Optional[List[str]] = None,
+            name_filter: Optional[str] = None,
+            limit: int = 5000
+        ) -> List[str]:
         """
         Liefert eine Liste verfügbarer Modelle vom Hugging Face Hub,
-        optional gefiltert nach Modell- und Sprach-Keywords.
+        optional gefiltert nach Modell-, Sprach- und Namens-Keywords.
         """
         try:
-            print(f"[DEBUG] Suche Modelle mit Filter='{model_filter}', Sprache={language_keywords}")
+            # Sicherstellen, dass model_filter kein "None"-String ist
+            if model_filter is not None and model_filter.strip().lower() == "none":
+                model_filter = None
+            if model_filter == "":
+                model_filter = None
+
+            if language_keywords:
+                language_keywords = [kw.lower() for kw in language_keywords if kw]
+
+            print(f"[DEBUG] Suche Modelle mit filter={model_filter}, Sprache={language_keywords}, name_filter={name_filter}")
+
             models = list_models(filter=model_filter, limit=limit, full=True)
+
             names = []
             for m in models:
                 model_id = m.modelId.lower()
-                if language_keywords and not any(kw.lower() in model_id for kw in language_keywords):
+                # Filter nach Sprache
+                if language_keywords and not any(kw in model_id for kw in language_keywords):
+                    continue
+                # Filter nach Namen
+                if name_filter and name_filter.lower() not in model_id:
                     continue
                 names.append(m.modelId)
+
             unique_names = sorted(set(names))
             print(f"[DEBUG] Gefundene Modelle: {len(unique_names)}")
             return unique_names
         except Exception as e:
             print(f"[ERROR] Modelle konnten nicht geladen werden: {e}")
-            # Fallback
             return ["t5-small", "t5-base"]
 
     def get_model_info(self, model_name: str) -> Dict[str, Any]:
@@ -188,12 +205,23 @@ class HuggingFaceClient:
             return True
         if not self.model_name or not self.model_name.strip():
             raise ValueError("Kein Modell gesetzt oder leerer Modellname.")
+
+        # Messagebox-Patch temporär deaktivieren
+        self.log_manager.disable_messagebox_patch()
+
         try:
             self.set_model(self.model_name)
             return True
         except Exception as e:
             print(f"[ERROR] Fehler beim Laden des Modells '{self.model_name}': {e}")
+            try:
+                import tkinter.messagebox as messagebox
+                messagebox.showerror("Fehler", f"Modell konnte nicht geladen werden:\n{e}")
+            except Exception:
+                pass  # Fallback für Headless-Umgebung
             return False
+        finally:
+            self.log_manager.enable_messagebox_patch()
 
     def run_model(self, prompt: str) -> str:
         """
@@ -303,8 +331,9 @@ class HuggingFaceClient:
         """
         Liest aus den verfügbaren HuggingFace-Modellen automatisch mögliche
         Filterbegriffe (z.B. Architektur, Pipeline-Tags, Modellnamen).
-        Gibt eine sortierte Liste einzigartiger Filterbegriffe zurück.
-        
+        Gibt eine sortierte Liste einzigartiger Filterbegriffe zurück, 
+        wobei das erste Element "" (kein Filter = alle) ist.
+
         :param limit: Maximale Anzahl an Modellen, die abgefragt werden.
         """
         try:
@@ -315,7 +344,6 @@ class HuggingFaceClient:
             for m in models:
                 # m ist ein ModelInfo-Objekt mit Metadaten
 
-                # Prüfen, ob m.config vorhanden ist und get unterstützt
                 if m.config and hasattr(m.config, "get"):
                     arch = m.config.get("architectures", [])
                 else:
@@ -328,11 +356,9 @@ class HuggingFaceClient:
                         if isinstance(a, str):
                             filters.add(a.lower())
 
-                # Pipeline-Tag(s) hinzufügen, wenn vorhanden
                 if hasattr(m, "pipeline_tag") and m.pipeline_tag:
                     filters.add(m.pipeline_tag.lower())
 
-                # Modell-ID nach bekannten Modellnamen filtern
                 model_id = getattr(m, "modelId", "").lower()
                 known_models = ["t5", "bert", "gpt2", "gpt-neo", "gpt-j", "flan", "bart", "roberta",
                                 "distilbert", "xlm", "xlnet", "gpt4", "bert-large", "bert-base"]
@@ -340,18 +366,18 @@ class HuggingFaceClient:
                     if km in model_id:
                         filters.add(km)
 
-            # Manche Standard-Filter ergänzen, falls nicht dabei
             standard_filters = ["summarization", "translation", "classification",
                                 "text-generation", "token-classification", "question-answering",
                                 "conversational", "zero-shot-classification"]
             for sf in standard_filters:
                 filters.add(sf)
 
-            return sorted(filters)
+            sorted_filters = sorted(filters)
+            # Leerer Filter für "alle" an erste Stelle setzen
+            return [""] + sorted_filters
 
         except Exception as e:
             print(f"[ERROR] Fehler beim Abrufen der Model-Filter: {e}")
-            # Fallback auf eine einfache statische Liste
-            return ["summarization", "translation", "classification",
-                    "text-generation", "token-classification", "question-answering",
-                    "conversational", "zero-shot-classification"]
+            return [""] + ["summarization", "translation", "classification",
+                        "text-generation", "token-classification", "question-answering",
+                        "conversational", "zero-shot-classification"]

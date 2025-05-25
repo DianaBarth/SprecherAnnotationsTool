@@ -105,15 +105,14 @@ def auto_git_commit():
 
 if __name__ == "__main__":
     # Haupttool
-    loggerKomplett = LogManager('meinlog_Komplett.log',False)
-    loggerLetzte = LogManager('meinLog_lezterDurchlauf.log',True)
+    logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 
     print("-------------------------------------------------------------------------------------------")
     print("NEUSTART Sprecher-Annotationen-Tool")
     print("-------------------------------------------------------------------------------------------")
 
     try:
-        app = SprecherAnnotationsTool()
+        app = SprecherAnnotationsTool(logger)
         app.mainloop()
     except Exception as e:
         print(f"Fehler im Haupttool: {e}")
