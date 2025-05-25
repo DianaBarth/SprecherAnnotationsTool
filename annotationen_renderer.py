@@ -72,7 +72,7 @@ class AnnotationRenderer:
             return {
                 'token_button': token_btn,
                 'marker_buttons': [],
-                'pixel_breite': pixel_breite
+                'pixel_breite': pixel_breite + 10
             }
         else:
             return {

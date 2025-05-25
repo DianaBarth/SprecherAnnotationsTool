@@ -99,19 +99,26 @@ class AnnotationenEditor(ttk.Frame):
         y_pos = 0
         self.token_buttons.clear()
 
-        max_breite_pro_zeile = canvas_width - 20  # Puffer für Scrollbar
+        max_breite_pro_zeile = canvas_width -20 # Puffer für Scrollbar 
+
+        font = tkFont.nametofont("TkDefaultFont")
+        durchschnitts_breite = font.measure("M") 
+
 
         for idx, eintrag in enumerate(self.tokens[:50]):
             annotation = eintrag.get("annotation", "")
             annotation_elemente = [a.strip().lower() for a in annotation.split(",")]
             print(f"annotation_elemente:{annotation_elemente}")
 
+            tokenanzahl = len(eintrag["token"])
+
             # Zeilenumbruch oder kein Platz mehr?
-            if "zeilenumbruch" in annotation_elemente or (x_pos > max_breite_pro_zeile):
+            if "zeilenumbruch" in annotation_elemente or (x_pos + durchschnitts_breite*tokenanzahl > max_breite_pro_zeile):
                 x_pos = 0
                 y_pos += 70
                 
             result = self.annotationsrenderer.render(idx, eintrag, self.tokens_frame,None,x_pos,y_pos)
+
             if result["token_button"]:
                 self.token_buttons.append(result['token_button'])
                 x_pos += result['pixel_breite']
