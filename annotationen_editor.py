@@ -99,26 +99,22 @@ class AnnotationenEditor(ttk.Frame):
         y_pos = 0
         self.token_buttons.clear()
 
-        aktuelle_x_breite = 0
         max_breite_pro_zeile = canvas_width - 20  # Puffer für Scrollbar
 
         for idx, eintrag in enumerate(self.tokens[:50]):
-            text = eintrag.get("token", f"#{idx}")
-            if len(text) > 0:
-                annotation = eintrag.get("annotation", "")
-                text_pixel_width = font.measure(text) + 20
+            annotation = eintrag.get("annotation", "")
+            annotation_elemente = [a.strip().lower() for a in annotation.split(",")]
+            print(f"annotation_elemente:{annotation_elemente}")
 
-                # Zeilenumbruch oder kein Platz mehr?
-                if annotation.lower() == "zeilenumbruch" or (aktuelle_x_breite + text_pixel_width > max_breite_pro_zeile):
-                    x_pos = 0
-                    y_pos += 70
-                    aktuelle_x_breite = 0
-
-                result = self.annotationsrenderer.render(idx, eintrag, self.tokens_frame, None, x_pos, y_pos)
-                self.token_buttons.append(result['token_button'])
-                x_pos += text_pixel_width
-                aktuelle_x_breite += text_pixel_width
-
+            # Zeilenumbruch oder kein Platz mehr?
+            if "zeilenumbruch" in annotation_elemente or (x_pos > max_breite_pro_zeile):
+                x_pos = 0
+                y_pos += 70
+                
+            result = self.annotationsrenderer.render(idx, eintrag, self.tokens_frame,None,x_pos,y_pos)
+            self.token_buttons.append(result['token_button'])
+            x_pos += result['pixel_breite']
+    
         self.tokens_frame.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self.canvas.configure(bg="lightgrey")
