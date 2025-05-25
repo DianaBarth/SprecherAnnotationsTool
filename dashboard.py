@@ -465,15 +465,12 @@ class DashBoard(ttk.Frame):
 
     @staticmethod
     def lade_prompt_datei(ki_id):
-        import os  # falls noch nicht importiert
-
         print(f"[INFO] Lade Prompt für KI-ID: {ki_id}")
 
         if ki_id not in config.KI_AUFGABEN:
             raise ValueError(f"[FEHLER] Unbekannte KI-ID: {ki_id}")
 
-        script_verzeichnis = os.path.dirname(os.path.abspath(__file__))
-        prompts_ordner = os.path.join(script_verzeichnis, "prompts")
+        prompts_ordner = os.path.join("Eingabe", "prompts")
 
         dateiname = config.KI_AUFGABEN[ki_id] + ".txt"
         dateipfad = os.path.join(prompts_ordner, dateiname)

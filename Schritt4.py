@@ -56,7 +56,12 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
                 dateiname=os.path.basename(dateipfad),
                 wortnr_bereich="",             
             )
-
+            
+            # → KI-Antwort in Textdatei speichern
+            antwort_log_datei = os.path.join(ki_ordner, f"{aufgaben_name}_KIAntwort.txt")
+            with open(antwort_log_datei, 'a', encoding='utf-8') as f:
+                f.write(ki_ergebnis + "\n\n")  # jeweils mit Abstand anhängen
+                
             try:
                 dekodiert = json.loads(ki_ergebnis)
                 ki_ergebnis = dekodiert
