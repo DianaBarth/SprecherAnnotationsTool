@@ -32,8 +32,6 @@ class AnnotationRenderer:
         annotation_str = dict_element.get("annotation", "")
         annotations = [a.strip().lower() for a in annotation_str.split(",") if a.strip() and a.strip().lower() not in self.ignore_annotations]
 
-        token = dict_element.get("token", "?")
-
         if gui_parent is not None:
             return self._render_gui(idx,dict_element, annotations, gui_parent, x, y)
 
@@ -63,8 +61,7 @@ class AnnotationRenderer:
 
 
         btn_style = self._bestimme_token_button_style(annotations)
-        token_btn = tk.Button(parent, text=token,
-            bg="lightblue",  # Sichtbar machen
+        token_btn = tk.Button(parent, text=token,       
             fg=btn_style.get('fg', 'black'),
             font=btn_style.get('font', ('Arial', 10)))
             

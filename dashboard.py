@@ -38,6 +38,107 @@ from Schritt4 import daten_verarbeiten
 from Schritt5 import Merge_annotationen
 from Schritt6 import visualisiere_annotationen
 
+class FehlerAnzeige(ttk.LabelFrame):
+    def __init__(self, parent, logfile_path, refresh_interval=2000):
+        super().__init__(parent, text="Fehler")
+        self.logfile_path = logfile_path
+        self.refresh_interval = refresh_interval
+        self.error_entries = []  # Liste von Fehlern (strings)
+        self.widgets = []  # Für Buttons + Text (für Auf-/Zuklappen)
+        self.expanded = {}  # Fehlerindex -> bool (aufgeklappt?)
+
+        # Scrollbares Canvas mit Frame drin
+        self.canvas = tk.Canvas(self, height=150)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+
+        self.inner_frame = ttk.Frame(self.canvas)
+        self.canvas.create_window((0,0), window=self.inner_frame, anchor="nw")
+
+        self.inner_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self.update_errors()  # Starte Updates
+
+    def update_errors(self):
+        try:
+            with open(self.logfile_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            # Logfile noch nicht vorhanden oder Fehler beim Lesen
+            lines = []
+
+        # Filter Fehlerzeilen (hier Beispiel: Zeilen mit "ERROR" extrahieren)
+        errors = []
+        current_error = []
+        collecting = False
+
+        for line in lines:
+            if "ERROR" in line or "Error" in line:
+                if collecting and current_error:
+                    errors.append("".join(current_error))
+                    current_error = []
+                collecting = True
+                current_error.append(line)
+            elif collecting:
+                # Zeile gehört zum vorherigen Fehler (Stacktrace etc.)
+                if line.strip() == "":
+                    # Leerzeile beendet Fehlerblock
+                    errors.append("".join(current_error))
+                    current_error = []
+                    collecting = False
+                else:
+                    current_error.append(line)
+
+        if collecting and current_error:
+            errors.append("".join(current_error))
+
+        # Update nur, wenn Fehlerliste sich geändert hat
+        if errors != self.error_entries:
+            self.error_entries = errors
+            self._refresh_widgets()
+
+        # Timer fürs nächste Update
+        self.after(self.refresh_interval, self.update_errors)
+
+    def _refresh_widgets(self):
+        # Entferne alte Widgets
+        for w in self.widgets:
+            w.destroy()
+        self.widgets.clear()
+        self.expanded.clear()
+
+        for idx, err_text in enumerate(self.error_entries):
+            # Erste Zeile als Überschrift (kurz)
+            first_line = err_text.splitlines()[0] if err_text else "Fehler"
+
+            btn = ttk.Button(self.inner_frame, text=first_line, style="TButton")
+            btn.grid(row=2*idx, column=0, sticky="ew", pady=2)
+            btn.bind("<1>", lambda e, i=idx: self._toggle(i))
+            self.widgets.append(btn)
+
+            # Fehlerdetails (anfangs versteckt)
+            lbl = ttk.Label(self.inner_frame, text=err_text, justify="left", background="white")
+            lbl.grid(row=2*idx+1, column=0, sticky="ew")
+            lbl.grid_remove()
+            self.widgets.append(lbl)
+            self.expanded[idx] = False
+
+    def _toggle(self, idx):
+        # Auf-/Zuklappen
+        lbl = self.widgets[2*idx+1]
+        if self.expanded[idx]:
+            lbl.grid_remove()
+            self.expanded[idx] = False
+        else:
+            lbl.grid()
+            self.expanded[idx] = True
+
 class DashBoard(ttk.Frame):
     def __init__(self, parent, notebook, kapitel_config, client):
         super().__init__(notebook)
@@ -96,6 +197,12 @@ class DashBoard(ttk.Frame):
 
          # UI-Elemente bauen (muss als Methode definiert sein)
         self._build_widgets()
+
+        if config.FehlerAnzeigen:
+            logfile = os.path.join("Eingabe", "meinLog_lezterDurchlauf.log")  # Beispiel-Logpfad anpassen
+            self.fehlermonitor = FehlerAnzeige(self, logfile)
+            self.fehlermonitor.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+            self.rowconfigure(7, weight=0)  # optional: fixierte Höhe durch Fehleranzeige
 
     def toggle_tab(self, tab_text):
         for tab_id in self.notebook.tabs():

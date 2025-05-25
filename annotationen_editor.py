@@ -102,10 +102,6 @@ class AnnotationenEditor(ttk.Frame):
         aktuelle_x_breite = 0
         max_breite_pro_zeile = canvas_width - 20  # Puffer für Scrollbar
 
-        test_btn = tk.Button(self.tokens_frame, text="Test", bg="red")
-        test_btn.place(x=10, y=10, width=100, height=30)
-
-
         for idx, eintrag in enumerate(self.tokens[:50]):
             text = eintrag.get("token", f"#{idx}")
             if len(text) > 0:
