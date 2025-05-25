@@ -72,9 +72,7 @@ def auto_git_commit():
         # Keine Änderungen
         return
 
-    # Änderungen hinzufügen
-    subprocess.run(["git", "add"] + changed_files, check=False)
-
+ 
     root = tk.Tk()
     root.withdraw()
 
@@ -85,6 +83,8 @@ def auto_git_commit():
         messagebox.showinfo("Abgebrochen", "Commit wurde abgebrochen.")
     else:
         try:
+            # Änderungen hinzufügen
+            subprocess.run(["git", "add"] + changed_files, check=False)
             subprocess.run(["git", "commit", "-m", dialog.result], check=False)
             subprocess.run(["git", "push"], check=False)
             messagebox.showinfo("Erfolg", "Änderungen wurden erfolgreich committet und gepusht.")

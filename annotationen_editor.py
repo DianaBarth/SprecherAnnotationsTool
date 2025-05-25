@@ -40,10 +40,13 @@ class AnnotationenEditor(ttk.Frame):
         token_area_width = 700
         annotation_area_width = 300
 
+        style = ttk.Style()
+        style.configure("Token.TFrame", background="white")
+
         self.place(width=editor_width, height=editor_height)
 
         # --- Linker Bereich (Canvas + Scrollbar) ---
-        frame_links = tk.Frame(self, width=token_area_width, height=editor_height)
+        frame_links = ttk.Frame(self, width=token_area_width, height=editor_height)
         frame_links.place(x=0, y=0)
 
         self.canvas = tk.Canvas(frame_links, width=token_area_width - 20, height=editor_height)
@@ -52,8 +55,8 @@ class AnnotationenEditor(ttk.Frame):
 
         self.canvas.place(x=0, y=0, width=token_area_width - 20, height=editor_height)
         self.vscroll.place(x=token_area_width - 20, y=0, width=20, height=editor_height)
-
-        self.tokens_frame = tk.Frame(self.canvas, bg="white")
+        
+        self.tokens_frame = ttk.Frame(self.canvas, style="Token.TFrame")
         self.canvas_window = self.canvas.create_window((0, 0), window=self.tokens_frame, anchor="nw")
 
         self.tokens_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
@@ -123,8 +126,7 @@ class AnnotationenEditor(ttk.Frame):
         self.tokens_frame.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         self.canvas.configure(bg="lightgrey")
-        self.tokens_frame.configure(style="Token.TFrame")  # oder ebenfalls bg setzen
-
+      
     def build_annotation_buttons(self):
         pass
         # # Löschen vorheriger Buttons
