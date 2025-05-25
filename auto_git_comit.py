@@ -86,9 +86,20 @@ def auto_git_commit():
     try:
         subprocess.run(["git", "add"] + changed_files, check=True)
         subprocess.run(["git", "commit", "-m", dialog.result], check=True)
-        subprocess.run(["git", "push"], check=True)
-        # **Keine Messagebox mehr**, sondern nur Terminal/Log
-        print("✅ Auto-Commit erfolgreich.")
+       # Versuch, einfach zu pushen
+        proc = subprocess.run(["git", "push"], capture_output=True, text=True)
+        if proc.returncode != 0:
+            # Beim ersten Mal möglicherweise Upstream noch nicht gesetzt
+            print("Erster Push; Upstream wird jetzt gesetzt …")
+            proc2 = subprocess.run(["git", "push", "-u", "origin", "main"], capture_output=True, text=True)
+            if proc2.returncode != 0:
+                print("❌ Erster Push fehlgeschlagen:")
+                print(proc2.stderr.strip())
+            else:
+                print("✅ Erster Push mit Upstream erfolgreich.")
+        else:
+            print("✅ Auto-Commit erfolgreich gepusht.")
+            
     except subprocess.CalledProcessError as e:
         print(f"❌ Git-Auto-Commit fehlgeschlagen: {e}")
 
