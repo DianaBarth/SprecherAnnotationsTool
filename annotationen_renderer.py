@@ -47,31 +47,39 @@ class AnnotationRenderer:
     def _render_gui(self, idx, dict_element, annotations, parent, x_pos, y_pos):
         token = dict_element.get("token", "")
         
-        font = tkFont.nametofont("TkDefaultFont")
-        pixel_breite = max(40, font.measure(token) + 20)
-        zeichen_anzahl = len(token)
+        if len(token)>0:
 
-        # Debug-Prints
-        print(f"[DEBUG] Token: '{token}'")
-        print(f"[DEBUG] Position: x={x_pos}, y={y_pos}")
-        print(f"[DEBUG] Breite (px): {pixel_breite}")
-        print(f"[DEBUG] Zeichenlänge: {zeichen_anzahl}")
-        print(f"[DEBUG] Annotationen: {annotations}")
+            font = tkFont.nametofont("TkDefaultFont")
+            pixel_breite = max(40, font.measure(token) + 20)
+            zeichen_anzahl = len(token)
 
-        btn_style = self._bestimme_token_button_style(annotations)
-        token_btn = tk.Button(parent, text=token,
-                            fg=btn_style.get('fg', 'black'),
-                            font=btn_style.get('font', ('Arial', 10)))
-        token_btn.config(relief="solid", borderwidth=1)
-        token_btn.place(x=x_pos, y=y_pos, width=pixel_breite, height=30)
+            # Debug-Prints
+            print(f"[DEBUG] Token: '{token}'")
+            print(f"[DEBUG] Position: x={x_pos}, y={y_pos}")
+            print(f"[DEBUG] Breite (px): {pixel_breite}")
+            print(f"[DEBUG] Zeichenlänge: {zeichen_anzahl}")
+            print(f"[DEBUG] Annotationen: {annotations}")
 
-        print(f"[DEBUG] #{idx}: Token-Button für '{token}' erstellt an ({x_pos}, {y_pos}) mit Breite {pixel_breite}")
+            btn_style = self._bestimme_token_button_style(annotations)
+            token_btn = tk.Button(parent, text=token,
+                                fg=btn_style.get('fg', 'black'),
+                                font=btn_style.get('font', ('Arial', 10)))
+            token_btn.config(relief="solid", borderwidth=1)
+            token_btn.place(x=x_pos, y=y_pos, width=pixel_breite, height=30)
 
-        return {
-            'token_button': token_btn,
-            'marker_buttons': [],
-            'pixel_breite': pixel_breite
-        }
+            print(f"[DEBUG] #{idx}: Token-Button für '{token}' erstellt an ({x_pos}, {y_pos}) mit Breite {pixel_breite}")
+
+            return {
+                'token_button': token_btn,
+                'marker_buttons': [],
+                'pixel_breite': pixel_breite
+            }
+        else:
+            return {
+                'token_button': None  ,
+                'marker_buttons': [],
+                'pixel_breite': 0
+            }
         # # 2) Marker-Buttons für Bilder oder hartkodierte Marker:
         # marker_buttons = []
 
