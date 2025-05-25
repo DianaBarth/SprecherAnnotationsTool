@@ -3,9 +3,6 @@
 # Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-24T10:53:36.947118
 
 # ---------------------------------------------
-
-
-
 GLOBALORDNER = {}	# Ordnerstruktur für Ein- und Ausgabe
 
 
