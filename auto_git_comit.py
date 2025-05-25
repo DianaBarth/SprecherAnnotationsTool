@@ -69,28 +69,28 @@ def auto_git_commit():
     changed_files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
 
     if not changed_files:
-        # Keine Änderungen
+        print("Auto-Commit: Keine Änderungen gefunden, übersprungen.")
         return
 
- 
+    # Commit-Dialog öffnen
     root = tk.Tk()
     root.withdraw()
-
     dialog = CommitDialog(root, changed_files)
     root.wait_window(dialog)
+    root.destroy()
 
     if dialog.result is None:
-        messagebox.showinfo("Abgebrochen", "Commit wurde abgebrochen.")
-    else:
-        try:
-            # Änderungen hinzufügen
-            subprocess.run(["git", "add"] + changed_files, check=False)
-            subprocess.run(["git", "commit", "-m", dialog.result], check=False)
-            subprocess.run(["git", "push"], check=False)
-            messagebox.showinfo("Erfolg", "Änderungen wurden erfolgreich committet und gepusht.")
-        except Exception as e:
-            messagebox.showerror("Fehler", f"Git-Auto-Commit fehlgeschlagen:\n{e}")
-    root.destroy()
+        print("Auto-Commit abgebrochen.")
+        return
+
+    try:
+        subprocess.run(["git", "add"] + changed_files, check=True)
+        subprocess.run(["git", "commit", "-m", dialog.result], check=True)
+        subprocess.run(["git", "push"], check=True)
+        # **Keine Messagebox mehr**, sondern nur Terminal/Log
+        print("✅ Auto-Commit erfolgreich.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Git-Auto-Commit fehlgeschlagen: {e}")
 
 if __name__ == "__main__":
     # Haupttool
