@@ -93,8 +93,7 @@ class AnnotationenEditor(ttk.Frame):
 
         #Font-Messung (für ttk Buttons etwas größer kalkulieren)
         font = tkFont.nametofont("TkDefaultFont")
-        durchschnittsbreite = font.measure("M")   # Breite eines Zeichens 
-
+      
         x_pos = 0
         y_pos = 0
         self.token_buttons.clear()
@@ -118,8 +117,8 @@ class AnnotationenEditor(ttk.Frame):
                     y_pos += 70
                     aktuelle_x_breite = 0
 
-                self.annotationsrenderer.render(idx, eintrag, self.tokens_frame, None, x_pos, y_pos)
-
+                result = self.annotationsrenderer.render(idx, eintrag, self.tokens_frame, None, x_pos, y_pos)
+                self.token_buttons.append(result['token_button'])
                 x_pos += text_pixel_width
                 aktuelle_x_breite += text_pixel_width
 
