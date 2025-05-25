@@ -7,6 +7,8 @@ import tkinter.font as tkFont
 
 import Eingabe.config as config # Importiere das komplette config-Modul
 
+_rgb = lambda rgb: "#%02x%02x%02x" % rgb
+
 class AnnotationRenderer:
     def __init__(self, ignore_annotations=None, ignore_ig=False):
         """
@@ -45,259 +47,172 @@ class AnnotationRenderer:
 
     # --- GUI RENDERING ---
 
+    def _get_gui_font(self, betonung: str, ist_ueberschrift: bool, ist_legende: bool) -> tkFont.Font:
+        """
+        Liefert ein tkinter-Font-Objekt basierend auf den config-Schriftarten
+        und -größen für Überschrift, Legende oder Standardtext.
+        """
+        betonung = betonung or ""
+        # PDF-Helper gibt uns Fontname / Size, hier erstellen wir das tkFont
+        if ist_ueberschrift:
+            if "hauptbetonung" in betonung:
+                fam = config.SCHRIFTART_UEBERSCHRIFT_HAUPT
+            elif "nebenbetonung" in betonung:
+                fam = config.SCHRIFTART_UEBERSCHRIFT_NEBEN
+            else:
+                fam = config.SCHRIFTART_UEBERSCHRIFT
+            size = config.UEBERSCHRIFT_GROESSE
+
+        elif ist_legende:
+            if "hauptbetonung" in betonung:
+                fam = config.SCHRIFTART_LEGENDE_HAUPT
+            elif "nebenbetonung" in betonung:
+                fam = config.SCHRIFTART_LEGENDE_NEBEN
+            else:
+                fam = config.SCHRIFTART_LEGENDE
+            size = config.LEGENDE_GROESSE
+
+        else:
+            if "hauptbetonung" in betonung:
+                fam = config.SCHRIFTART_BETONUNG_HAUPT
+            elif "nebenbetonung" in betonung:
+                fam = config.SCHRIFTART_BETONUNG_NEBEN
+            else:
+                fam = config.SCHRIFTART_STANDARD
+            size = config.TEXT_GROESSE
+
+        # Erstelle und gib den Font zurück
+        return tkFont.Font(family=fam, size=size)
+
     def _render_gui(self, idx, dict_element, annotations, parent, x_pos, y_pos):
         token = dict_element.get("token", "")
-        
-        # Breite und Höhe des Canvas bestimmen
-        font = tkFont.nametofont("TkDefaultFont")
+        ist_ueberschrift = dict_element.get("KapitelName") is None and dict_element.get("WortNr",0)==0
+        ist_legende = False  # je nach Anwendungsfall
+
+        # bestimme Font und Farbe
+        betonung = dict_element.get("annotation", "")
+        font = self._get_gui_font(betonung, ist_ueberschrift, ist_legende)
+        fg = "black"
+        if "person" in annotations and hasattr(config, "FARBE_PERSON"):
+            fg = self._rgb(config.FARBE_PERSON)
+
+        # Messe Breite und Höhe
         text_width = font.measure(token)
         pixel_breite = max(20, text_width + 20)
         height = font.metrics("linespace") + 10
 
-        # Canvas anlegen
-        canvas = tk.Canvas(parent, width=pixel_breite, height=height, highlightthickness=1, bd=0)
+        # Erzeuge Canvas
+        canvas = tk.Canvas(parent, width=pixel_breite, height=height,
+                           highlightthickness=1, bd=0)
         canvas.place(x=x_pos, y=y_pos)
 
-        token_style = self._bestimme_token_button_style(annotations)
         # Text zeichnen
-        _ = canvas.create_text(10, height//2, anchor="w", text=token,
-                                    font=token_style.get('font', ('Arial', 10)),
-                                    fill=token_style.get('fg', 'black'))
+        canvas.create_text(10, height//2, anchor="w", text=token,
+                           font=font, fill=fg)
 
-        # ig-Style nur, wenn self.ignore_ig False
-        if not self.ignore_ig:
-            # 1) Unterstreiche das 'ig' am Wortende
-            if token.lower().endswith("ig"):
-                # Breite bis zum 'ig'-Start
-                ig_start = text_width - font.measure("ig")
-                y_line = height//2 + font.metrics("linespace")//2 - 2
-                canvas.create_line(10 + ig_start, y_line, 10 + ig_start + font.measure("ig"), y_line)
+        # … dein on_click + Marker-Aufruf …
 
-            # 2) Für jedes Binnen-'ig' (außer am Ende) einen Punkt malen
-            for i in range(len(token)-2):
-                if token[i:i+2].lower() == "ig" and i != len(token)-2:
-                    # X-Position: Breite des Texts bis einschließlich i
-                    xpos = 10 + font.measure(token[:i+1])
-                    ypos = height//2 + font.metrics("linespace")//2
-                    # Punkt
-                    r = 2
-                    canvas.create_oval(xpos - r, ypos, xpos + r, ypos + 2*r, fill="black", outline="")
+        return {"canvas": canvas, "pixel_breite": pixel_breite}
+    
 
-        # Klick-Verhalten wie ein Button
-        def on_click(event, idx=idx):
-            # Hier kannst du deine Klick-Logik unterbringen,
-            # z.B. token markieren, Annotationen anzeigen, etc.
-            print(f"Token #{idx} '{token}' geklickt")
-        canvas.bind("<Button-1>", on_click)
+    def _draw_markers_on_canvas(self, c, e, x_pos, y_pos, text_width, prev_line, height, font):
+            # Werte aus dict
+            pause    = e.get("Pause", "").lower()
+            spannung = e.get("Spannung", "").lower()
+            gedanken = e.get("Gedanken", "").lower()
+            token    = e.get("token", "")
+            zeile    = e.get("zeile", 0)
 
-        # Rückgabe ähnlich wie vorher
-        return {
-            'canvas': canvas,
-            'pixel_breite': pixel_breite
-        }
+            oy = getattr(config, "MARKER_OFFSET_Y", 5)
+            w  = getattr(config, "MARKER_BREITE_KURZ", 6)
+            h  = getattr(config, "MARKER_BREITE_KURZ", 6)
 
+            # Zeilenwechsel?
+            if zeile != prev_line:
+                return
 
-    def _bestimme_token_button_style(self, annotations):
-        """
-        Gibt ein Style-Dict mit 'fg' (Farbe) und 'font' zurück, basierend auf Annotationen
-        Beispiel: Hauptbetonung = fett, Nebenbetonung = kursiv
-        """
+            mid_x = x_pos + text_width/2 - w/2
 
-        # Default
-        fg = "black"
-        font = ("Arial", 10, "normal")
+            # --- Spannung: Starten ---
+            if spannung == "starten":
+                pts = []
+                steps = 10
+                for i in range(steps+1):
+                    t = i/steps
+                    xi = x_pos + t*text_width
+                    yi = y_pos + oy + h/2 + t*getattr(config, "SPANNUNG_NEIGUNG", 3)
+                    pts.append((xi, yi))
+                for a,b in zip(pts, pts[1:]):
+                    c.create_line(a[0],a[1], b[0],b[1],
+                                fill=self._rgb(config.FARBE_SPANNUNG),
+                                width=getattr(config, "LINIENBREITE_STANDARD", 1))
+            # --- Spannung: Halten ---
+            elif spannung == "halten":
+                yline = y_pos + oy + h/2
+                c.create_line(x_pos, yline, x_pos+text_width, yline,
+                            fill=self._rgb(config.FARBE_SPANNUNG),
+                            width=getattr(config, "LINIENBREITE_STANDARD", 1))
+            # --- Spannung: Stoppen ---
+            elif spannung == "stoppen":
+                xend = x_pos+text_width
+                ymid = y_pos+oy+h/2
+                c.create_oval(xend,ymid, xend+1,ymid+1,
+                            outline=self._rgb(config.FARBE_SPANNUNG))
+                pts = []
+                steps = 10
+                for i in range(steps+1):
+                    t = i/steps
+                    xi = x_pos + t*text_width
+                    yi = ymid - t*getattr(config, "SPANNUNG_NEIGUNG", 3)
+                    pts.append((xi, yi))
+                for a,b in zip(pts, pts[1:]):
+                    c.create_line(a[0],a[1], b[0],b[1],
+                                fill=self._rgb(config.FARBE_SPANNUNG),
+                                width=getattr(config, "LINIENBREITE_STANDARD", 1))
 
-        # Beispiele für Schriftstile:
-        if "hauptbetonung" in annotations:
-            font = tkFont.Font(family="Arial", size=10, weight="bold")
-        elif "nebenbetonung" in annotations:
-            font = tkFont.Font(family="Arial", size=10, weight="italic")
+            # --- ig-Unterstreichung/Punktierung ---
+            if not self.ignore_ig:
+                # Ende-ig
+                if token.lower().endswith("ig"):
+                    ig_start = text_width - font.measure("ig")
+                    yline = height//2 + font.metrics("linespace")//2 - 2
+                    c.create_line(x_pos+10+ig_start, yline,
+                                x_pos+10+ig_start+font.measure("ig"), yline,
+                                fill=self._rgb(getattr(config, "FARBE_UNTERSTREICHUNG", (0,0,0))),
+                                width=getattr(config, "LINIENBREITE_STANDARD", 1))
+                # Binnen-ig
+                for i in range(len(token)-2):
+                    if token[i:i+2].lower()=="ig" and i != len(token)-2:
+                        xpos = x_pos + 10 + font.measure(token[:i+1])
+                        ypos = height//2 + font.metrics("linespace")//2
+                        r = 2
+                        c.create_oval(xpos-r, ypos, xpos+r, ypos+2*r,
+                                    fill=self._rgb(getattr(config, "FARBE_UNTERSTREICHUNG", (0,0,0))),
+                                    outline="")
 
-        # Farbe für Person (Beispiel)
-        if "person" in annotations:
-            fg = config.FARBE_PERSON if hasattr(config, "FARBE_PERSON") else "blue"
+            # --- Pausenmarker ---
+            if "atempause" in pause:
+                yline = y_pos + oy + h + 2
+                length = getattr(config, "MARKER_BREITE_LANG", 12)*2
+                c.create_line(mid_x, yline, mid_x+length, yline,
+                            fill=self._rgb(getattr(config, "FARBE_ATEMPAUSE", (1,0,0))),
+                            width=getattr(config, "LINIENBREITE_STANDARD", 1))
+            if "staupause" in pause:
+                c.create_rectangle(mid_x, y_pos+oy, mid_x+w, y_pos+oy+h,
+                                fill=self._rgb(getattr(config, "FARBE_STAUPAUSE", (0,1,0))),
+                                width=0)
+            if "pause_gedanken" in gedanken:
+                cx = mid_x + w/2; cy = y_pos+oy+h/2; r = w/2
+                c.create_oval(cx-r, cy-r, cx+r, cy+r,
+                            fill=self._rgb(getattr(config, "FARBE_GEDANKENPAUSE", (0,0,1))),
+                            width=0)
 
-        return {"fg": fg, "font": font}
-
-    # def _create_image_button(self, parent, bildname):
-    #     """
-    #     Erzeugt einen Tkinter Button mit Bild aus ./Eingabe/bilder/{bildname}
-    #     Bild wird auf max 24x24 px skaliert.
-    #     """
-    #     bildpfad = os.path.join("Eingabe", "bilder", bildname)
-    #     if not os.path.exists(bildpfad):
-    #         # Falls Bild fehlt, Button mit Text
-    #         return tk.Button(parent, text="[Bild fehlt]")
-    #     try:
-    #         img = Image.open(bildpfad)
-    #         img.thumbnail((24, 24))
-    #         img_tk = ImageTk.PhotoImage(img)
-    #         btn = tk.Button(parent, image=img_tk)
-    #         btn.image = img_tk  # Referenz erhalten
-    #         return btn
-    #     except Exception as e:
-    #         return tk.Button(parent, text="[Bild Fehler]")
-
-    # def _create_hartkodierter_marker_button(self, parent, text):
-    #     """
-    #     Erzeugt einfachen Button mit Text als Marker
-    #     """
-    #     return tk.Button(parent, text=text)
-
-    # def _style_ig_in_token_button(self, token, token_button):
-    #     """
-    #     Setzt Unterstreichung am Wortende 'ig' und Punktierung (Unterpunkt) auf Binnen-'ig'
-    #     Für Tkinter-Button funktioniert nur begrenzt:
-    #     --> Lösung: Schriftart mit Underline für Endung, ansonsten kann man Unterpunkt schlecht darstellen,
-    #     deshalb keine reine Button-Variante möglich.
-    #     -> Alternative: Tooltip o. Label
-    #     """
-
-    #     # Hier können wir nur 'ig' am Ende unterstreichen via Font-Konfiguration nicht direkt
-    #     # Tkinter Button unterstützt kein partielle Unterstreichung, also schwierig.
-    #     # Alternative: Gesamten Text unterstreichen, oder Tooltip mit Hinweis
-    #     if token.endswith("ig"):
-    #         # Gesamten Text unterstreichen als Workaround
-    #         f = token_button.cget("font")
-    #         # Font-Objekt bauen
-    #         font = tk.font.Font(font=f)
-    #         font.configure(underline=True)
-    #         token_button.configure(font=font)
-
-        # Binnen-ig Unterpunktung wäre mit Button schwer darstellbar
-        # Alternative: z.B. Tooltip oder Zusatzlabel anzeigen (hier nicht implementiert)
-        # Für GUI bessere Lösung wäre RichText, aber Tkinter unterstützt das nicht direkt.
-
-    # --- PDF RENDERING ---
-
-    # def _render_pdf(self, c, dict_element, x_pos, y_pos, text_width, annotations):
-    #     """
-    #     Zeichnet Token + Marker auf ReportLab Canvas
-    #     """
-    #     token = dict_element.get("token", "?")
-
-    #     # 1) Schriftart & Farbe setzen
-    #     self._set_pdf_font_and_color(c, annotations)
-
-    #     # 2) Token zeichnen
-    #     c.drawString(x_pos, y_pos, token)
-
-    #     # 3) Marker zeichnen (Bilder oder hartkodiert)
-    #     for aufgabe_id, annotationen_liste in config.AUFGABEN_ANNOTATIONEN.items():
-    #         for annot in annotationen_liste:
-    #             name = annot.get('name')
-    #             if not name:
-    #                 continue
-    #             name_lower = name.lower()
-    #             if name_lower in annotations:
-    #                 verwende_hartkodiert = annot.get('VerwendeHartKodiert', True)
-    #                 bild = annot.get('bild')
-
-    #                 if not verwende_hartkodiert and bild:
-    #                     bildpfad = os.path.join("Eingabe", "bilder", bild)
-    #                     if os.path.exists(bildpfad):
-    #                         try:
-    #                             # Bildposition leicht oberhalb Text
-    #                             c.drawImage(bildpfad, x_pos, y_pos + 12, width=12, height=12, mask='auto')
-    #                         except:
-    #                             pass
-    #                 else:
-    #                     # Hartkodierte Marker je nach Name
-    #                     self._zeichne_hartkodierten_marker_pdf(c, name_lower, x_pos, y_pos, text_width)
-
-    #     # 4) "ig" Markierungen (Unterstreichen am Wortende, Unterpunkt bei Binnen-ig)
-    #     self._zeichne_ig_marker_pdf(c, token, x_pos, y_pos, text_width)
-
-    # def _set_pdf_font_and_color(self, c, annotations):
-    #     """
-    #     Setzt Font und Farbe auf Canvas c je nach Annotationen
-    #     """
-
-    #     # Default
-    #     fontname = "Helvetica"
-    #     fontsize = 12
-    #     color = black
-
-    #     if "hauptbetonung" in annotations:
-    #         fontname = "Helvetica-Bold"
-    #     elif "nebenbetonung" in annotations:
-    #         fontname = "Helvetica-Oblique"
-
-    #     if "person" in annotations:
-    #         color = config.FARBE_PERSON if hasattr(config, "FARBE_PERSON") else blue
-
-    #     c.setFont(fontname, fontsize)
-    #     c.setFillColor(color)
-
-    # def _zeichne_hartkodierten_marker_pdf(self, c, name, x_pos, y_pos, text_width):
-    #     """
-    #     Zeichnet Marker (Linien, Kreise, Rechtecke) auf PDF
-    #     Nutzt Farben & Linienbreiten aus config (Beispielwerte anpassen)
-    #     """
-    #     c.saveState()
-    #     linienbreite = getattr(config, "LINIENBREITE_STANDARD", 1)
-    #     c.setLineWidth(linienbreite)
-
-    #     # Beispiel-Marker nach Name (aus deinem Beispiel übernommen)
-    #     if name == "starten":
-    #         c.setStrokeColor(config.FARBE_SPANNUNG if hasattr(config, "FARBE_SPANNUNG") else green)
-    #         c.line(x_pos, y_pos + 15, x_pos + text_width, y_pos + 20)
-    #     elif name == "halten":
-    #         c.setStrokeColor(config.FARBE_SPANNUNG if hasattr(config, "FARBE_SPANNUNG") else green)
-    #         c.line(x_pos, y_pos + 15, x_pos + text_width, y_pos + 15)
-    #     elif name == "stoppen":
-    #         c.setStrokeColor(config.FARBE_SPANNUNG if hasattr(config, "FARBE_SPANNUNG") else green)
-    #         c.line(x_pos, y_pos + 20, x_pos + text_width, y_pos + 15)
-    #     elif name == "linie":
-    #         c.setStrokeColor(black)
-    #         c.line(x_pos, y_pos + 10, x_pos + text_width, y_pos + 10)
-    #     elif name == "rechteck":
-    #         c.setStrokeColor(black)
-    #         c.rect(x_pos, y_pos + 8, text_width / 2, 8)
-    #     elif name == "kreis":
-    #         c.setStrokeColor(black)
-    #         c.circle(x_pos + text_width / 4, y_pos + 12, 4)
-    #     elif name == "fett":
-    #         # Beispiel: nichts, da Schrift schon fett
-    #         pass
-    #     # Weitere hartkodierte Marker nach Bedarf hier ergänzen
-    #     c.restoreState()
-
-    # def _zeichne_ig_marker_pdf(self, c, token, x_pos, y_pos, text_width):
-    #     """
-    #     Zeichnet Unterstreichung für 'ig' am Wortende
-    #     Zeichnet Unterpunkte (kleine Punkte) für Binnen-'ig'
-    #     """
-
-    #     c.saveState()
-    #     c.setStrokeColor(black)
-    #     c.setLineWidth(1)
-
-    #     # Unterstreiche 'ig' am Wortende
-    #     if token.endswith("ig"):
-    #         text_len = c.stringWidth(token, "Helvetica", 12)
-    #         # Position des 'ig' etwa: am Ende minus Breite von "ig"
-    #         ig_width = c.stringWidth("ig", "Helvetica", 12)
-    #         start_x = x_pos + text_len - ig_width
-    #         c.line(start_x, y_pos - 2, start_x + ig_width, y_pos - 2)
-
-    #     # Binnen 'ig' -> Unterpunkt zeichnen
-    #     # Suche alle 'ig' im Wort, außer am Ende
-    #     indices = []
-    #     for i in range(len(token)-2):
-    #         if token[i:i+2] == "ig":
-    #             indices.append(i)
-
-    #     for idx in indices:
-    #         if idx == len(token)-2:
-    #             continue  # Endung, bereits gezeichnet
-
-    #         # Unterpunkt zeichnen: kleiner Kreis unter Buchstaben
-    #         pos_x = x_pos + c.stringWidth(token[:idx+1], "Helvetica", 12)
-    #         pos_y = y_pos - 5
-    #         c.circle(pos_x, pos_y, 1, stroke=1, fill=1)
-
-    #     c.restoreState()
+            if "gedanken_ende" in gedanken and "pause_gedanken" not in gedanken:
+                off = w/2
+                c.create_line(x_pos+off, y_pos+oy, x_pos+off+w, y_pos+oy, fill=_rgb(config.FARBE_GEDANKENENDE), width=config.LINIENBREITE_STANDARD)
+                c.create_line(x_pos+off, y_pos+oy+h, x_pos+off+w, y_pos+oy+h, fill=_rgb(config.FARBE_GEDANKENENDE), width=config.LINIENBREITE_STANDARD)
 
 
 
+
+    
