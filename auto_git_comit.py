@@ -7,14 +7,19 @@ from tkinter import simpledialog, messagebox
 from sprecher_annotationstool import SprecherAnnotationsTool
 from log_manager import LogManager
 
-
 def auto_git_commit():
     repo_path = os.path.dirname(os.path.abspath(__file__))
     os.chdir(repo_path)
 
+    # Prüfen, ob es Änderungen gibt
+    result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+    if not result.stdout.strip():
+        # Keine Änderungen
+        return
+
+    # Änderungen hinzufügen
     subprocess.run(["git", "add", "."], check=False)
 
-    # Tkinter-Fenster verstecken, damit nur Dialog erscheint
     root = tk.Tk()
     root.withdraw()
 
@@ -30,7 +35,6 @@ def auto_git_commit():
         messagebox.showerror("Fehler", f"Git-Auto-Commit fehlgeschlagen:\n{e}")
     finally:
         root.destroy()
-
 
 if __name__ == "__main__":
     #Haupttool
