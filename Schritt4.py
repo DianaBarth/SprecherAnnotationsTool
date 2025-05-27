@@ -6,7 +6,7 @@ import Eingabe.config as config # Importiere das komplette config-Modul
 # Konfiguration
 MODEL_NAME = ""  # Wird später durch GUI gesetzt/überschrieben
 
-def KI_Analyse(client, messages, dateiname="", wortnr_bereich=""):
+def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
     try:
         # Kombiniere Messages zu Prompt-String
         prompt = ""
@@ -29,6 +29,21 @@ def KI_Analyse(client, messages, dateiname="", wortnr_bereich=""):
         print(f"[FEHLER] KI-Anfrage fehlgeschlagen: {e}")
         return None
 
+def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
+    try:
+        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient …")
+        content = client.generate(prompt_text, max_length=1024)
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+        if dateiname and wortnr_bereich:
+            log_antwort(dateiname, wortnr_bereich, content)
+
+        return content
+    except Exception as e:
+        print(f"[FEHLER] KI-Anfrage fehlgeschlagen: {e}")
+        return None
+
+
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = False,progress_callback=None ):
     try:
         if not isinstance(dateipfad, str):
@@ -45,37 +60,47 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
             with open(dateipfad, 'r', encoding='utf-8') as f:
                 satz_daten = json.load(f)
 
-            messages = [
+            messages_Chat = [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": json.dumps(satz_daten)}
             ]
+            messages_Flat = f"{prompt}\n{json.dumps(satz_daten)}"
 
-            # Modell übergeben
-            ki_ergebnis = KI_Analyse(
-                client, messages,
+           # Daten an Modell übergeben
+            if client.check_chat_model():
+                ki_ergebnis = KI_Analyse_Chat(
+                client, messages_Chat,
                 dateiname=os.path.basename(dateipfad),
                 wortnr_bereich="",             
-            )
-            
-            # → KI-Antwort in Textdatei speichern
-            antwort_log_datei = os.path.join(ki_ordner, f"{aufgaben_name}_KIAntwort.txt")
-            with open(antwort_log_datei, 'a', encoding='utf-8') as f:
-                f.write(ki_ergebnis + "\n\n")  # jeweils mit Abstand anhängen
+                )
+            else:
+                ki_ergebnis = KI_Analyse_Flat(
+                client, messages_Flat,
+                dateiname=os.path.basename(dateipfad),
+                wortnr_bereich="",             
+                )
+
+            if ki_ergebnis:                
+             
+                # → KI-Antwort in Textdatei speichern
+                antwort_log_datei = os.path.join(ki_ordner, f"{aufgaben_name}_KIAntwort.txt")
+                with open(antwort_log_datei, 'a', encoding='utf-8') as f:
+                    f.write(ki_ergebnis + "\n\n")  # jeweils mit Abstand anhängen
+                    
+                try:
+                    dekodiert = json.loads(ki_ergebnis)
+                    ki_ergebnis = dekodiert
+                except (json.JSONDecodeError, TypeError):
+                    print("[HINWEIS] KI-Ergebnis war kein JSON-String oder bereits dekodiert.")
+
+                with open(result_file_path, 'w', encoding='utf-8') as result_file:
+                    json.dump(ki_ergebnis, result_file, indent=4, ensure_ascii=False)
+
+                print(f"[INFO] Ergebnis gespeichert unter: {result_file_path}")
+                dekodiere_und_überschreibe(result_file_path)
                 
-            try:
-                dekodiert = json.loads(ki_ergebnis)
-                ki_ergebnis = dekodiert
-            except (json.JSONDecodeError, TypeError):
-                print("[HINWEIS] KI-Ergebnis war kein JSON-String oder bereits dekodiert.")
-
-            with open(result_file_path, 'w', encoding='utf-8') as result_file:
-                json.dump(ki_ergebnis, result_file, indent=4, ensure_ascii=False)
-
-            print(f"[INFO] Ergebnis gespeichert unter: {result_file_path}")
-            dekodiere_und_überschreibe(result_file_path)
-            
-            if progress_callback:
-               progress_callback(100)
+        if progress_callback:
+            progress_callback(100)
     except Exception as e:
         print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
         

@@ -18,7 +18,7 @@ class SprecherAnnotationsTool(tk.Tk):
         self.title("Sprecher-Annotationen-Tool")
 
         # HuggingFace Client initialisieren
-        self.client = HuggingFaceClient(logger)
+        self.client = HuggingFaceClient()
 
         # Notebook anlegen, mit grid platzieren
         self.notebook = ttk.Notebook(self)

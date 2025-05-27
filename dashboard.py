@@ -1011,7 +1011,7 @@ class DashBoard(ttk.Frame):
                             modell_name = self.model_selection_boxes[aufgaben_id].get()
                             print(f"[DEBUG] Modell für {task_name}: {modell_name}")
 
-                        self.client.CheckandSet_model(modell_name)
+                        self.client.check_and_set_model(modell_name)
 
                         futures.append(
                             executor.submit(

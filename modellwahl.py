@@ -261,8 +261,7 @@ class InstallationModellwahl(ttk.Frame):
 
         def load_task():
             try:
-                self.client.set_model(model_name)
-                self.client.check_and_load_model()
+                self.client.check_and_set_model(model_name)
                 self.after(0, lambda: self.status_lbl.config(text=f"Modell {model_name} geladen."))
             except Exception as e:
                 self.after(0, lambda: messagebox.showerror("Fehler", f"Fehler beim Laden des Modells:\n{e}"))
@@ -271,6 +270,7 @@ class InstallationModellwahl(ttk.Frame):
                 self.after(0, self._loading_finished)
 
         threading.Thread(target=load_task, daemon=True).start()
+
 
     def _loading_finished(self):
         self.progress.stop()
