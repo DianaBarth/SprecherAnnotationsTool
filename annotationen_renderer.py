@@ -110,16 +110,16 @@ class AnnotationRenderer:
         annotationswert = annotationswert.lower()
         for aufgaben_id, annot_liste in config.AUFGABEN_ANNOTATIONEN.items():
             aufgabenname = config.KI_AUFGABEN.get(aufgaben_id)
-            if aufgabenname != feldname:
+            if aufgabenname.lower() != feldname.lower():
                 continue
             for annot in annot_liste:
-                name = annot.get("name")
+                name = annot.get("name").lower()
                 verwende = annot.get("VerwendeHartKodiert", False)
                 if name is None:
                     if verwende:
                         print(f"VerwendeHartKodiert=True für Feld {feldname} ohne Namen (allgemein) erkannt")
                         return True
-                elif name.lower() == annotationswert and verwende:
+                elif name.lower() == annotationswert.lower() and verwende:
                     print(f"VerwendeHartKodiert=True für Feld {feldname} mit Wert {annotationswert} erkannt")
                     return True
         print("Keine Hartkodierung aktiviert gefunden")
@@ -444,9 +444,6 @@ class AnnotationRenderer:
         for aufgabenname in config.KI_AUFGABEN.values():
             marker_wert = element.get(aufgabenname)
 
-            if marker_wert is None:
-                continue
-
             aufgaben_id = self._get_aufgaben_id_by_name(aufgabenname)
             annot_liste = config.AUFGABEN_ANNOTATIONEN.get(aufgaben_id, [])
 
@@ -461,5 +458,7 @@ class AnnotationRenderer:
                     self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, marker_y, w, h, oy, linien_breite)
                 elif annot.get("bild"):
                     self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h)
-                else:
+                elif marker_wert:
                     self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert)
+                else:
+                    pass
