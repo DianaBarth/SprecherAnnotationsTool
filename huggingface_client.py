@@ -107,6 +107,10 @@ class HuggingFaceClient:
                 print("[Debug] Lade Mistral Sprachmodell")
                 from transformers import MistralForCausalLM, AutoTokenizer
                 self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                  # Pad-Token setzen, falls nicht vorhanden
+                if self.tokenizer.pad_token is None:
+                    self.tokenizer.pad_token = self.tokenizer.eos_token
+                    print(f"Pad token auf EOS token gesetzt: {self.tokenizer.pad_token}")                    
                 self.model = MistralForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
@@ -124,15 +128,27 @@ class HuggingFaceClient:
 
         print(f"[HuggingFaceClient] Modell '{model_name}' erfolgreich geladen.")
    
-    def generate(self, prompt: str, max_length: int = 200) -> str:
-        """Generiert eine Antwort für einen Prompt."""
+    def generate(self, prompt: str, max_new_tokens: int = 200) -> str:
         if not self.model_name:
             raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
+        
         print(f"[INFO] Generiere mit '{self.model_name}': {prompt}")
-        inputs = self.tokenizer(prompt, return_tensors="pt", padding=False, truncation=True)
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            return_attention_mask=True
+        ).to(self.model.device)
+        
         outputs = self.model.generate(
-            inputs["input_ids"], max_length=max_length, num_return_sequences=1
+            inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            max_new_tokens=max_new_tokens,
+            num_return_sequences=1,
+            pad_token_id=self.tokenizer.pad_token_id
         )
+        
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 

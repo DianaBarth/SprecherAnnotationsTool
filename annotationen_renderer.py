@@ -465,7 +465,7 @@ class AnnotationRenderer:
     def _zeichne_ik(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False):
         farbe = config.FARBE_UNTERSTREICHUNG
         punkt_radius = 0.8
-        print(f"[_zeichne_ik] numerisch True: token='{token}' Länge={len(token)}, durchschnittsbreite= {self.Durchschnittsbreite}")
+        print(f"[_zeichne_ik] token='{token}' Länge={len(token)}, durchschnittsbreite= {self.Durchschnittsbreite}")
         # Falls numerisch == True, zeichnen wir für jeden Buchstaben einen Punkt unter das Token
         if numerisch:
             zeichenbreite =self.Durchschnittsbreite
