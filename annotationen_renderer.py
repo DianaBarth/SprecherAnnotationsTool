@@ -35,20 +35,21 @@ class AnnotationRenderer:
         self.x_pos = 10
         self.y_pos = 10
 
-    def rendern(self, index=0, dict_element=None, gui_canvas=None, pdf_canvas=None):
+    def rendern(self, index=0, dict_element=None, naechstes_dict_element=None, gui_canvas=None, pdf_canvas=None):
         if gui_canvas is not None:
             self.ist_PDF = False
-            return self.auf_canvas_rendern(gui_canvas, index, dict_element)
+            return self.auf_canvas_rendern(gui_canvas, index, dict_element,naechstes_dict_element)
         else:
             self.ist_PDF = True
-            return self.auf_canvas_rendern(pdf_canvas, index, dict_element)
+            return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
-    def auf_canvas_rendern(self, canvas, index, element):
+    def auf_canvas_rendern(self, canvas, index, element,naechstes_element=None):
         print(f"auf_canvas_rendern aufgerufen: index={index}, token={element.get('token', '')}, ist_PDF={self.ist_PDF}")
 
         token = element.get('token', '')
-        annotation = element.get("annotation", "")
-        
+        annotation = element.get("annotation", [])
+
+        # harter Zeilenumbruch
         if token == '' or 'zeilenumbruch' in annotation:
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
             self.x_pos = 10
@@ -58,21 +59,30 @@ class AnnotationRenderer:
 
         schrift = self.schrift_holen(element)
 
+        # Berechne Breite des Tokens
         if not self.ist_PDF:
-            # GUI-Fall: Schrift ist tkFont.Font + farbe
             schriftobjekt, schriftfarbe = schrift
             text_breite = schriftobjekt.measure(token)
             text_hoehe = schriftobjekt.metrics("linespace")
-            print(f"Textbreite (GUI): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe; {schriftfarbe}")
+            print(f"Textbreite (GUI): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
         else:
-            # PDF-Fall: Schrift ist Tupel (Familie, Größe, Farbe)
             schriftname, schriftgroesse, schriftfarbe = schrift          
             text_breite = canvas.stringWidth(token, schriftname, schriftgroesse)
             text_hoehe = schriftgroesse
-            print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe; {schriftfarbe}")
+            print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
 
-        if self.x_pos + text_breite > self.max_breite:
-            print(f"Zeilenumbruch erzwungen, da x_pos+text_breite ({self.x_pos}+{text_breite}) > max_breite ({self.max_breite})")
+        # Prüfen, ob das nächste Token ein Satzzeichen ohne Space ist
+        extra_space = 2  # z.B. 2 Pixel Abstand nach Token
+        try:            
+            naechste_annotation = naechstes_element.get("annotation", [])
+            if "satzzeichenOhneSpace" in naechste_annotation:
+                extra_space = 0
+        except IndexError:
+            pass
+
+        # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
+        if self.x_pos + text_breite + extra_space > self.max_breite:
+            print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) > max_breite ({self.max_breite})")
             self.x_pos = 10
             self.y_pos += 2 * self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
@@ -80,8 +90,9 @@ class AnnotationRenderer:
         print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
         self._zeichne_token(canvas, index, element, self.x_pos, self.y_pos, schrift)
 
-        self.x_pos += text_breite  # x-Position für das nächste Token aktualisieren
+        self.x_pos += text_breite + extra_space  # x-Position für das nächste Token aktualisieren
         print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
+
 
     def get_person_color(self, person):
         print(f"get_person_color aufgerufen mit person={person}")

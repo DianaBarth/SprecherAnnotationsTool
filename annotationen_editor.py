@@ -63,9 +63,11 @@ class AnnotationenEditor(ttk.Frame):
 
         # Jeden Token einzeln rendern
         for idx, json_dict in enumerate(self.json_dicts):
+            naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
             self.renderer.rendern(
                 index=idx,
-                gui_canvas=self.canvas,
+                gui_canvas=self.canvas,                
+                naechstes_dict_element=naechstes_element,
                 dict_element=json_dict
             )
             # Klick-Event für jeden Token-Tag binden, um Detailanzeige zu starten
