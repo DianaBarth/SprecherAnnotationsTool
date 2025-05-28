@@ -500,3 +500,20 @@ class AnnotationRenderer:
                     self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert)
                 else:
                     pass
+
+    def annotation_aendern(self, canvas, wortnr):
+        tag = f'token_{wortnr}'
+
+        # 1. Vorherige Darstellung des Tokens entfernen (Text + Annotationen)
+        canvas.delete(tag)
+
+        # 2. Token-Element und Position aus self.canvas_elemente_pro_token holen
+        element = self.json_dicts[wortnr]
+        x = self.canvas_elemente_pro_token[wortnr]["x"]
+        y_pos = self.canvas_elemente_pro_token[wortnr]["y"]
+
+        # 3. Schriftinfo (Font, Farbe) - je nach Implementierung
+        schrift = self.ermittle_schrift(element)
+
+        # 4. Token und Annotationen neu zeichnen
+        self._zeichne_token(canvas, wortnr, element, x, y_pos, schrift)
