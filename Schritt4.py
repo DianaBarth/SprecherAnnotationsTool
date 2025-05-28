@@ -64,7 +64,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": json.dumps(satz_daten)}
             ]
-            messages_Flat = f"{prompt}\n{json.dumps(satz_daten)}"
+            messages_Flat = f"Anweisung: \n {prompt} \n Input: \n {json.dumps(satz_daten, ensure_ascii=False)}"
 
            # Daten an Modell übergeben
             if client.check_chat_model():

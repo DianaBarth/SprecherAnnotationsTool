@@ -4,11 +4,12 @@ import os
 import threading
 import itertools
 import time
+import shutil
 from pathlib import Path
 from typing import List, Optional, Callable, Dict, Any
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import T5Tokenizer, T5ForConditionalGeneration,AutoTokenizer, AutoModelForTokenClassification
+from transformers import T5Tokenizer, T5ForConditionalGeneration,AutoTokenizer, AutoModelForTokenClassification,MistralForTokenClassification,MistralForCausalLM
 from huggingface_hub import list_models, HfApi
 from transformers import AutoTokenizer
 
@@ -52,7 +53,7 @@ class HuggingFaceClient:
             print(f"[Debug] Modell {model_name!r} ist bereits gesetzt, kein Laden nötig.")
 
     def check_chat_model(self):        
-        name = getattr(self, "model", "").lower()
+        name = getattr(self, "model_name","").lower()
         chat_keywords = [
             "chat", "instruct", "zephyr", "hermes", "openchat", "llama2-chat", "vicuna",
             "mistral-instruct", "command", "dialog", "assistant", "alpaca", "gpt", "xwin"
@@ -102,6 +103,14 @@ class HuggingFaceClient:
                 from transformers import T5Tokenizer, T5ForConditionalGeneration
                 self.tokenizer = T5Tokenizer.from_pretrained(model_name)
                 self.model = T5ForConditionalGeneration.from_pretrained(model_name)
+            elif "mistral" in model_name_lower:
+                print("[Debug] Lade Mistral Sprachmodell")
+                from transformers import MistralForCausalLM, AutoTokenizer
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self.model = MistralForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    device_map="auto"    )
             else:
                 print("[Debug] Lade AutoModel")
                 from transformers import AutoTokenizer, AutoModelForTokenClassification
@@ -120,7 +129,7 @@ class HuggingFaceClient:
         if not self.model_name:
             raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
         print(f"[INFO] Generiere mit '{self.model_name}': {prompt}")
-        inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
+        inputs = self.tokenizer(prompt, return_tensors="pt", padding=False, truncation=True)
         outputs = self.model.generate(
             inputs["input_ids"], max_length=max_length, num_return_sequences=1
         )
@@ -250,7 +259,7 @@ class HuggingFaceClient:
                         model_name = model_dir.name.replace("models--", "").replace("--", "/")
                         model_names.add(model_name)
 
-            print(f"[INFO] Installierte Modelle gefunden: {len(model_names)}")
+            print(f"[INFO] Installierte Modelle gefunden: {len(model_names)}+ {model_names} ")
             return sorted(model_names)
 
         except Exception as e:
@@ -437,21 +446,7 @@ class HuggingFaceClient:
                         "text-generation", "token-classification", "question-answering",
                         "conversational", "zero-shot-classification"]
         
-    # Neue Methode zum Deinstallieren des Modells
-    def uninstall_model(self):
-        if os.path.exists(self.model_path) and os.path.isdir(self.model_path):
-            try:
-                shutil.rmtree(self.model_path)
-                print(f"[INFO] Modell '{self.model_name}' erfolgreich deinstalliert (Ordner {self.model_path} gelöscht).")
-                return True
-            except Exception as e:
-                print(f"[FEHLER] Modell '{self.model_name}' konnte nicht deinstalliert werden: {e}")
-                return False
-        else:
-            print(f"[WARNUNG] Modellordner '{self.model_path}' existiert nicht.")
-            return False
 
-# # class HuggingFaceClient:
 #     """
 #     Wrapper-Klasse für Hugging Face Modelle.
 #     Lädt Modelle und Tokenizer, listet verfügbare Modelle,

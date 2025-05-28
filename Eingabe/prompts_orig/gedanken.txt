@@ -1,6 +1,6 @@
 Aufgabe 3: Gedankenübergänge erkennen
 
-Gegeben ist ein JSON mit Tokens eines literarischen Satzes eines Kapitels. Jedes Objekt enthält:  
+Gegeben ist ein JSON mit Tokens aus mehreren literarischen Sätzen eines Kapitels. Jedes Objekt enthält: 
 - "KapitelName": Nummer des Kapitels  
 - "WortNr": Position des Tokens im Kapitel  
 - "token": Wort oder Satzzeichen  

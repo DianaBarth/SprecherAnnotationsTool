@@ -4,7 +4,7 @@ import Eingabe.config as config # Importiere das komplette config-Modul
 
 satzzeichen = {".", "!", "?"}
 annotation_trenner = "zeilenumbruch"
-MAX_WOERTER_PRO_DATEI = 1000
+MAX_WOERTER_PRO_DATEI = 5000
 
 def bereinige_eintrag(eintrag):
     """Entfernt 'annotation' sowie alle Felder, deren Key in KI_AUFGABEN.values() vorkommt."""

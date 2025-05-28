@@ -1,7 +1,7 @@
 Aufgabe {AufgabenNr}: {AufgabneName}
 
 Aufgabe:  
-Gegeben ist ein JSON mit Tokens eines literarischen Satzes eines Kapitels. Jedes Objekt enthält:  
+Gegeben ist ein JSON mit Tokens aus mehreren literarischen Sätzen eines Kapitels. Jedes Objekt enthält:  
 - "KapitelName": Name des Kapitels  
 - "WortNr": Position des Tokens im Kapitel  
 - "token": Wort oder Satzzeichen  
@@ -29,5 +29,5 @@ Beispiel Eingabe:
 
 Beispiel Ausgabe:  
 [
-  {"KapitelName": "Kapitel1", "WortNr": 2:3, "{AufgabenName}": "{Annotation1}"}
+  {"KapitelNummer": "1", "WortNr": 2:3, "{AufgabenName}": "{Annotation1}"}
 ]

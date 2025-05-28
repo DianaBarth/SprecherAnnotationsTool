@@ -1,4 +1,4 @@
-Gegeben ist ein JSON mit Tokens eines literarischen Satzes eines Kapitels. Jedes Objekt enthält:
+Gegeben ist ein JSON mit Tokens aus mehreren literarischen Sätzen eines Kapitels. Jedes Objekt enthält: 
 - "KapitelNummer": Nummer des Kapitels
 - "WortNr": die Position des Tokens im Kapitel
 - "token": das Wort oder Satzzeichen

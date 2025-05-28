@@ -1,7 +1,7 @@
 Aufgabe 2: Betonungen erkennen
 
 Aufgabe:  
-Gegeben ist ein JSON mit Tokens eines literarischen Satzes eines Kapitels. Jedes Objekt enthält:  
+Gegeben ist ein JSON mit Tokens aus mehrerer literarischen Sätzen eines Kapitels. Jedes Objekt enthält:  
 - "KapitelName": Name des Kapitels  
 - "WortNr": Position des Tokens im Kapitel  
 - "token": Wort oder Satzzeichen  
@@ -14,12 +14,12 @@ Beispiel Eingabe:
 [
   {"KapitelNummer": "1", "WortNr": 1, "token": "Das"},
   {"KapitelNummer" :"1", "WortNr": 2, "token": "Haus"},
-  {"KapitelNummer": "1", "WortNr": 3, "token": "ist"}
-  {"KapitelNummer": "1", "WortNr": 4, "token": "hoch"}
+  {"KapitelNummer": "1", "WortNr": 3, "token": "ist"},
+  {"KapitelNummer": "1", "WortNr": 4, "token": "hoch"},
   {"KapitelNummer": "1", "WortNr": 5, "token": "."}
 ]
 
 Beispiel Ausgabe:  
 [
-  {"KapitelName": "Kapitel1", "WortNr": 2, "Betonung": "hauptbetonung"}
+  {"KapitelNummer": "1", "WortNr": 2, "Betonung": "hauptbetonung"}
 ]
