@@ -8,10 +8,10 @@ import hashlib
 from collections import defaultdict
 import Eingabe.config as config  # Importiere das komplette config-Modul
 
-def _rgb_to_hex(rgb):
+def zu_Hex_farbe(rgb):
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
-def zu_pdf_farbe(rgb):
+def zu_PDF_farbe(rgb):
     return tuple(x / 255.0 for x in rgb)
 
 
@@ -57,19 +57,19 @@ class AnnotationRenderer:
             return
 
         schrift = self.schrift_holen(element)
-        print(f"Schrift ermittelt: {schrift}")
 
         if not self.ist_PDF:
-            # GUI-Fall: Schrift ist tkFont.Font
-            text_breite = schrift.measure(token)
-            text_hoehe = schrift.metrics("linespace")
-            print(f"Textbreite (GUI): {text_breite}, Texthöhe: {text_hoehe}")
+            # GUI-Fall: Schrift ist tkFont.Font + farbe
+            schriftobjekt, schriftfarbe = schrift
+            text_breite = schriftobjekt.measure(token)
+            text_hoehe = schriftobjekt.metrics("linespace")
+            print(f"Textbreite (GUI): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe; {schriftfarbe}")
         else:
             # PDF-Fall: Schrift ist Tupel (Familie, Größe, Farbe)
-            schriftname, schriftgroesse, _ = schrift  # Farbe ignorieren hier
+            schriftname, schriftgroesse, schriftfarbe = schrift          
             text_breite = canvas.stringWidth(token, schriftname, schriftgroesse)
             text_hoehe = schriftgroesse
-            print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}")
+            print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe; {schriftfarbe}")
 
         if self.x_pos + text_breite > self.max_breite:
             print(f"Zeilenumbruch erzwungen, da x_pos+text_breite ({self.x_pos}+{text_breite}) > max_breite ({self.max_breite})")
@@ -87,14 +87,19 @@ class AnnotationRenderer:
         print(f"get_person_color aufgerufen mit person={person}")
         if not person:
             print("Keine Person angegeben, Standardfarbe verwenden")
-            return config.FARBE_STANDARD
-        h = hashlib.md5(person.encode('utf-8')).hexdigest()
-        r = max(int(h[0:2], 16) / 255.0, 0.2)
-        g = max(int(h[2:4], 16) / 255.0, 0.2)
-        b = max(int(h[4:6], 16) / 255.0, 0.2)
-        farbe = (r, g, b)
-        print(f"Farbe für Person {person}: {farbe}")
-        return farbe
+            rgb = config.FARBE_STANDARD
+        else:
+            h = hashlib.md5(person.encode('utf-8')).hexdigest()
+            r = max(int(h[0:2], 16), 51)  # mind. ~0.2*255
+            g = max(int(h[2:4], 16), 51)
+            b = max(int(h[4:6], 16), 51)
+            rgb = (r, g, b)
+            print(f"Farbe für Person {person}: {rgb}")
+
+        if self.ist_PDF:
+            return zu_PDF_farbe(rgb)  
+        else:
+            return zu_Hex_farbe(rgb)  
 
     def verwende_hartkodiert_fuer_annotation(self, feldname, annotationswert):
         print(f"Prüfe verwende_hartkodiert_fuer_annotation: feldname={feldname}, annotationswert={annotationswert}")
@@ -120,7 +125,8 @@ class AnnotationRenderer:
         print("Keine Hartkodierung aktiviert gefunden")
         return False
 
-    def schrift_holen(self, element=None, ist_pdf=False):
+    def schrift_holen(self, element=None):
+
         betonung = element.get("betonung", None) if element else None    
         person = element.get("person", None) if element else None
         annotation = element.get("annotation", "") if element else ""
@@ -173,51 +179,89 @@ class AnnotationRenderer:
                 familie = config.SCHRIFTART_STANDARD
 
         # Farbe bestimmen
-        farbe = config.FARBE_STANDARD
+        
+
         if verwende_person_farbe and person:
             farbe = self.get_person_color(person)
-
+        else:
+            if self.ist_PDF:
+                farbe = zu_PDF_farbe(config.FARBE_STANDARD)
+            else:
+                farbe = zu_Hex_farbe(config.FARBE_STANDARD)
+                
         if self.ist_PDF:
             return familie, groesse, farbe  # PDF bekommt auch Farbe zurück
         else:
             schrift = tkFont.Font(family=familie, size=groesse)
             return schrift, farbe  # GUI bekommt Schrift + Farbe für z. B. Label.config(fg=farbe)
         
-    def _zeichne_bild(self, canvas, pfad, x, y, w):
+    def _zeichne_bild(self, canvas, pfad, x, y, w, h):
         if self.ist_PDF:
             try:
-                canvas.drawImage(pfad, x, y, width=w, height=h, preserveAspectRatio=True, mask='auto')
+                canvas.drawImage(pfad, x, y, width=w, height=h*0.8, preserveAspectRatio=True, mask='auto')
             except Exception as e:
                 print(f"Fehler beim Einfügen von Bild {pfad}: {e}")
+        else:
+            try:
+                if not os.path.exists(pfad):
+                    raise FileNotFoundError(f"Bild nicht gefunden: {pfad}")
+
+                # Bild mit PIL öffnen und skalieren
+                img = Image.open(pfad)
+                faktor = (h * 0.5) / img.height  # Zielhöhe: 0.5 * h
+                neue_breite = int(img.width * faktor)
+                neue_hoehe = int(img.height * faktor)
+                img = img.resize((neue_breite, neue_hoehe), Image.ANTIALIAS)
+
+                tk_img = ImageTk.PhotoImage(img)
+                canvas.image = getattr(canvas, "image", [])  # Verhindert Garbage Collection
+                canvas.image.append(tk_img)
+
+                canvas.create_image(x, y, anchor='nw', image=tk_img)
+            except Exception as e:
+                print(f"Fehler beim Zeichnen von Bild {pfad}: {e}")
+                # Platzhalter-Rechteck, wenn Bild fehlt
+                farbe = "#999999"
+                canvas.create_rectangle(x, y, x + w, y + h * 0.5, outline="red", fill=farbe)
 
     def _zeichne_fehlendesBild(self, canvas, x, y, width, height, annotationsname):
-        r, g, b = self.get_person_color(annotationsname)
+        farbe = self.get_person_color(annotationsname)
 
-        if not self.ist_pdf:
-            # Tkinter: graues Rechteck füllen
+        if not self.ist_PDF:
+            # Tkinter: farbe ist Hex-String
             canvas.create_rectangle(
                 x, y,
                 x + width, y + height,
                 fill='lightgrey',
-                outline=''  # ohne Rand erst füllen
-            )
-            # Rand in individueller Farbe
-            hex_farbe = '#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255))
-            canvas.create_rectangle(
-                x, y,
-                x + width, y + height,
-                outline=hex_farbe,
+                outline=farbe,
                 width=2
             )
+
+            canvas.create_text(
+                x + width / 2,
+                y + height / 2,
+                text='?',
+                fill=farbe,
+                anchor='center',
+                font=('Arial', int(height * 0.6))
+            )
+
         else:
-            # PDF: graues Rechteck füllen
+            # PDF: farbe ist Tupel (r,g,b) mit Werten 0..1
+            r, g, b = farbe
+
             canvas.setFillColorRGB(0.8, 0.8, 0.8)
             canvas.rect(x, y, width, height, fill=1, stroke=0)
-            # Rand in individueller Farbe
+
             canvas.setStrokeColorRGB(r, g, b)
             canvas.setLineWidth(2)
             canvas.rect(x, y, width, height, fill=0, stroke=1)
-  
+
+            canvas.setFillColorRGB(r, g, b)
+            schriftgroesse = int(height * 0.6)
+            canvas.setFont("Helvetica-Bold", schriftgroesse)
+            canvas.drawCentredString(x + width / 2, y + height / 2 - schriftgroesse / 3, "?")
+
     def _get_aufgaben_id_by_name(self, name):
         for aufgaben_id, n in config.KI_AUFGABEN.items():
             if n == name:
@@ -227,82 +271,82 @@ class AnnotationRenderer:
     def _zeichne_pause_atempause(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_ATEMPAUSE
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.line(x, y_pos + oy + h, x + w, y_pos + oy + h)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
 
     def _zeichne_pause_stau(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_STAU
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.line(x, y_pos + oy + h, x + w, y_pos + oy + h)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
 
     def _zeichne_gedanken_weiter(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_GEDANKEN_ANFANG
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_gedanken_ende(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_GEDANKEN_ENDE
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_gedanken_pause(self, canvas, x, y_pos, w, h, oy, linien_breite):
         # ggf. eigene Farbe oder Stil
         farbe = config.FARBE_GEDANKEN_PAUSE if hasattr(config, "FARBE_GEDANKEN_PAUSE") else config.FARBE_GEDANKEN_ANFANG
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_spannung_start(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_SPANNUNG_START
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_spannung_halten(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_SPANNUNG_HALTEN
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_spannung_stop(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_SPANNUNG_STOPP
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_person(self, canvas, x, y_pos, w, h, sprecher, oy, linien_breite):
@@ -312,22 +356,22 @@ class AnnotationRenderer:
         if not farbe:
             return
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
     def _zeichne_ig(self, canvas, x, y_pos, w, h, wert, oy, linien_breite):  
         # Einfacher Rahmen in Standardfarbe
         farbe = config.FARBE_IG if hasattr(config, "FARBE_IG") else (0, 0, 0)
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_pdf_farbe(farbe))
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
             canvas.rect(x, y_pos + oy, w, h, fill=0)
         else:
-            farbe_hex = _rgb_to_hex(farbe)
+            farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
   
     def _zeichne_hartkodiert(self, canvas, aufgabenname, wert, x, y_pos, w, h, oy, linien_breite):
@@ -364,39 +408,43 @@ class AnnotationRenderer:
         token = element.get('token', '')
         tag = f'token_{index}'
 
-        if not self.ist_pdf:
-            # schrift ist ein tkFont.Font-Objekt (wenn GUI)
+        if not self.ist_PDF:
+            # schrift ist ein Tuple: (tkFont.Font, (r, g, b))
+            schriftobjekt, schriftfarbe = schrift
+
             canvas.create_text(
                 x, y_pos,
                 anchor='nw',
                 text=token,
-                font=schrift,
-                fill='black',
+                font=schriftobjekt,
+                fill=schriftfarbe,
                 tags=(tag,)
             )
-            w = schrift.measure(token)
-            h = schrift.metrics("linespace")
+            w = schriftobjekt.measure(token)
+            h = schriftobjekt.metrics("linespace")
             marker_y = y_pos
         else:
-            # schrift ist Tupel (fontname, fontsize, farbe)
-            pdf_schriftname, pdf_schriftgroesse, _ = schrift
+            # schrift ist Tuple: (fontname, fontsize, (r, g, b))
+            pdf_schriftname, pdf_schriftgroesse, schriftfarbe = schrift
             y_pdf = self._pdf_y_position(canvas, y_pos, pdf_schriftgroesse)
             canvas.setFont(pdf_schriftname, pdf_schriftgroesse)
+            if schriftfarbe:
+                r, g, b = schriftfarbe
+                canvas.setFillColorRGB(r, g, b)
             canvas.drawString(x, y_pdf, token)
             w = canvas.stringWidth(token, pdf_schriftname, pdf_schriftgroesse)
             h = pdf_schriftgroesse
             marker_y = y_pdf
 
         linien_breite = config.LINIENBREITE_STANDARD
-        marker = element.get("annotation", {})
 
-        if isinstance(marker, str):
-            # Falls marker fälschlich ein String ist (nicht dict), überspringen
+        if not isinstance(element, dict):
             return
 
         for aufgabenname in config.KI_AUFGABEN.values():
-            marker_wert = marker.get(aufgabenname) if isinstance(marker, dict) else None
-            if not marker_wert:
+            marker_wert = element.get(aufgabenname)
+
+            if marker_wert is None:
                 continue
 
             aufgaben_id = self._get_aufgaben_id_by_name(aufgabenname)
@@ -405,17 +453,13 @@ class AnnotationRenderer:
             for annot in annot_liste:
                 name = annot.get("name")
                 if name is not None and name != marker_wert:
-                    continue  # nur wenn expliziter Match
+                    continue
 
-                # Y-Verschiebung je nach Aufgabe
                 oy = (h * 0.2) if aufgabenname == "ig" else (-h * 0.8)
 
                 if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
                     self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, marker_y, w, h, oy, linien_breite)
                 elif annot.get("bild"):
                     self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h)
-                else:                 
-                    # Fehlendes Bild als farbig umrandetes graues Rechteck zeichnen
+                else:
                     self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert)
-
- 
