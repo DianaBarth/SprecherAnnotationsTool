@@ -2,9 +2,10 @@ import os
 import tkinter as tk
 from PIL import Image, ImageTk
 from reportlab.pdfgen import canvas
-from reportlab.lib.colors import Color, black, red, blue, green
+from reportlab.lib import colors
 import tkinter.font as tkFont
-
+import hashlib
+from collections import defaultdict
 import Eingabe.config as config  # Importiere das komplette config-Modul
 
 def _rgb_to_hex(rgb):
@@ -41,7 +42,7 @@ class AnnotationRenderer:
             return self.auf_canvas_rendern(gui_canvas, index, dict_element, False)
         else:
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element, True)
-        
+
     def auf_canvas_rendern(self, canvas, index, element, ist_pdf=False):
         token = element.get('token', '')
         annotation = element.get("annotation", "")
@@ -49,7 +50,7 @@ class AnnotationRenderer:
         if token == '' or 'zeilenumbruch' in annotation:
             self.x_pos = 10
             self.y_pos += 2 * self.zeilen_hoehe
-            self.letzte_zeile_y_pos = self.y_pos  # neue Zeile, also merken
+            self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
             return
 
         schrift = self.schrift_holen(element, ist_pdf)
@@ -59,131 +60,199 @@ class AnnotationRenderer:
         if self.x_pos + text_breite > self.max_breite:
             self.x_pos = 10
             self.y_pos += 2 * self.zeilen_hoehe
-            self.letzte_zeile_y_pos = self.y_pos  # neue Zeile, merken
+            self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
 
-        if not ist_pdf:
-            tag = f'token_{index}'
-            canvas.create_text(self.x_pos, self.y_pos,
-                            anchor='nw', text=token,
-                            font=schrift, fill='black',
-                            tags=(tag,))
-            self._zeichne_marker(canvas, element, self.x_pos, self.y_pos, schrift, ist_pdf=False, vorherige_zeile=self.letzte_zeile_y_pos)
+        # Neu: Ein einziger Aufruf von _zeichne_token mit ist_pdf als Parameter
+        self._zeichne_token(canvas, index, element, self.x_pos, self.y_pos, schrift, ist_pdf)
 
-        else:
-            y_pdf = self._pdf_y_position(canvas, self.y_pos, text_hoehe)
-            pdf_schriftname, pdf_schriftgroesse = self.schrift_holen(element, ist_pdf)
-            canvas.setFont(pdf_schriftname, pdf_schriftgroesse)
-            canvas.drawString(self.x_pos, y_pdf, token)
-            self._zeichne_marker(canvas, element, self.x_pos, y_pdf, schrift, ist_pdf=True, vorherige_zeile=self.letzte_zeile_y_pos)
+        self.x_pos += text_breite  # x-Position für das nächste Token aktualisieren
 
-        self.x_pos += text_breite + 10
-        self.letzte_zeile_y_pos = self.y_pos  # aktuelle Zeile merken für nächstes Element
-        
+    def get_person_color(self,person):
+        """Gibt Farb-Tupel für eine Person zurück."""
+        if not person:
+            return config.FARBE_STANDARD
+        h = hashlib.md5(person.encode('utf-8')).hexdigest()
+        r = max(int(h[0:2], 16) / 255.0, 0.2)
+        g = max(int(h[2:4], 16) / 255.0, 0.2)
+        b = max(int(h[4:6], 16) / 255.0, 0.2)
+        return r, g, b
+
+    def verwende_hartkodiert_fuer_annotation(self,feldname, annotationswert):
+        """
+        Prüft, ob für einen bestimmten Wert in einem gegebenen Feld (z. B. "Hauptbetonung" in "betonung"
+        oder "Peter" in "person") laut config.AUFGABEN_ANNOTATIONEN 'VerwendeHartKodiert' aktiviert ist.
+        """
+        if not feldname or not annotationswert:
+            return False
+
+        annotationswert = annotationswert.lower()
+        for aufgaben_id, annot_liste in config.AUFGABEN_ANNOTATIONEN.items():
+            aufgabenname = config.KI_AUFGABEN.get(aufgaben_id)
+            if aufgabenname != feldname:
+                continue
+            for annot in annot_liste:
+                name = annot.get("name")
+                verwende = annot.get("VerwendeHartKodiert", False)
+                if name is None:
+                    # Wenn name=None (z. B. bei person), dann prüfen wir nur auf das Feld + True
+                    if verwende:
+                        return True
+                elif name.lower() == annotationswert and verwende:
+                    return True
+        return False
 
     def schrift_holen(self, element=None, ist_pdf=False):
-        """
-        Liefert entweder:
-        - für Tkinter (ist_pdf=False) ein tkFont.Font-Objekt,
-        - für PDF (ist_pdf=True) ein Tupel (schriftname, schriftgroesse) basierend auf config.
+        betonung = element.get("betonung", None) if element else None
+        annotation = element.get("annotation", None) if element else None
+        person = element.get("person", None) if element else None
 
-        Args:
-            element: dict mit 'betonung' und 'annotation' (optional)
-            ist_pdf: bool, ob PDF-Schrift zurückgegeben werden soll
-        """
+        if betonung:
+            verwende_betonung = self.verwende_hartkodiert_fuer_annotation("betonung", betonung)
+        else:
+            verwende_betonung = False
+      
+        if person:
+            verwende_person_farbe = self.verwende_hartkodiert_fuer_annotation("person", person)
+        else:
+            verwende_person_farbe = False
 
-        betonung = element.get("betonung", "") if element else ""
-        annotation = element.get("annotation", "") if element else ""
-
-        betonung = betonung.lower()
-        annotation = annotation.lower()
-
-        if "überschrift" in annotation:
+        # Schriftgröße und Familie bestimmen
+        if "überschrift" in annotation.lower():
             groesse = config.UEBERSCHRIFT_GROESSE
-            if "hauptbetonung" in betonung:
-                familie = config.SCHRIFTART_UEBERSCHRIFT_HAUPT
-            elif "nebenbetonung" in betonung:
-                familie = config.SCHRIFTART_UEBERSCHRIFT_NEBEN
+            if verwende_betonung:
+                if "hauptbetonung" in betonung.lower():
+                    familie = config.SCHRIFTART_UEBERSCHRIFT_HAUPT
+                elif "nebenbetonung" in betonung.lower():
+                    familie = config.SCHRIFTART_UEBERSCHRIFT_NEBEN
+                else:
+                    familie = config.SCHRIFTART_UEBERSCHRIFT
             else:
                 familie = config.SCHRIFTART_UEBERSCHRIFT
 
-        elif "legende" in annotation:
+        elif "legende" in annotation.lower():
             groesse = config.LEGENDE_GROESSE
-            if "hauptbetonung" in betonung:
-                familie = config.SCHRIFTART_LEGENDE_HAUPT
-            elif "nebenbetonung" in betonung:
-                familie = config.SCHRIFTART_LEGENDE_NEBEN
+            if verwende_betonung:
+                if "hauptbetonung" in betonung.lower():
+                    familie = config.SCHRIFTART_LEGENDE_HAUPT
+                elif "nebenbetonung" in betonung.lower():
+                    familie = config.SCHRIFTART_LEGENDE_NEBEN
+                else:
+                    familie = config.SCHRIFTART_LEGENDE
             else:
                 familie = config.SCHRIFTART_LEGENDE
 
         else:
             groesse = config.TEXT_GROESSE
-            if "hauptbetonung" in betonung:
-                familie = config.SCHRIFTART_BETONUNG_HAUPT
-            elif "nebenbetonung" in betonung:
-                familie = config.SCHRIFTART_BETONUNG_NEBEN
+            if verwende_betonung:
+                if "hauptbetonung" in betonung.lower():
+                    familie = config.SCHRIFTART_BETONUNG_HAUPT
+                elif "nebenbetonung" in betonung.lower():
+                    familie = config.SCHRIFTART_BETONUNG_NEBEN
+                else:
+                    familie = config.SCHRIFTART_STANDARD
             else:
                 familie = config.SCHRIFTART_STANDARD
 
+        # Farbe bestimmen
+        farbe = config.FARBE_STANDARD
+        if verwende_person_farbe and person:
+            farbe = self.get_person_color(person)
+
         if ist_pdf:
-            # PDF: gib Schriftname und Größe zurück (str, int)
-            return familie, groesse
+            return familie, groesse, farbe  # PDF bekommt auch Farbe zurück
         else:
-            # GUI: erstelle und gib Tkinter-Font-Objekt zurück
-            return tkFont.Font(family=familie, size=groesse)
+            schrift = tkFont.Font(family=familie, size=groesse)
+            return schrift, farbe  # GUI bekommt Schrift + Farbe für z. B. Label.config(fg=farbe)
+
+
+    # def auf_canvas_rendern(self, canvas, index, element, ist_pdf=False):
+    #     token = element.get('token', '')
+    #     annotation = element.get("annotation", "")
         
+    #     if token == '' or 'zeilenumbruch' in annotation:
+    #         self.x_pos = 10
+    #         self.y_pos += 2 * self.zeilen_hoehe
+    #         self.letzte_zeile_y_pos = self.y_pos  # neue Zeile, also merken
+    #         return
 
-    def _zeichne_marker(self, canvas, x, y_pos, w, h, marker, oy, ist_pdf):
-        linien_breite = config.LINIENBREITE_STANDARD
+    #     schrift = self.schrift_holen(element, ist_pdf)
+    #     text_breite = schrift.measure(token) if not ist_pdf else canvas.stringWidth(token, schrift[0], schrift[1])
+    #     text_hoehe = schrift.metrics("linespace") if not ist_pdf else schrift[1]
 
-        for aufgabenname in config.KI_AUFGABEN.values():
-            marker_wert = marker.get(aufgabenname)
-            if not marker_wert:
-                continue
+    #     if self.x_pos + text_breite > self.max_breite:
+    #         self.x_pos = 10
+    #         self.y_pos += 2 * self.zeilen_hoehe
+    #         self.letzte_zeile_y_pos = self.y_pos  # neue Zeile, merken
 
-            annot_liste = config.AUFGABEN_ANNOTATIONEN.get(
-                self._get_aufgaben_id_by_name(aufgabenname), [])
+    #     if not ist_pdf:
+    #         tag = f'token_{index}'
+    #         canvas.create_text(self.x_pos, self.y_pos,
+    #                         anchor='nw', text=token,
+    #                         font=schrift, fill='black',
+    #                         tags=(tag,))            
+    #         self._zeichne_marker(canvas, element, self.x_pos, self.y_pos, schrift, ist_pdf)
 
-            for annot in annot_liste:
-                if not annot.get("name"):
-                    continue
-                if annot["name"] != marker_wert:
-                    continue
+    #     else:
+    #         y_pdf = self._pdf_y_position(canvas, self.y_pos, text_hoehe)
+    #         pdf_schriftname, pdf_schriftgroesse = self.schrift_holen(element, ist_pdf)
+    #         canvas.setFont(pdf_schriftname, pdf_schriftgroesse)
+    #         canvas.drawString(self.x_pos, y_pdf, token)
+    #         self._zeichne_marker(canvas, element, self.x_pos, y_pdf, schrift, ist_pdf)
 
-                if annot.get("VerwendeHartKodiert"):
-                    self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, y_pos, w, h, oy, ist_pdf, linien_breite)
-                elif annot.get("bild"):
-                    self._zeichne_bild(canvas, annot["bild"], x, y_pos + oy, w, h, ist_pdf)
+    #     self.x_pos += text_breite + 10
+    #     self.letzte_zeile_y_pos = self.y_pos  # aktuelle Zeile merken für nächstes Element
+        
+    # def schrift_holen(self, element=None, ist_pdf=False):
+    #     """
+    #     Liefert entweder:
+    #     - für Tkinter (ist_pdf=False) ein tkFont.Font-Objekt,
+    #     - für PDF (ist_pdf=True) ein Tupel (schriftname, schriftgroesse) basierend auf config.
 
-    def _zeichne_hartkodiert(self, canvas, aufgabenname, wert, x, y_pos, w, h, oy, ist_pdf, linien_breite):
-        if aufgabenname == "betonung":
-            if wert == "Hauptbetonung":
-                self._zeichne_betonung_haupt(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "Nebenbetonung":
-                self._zeichne_betonung_neben(canvas, x, y_pos, w, h, oy, linien_breite)
-        elif aufgabenname == "pause":
-            if wert == "Atempause":
-                self._zeichne_pause_atem(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "Staupause":
-                self._zeichne_pause_stau(canvas, x, y_pos, w, h, oy, linien_breite)
-        elif aufgabenname == "gedanken":
-            if wert == "gedanken_weiter":
-                self._zeichne_gedanken_weiter(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "gedanken_ende":
-                self._zeichne_gedanken_ende(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "pause_gedanken":
-                self._zeichne_gedanken_pause(canvas, x, y_pos, w, h, oy, linien_breite)
-        elif aufgabenname == "spannung":
-            if wert == "Starten":
-                self._zeichne_spannung_start(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "Halten":
-                self._zeichne_spannung_halten(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "Stoppen":
-                self._zeichne_spannung_stop(canvas, x, y_pos, w, h, oy, linien_breite)
-        elif aufgabenname == "person":
-            self._zeichne_person(canvas, x, y_pos, w, h, wert, oy, linien_breite)
-        elif aufgabenname == "ig":
-            self._zeichne_ig(canvas, x, y_pos, w, h, wert, oy, linien_breite)
+    #     Args:
+    #         element: dict mit 'betonung' und 'annotation' (optional)
+    #         ist_pdf: bool, ob PDF-Schrift zurückgegeben werden soll
+    #     """
 
+    #     betonung = element.get("betonung", "") if element else ""
+    #     annotation = element.get("annotation", "") if element else ""
+
+    #     betonung = betonung.lower()
+    #     annotation = annotation.lower()
+
+    #     if "überschrift" in annotation:
+    #         groesse = config.UEBERSCHRIFT_GROESSE
+    #         if "hauptbetonung" in betonung:
+    #             familie = config.SCHRIFTART_UEBERSCHRIFT_HAUPT
+    #         elif "nebenbetonung" in betonung:
+    #             familie = config.SCHRIFTART_UEBERSCHRIFT_NEBEN
+    #         else:
+    #             familie = config.SCHRIFTART_UEBERSCHRIFT
+
+    #     elif "legende" in annotation:
+    #         groesse = config.LEGENDE_GROESSE
+    #         if "hauptbetonung" in betonung:
+    #             familie = config.SCHRIFTART_LEGENDE_HAUPT
+    #         elif "nebenbetonung" in betonung:
+    #             familie = config.SCHRIFTART_LEGENDE_NEBEN
+    #         else:
+    #             familie = config.SCHRIFTART_LEGENDE
+
+    #     else:
+    #         groesse = config.TEXT_GROESSE
+    #         if "hauptbetonung" in betonung:
+    #             familie = config.SCHRIFTART_BETONUNG_HAUPT
+    #         elif "nebenbetonung" in betonung:
+    #             familie = config.SCHRIFTART_BETONUNG_NEBEN
+    #         else:
+    #             familie = config.SCHRIFTART_STANDARD
+
+    #     if ist_pdf:
+    #         # PDF: gib Schriftname und Größe zurück (str, int)
+    #         return familie, groesse
+    #     else:
+    #         # GUI: erstelle und gib Tkinter-Font-Objekt zurück
+    #         return tkFont.Font(family=familie, size=groesse)
+        
     def _zeichne_bild(self, canvas, pfad, x, y, w, h, ist_pdf):
         if ist_pdf:
             try:
@@ -197,23 +266,23 @@ class AnnotationRenderer:
                 return id
         return None
 
-    def _zeichne_betonung_haupt(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_BETONUNG_HAUPT
-        if hasattr(canvas, "setFillColor"):  # PDF canvas (ReportLab)
-            canvas.setFillColor(zu_pdf_farbe(farbe))
-            canvas.rect(x, y_pos + oy, w, h, fill=1, stroke=0)
-        else:  # Tkinter canvas
-            farbe_hex = _rgb_to_hex(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, fill=farbe_hex, outline="")
+    # def _zeichne_betonung_haupt(self, canvas, x, y_pos, w, h, oy, linien_breite):
+    #     farbe = config.FARBE_BETONUNG_HAUPT
+    #     if hasattr(canvas, "setFillColor"):  # PDF canvas (ReportLab)
+    #         canvas.setFillColor(zu_pdf_farbe(farbe))
+    #         canvas.rect(x, y_pos + oy, w, h, fill=1, stroke=0)
+    #     else:  # Tkinter canvas
+    #         farbe_hex = _rgb_to_hex(farbe)
+    #         canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, fill=farbe_hex, outline="")
 
-    def _zeichne_betonung_neben(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_BETONUNG_NEBEN
-        if hasattr(canvas, "setFillColor"):
-            canvas.setFillColor(zu_pdf_farbe(farbe))
-            canvas.rect(x, y_pos + oy, w, h, fill=1, stroke=0)
-        else:
-            farbe_hex = _rgb_to_hex(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, fill=farbe_hex, outline="")
+    # def _zeichne_betonung_neben(self, canvas, x, y_pos, w, h, oy, linien_breite):
+    #     farbe = config.FARBE_BETONUNG_NEBEN
+    #     if hasattr(canvas, "setFillColor"):
+    #         canvas.setFillColor(zu_pdf_farbe(farbe))
+    #         canvas.rect(x, y_pos + oy, w, h, fill=1, stroke=0)
+    #     else:
+    #         farbe_hex = _rgb_to_hex(farbe)
+    #         canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, fill=farbe_hex, outline="")
 
     def _zeichne_pause_atempause(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_ATEMPAUSE
@@ -310,8 +379,7 @@ class AnnotationRenderer:
             farbe_hex = _rgb_to_hex(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
-    def _zeichne_ig(self, canvas, x, y_pos, w, h, wert, oy, linien_breite):
-        # Beispiel: IG = Illustrierte Gedanken oder Sonstiges
+    def _zeichne_ig(self, canvas, x, y_pos, w, h, wert, oy, linien_breite):  
         # Einfacher Rahmen in Standardfarbe
         farbe = config.FARBE_IG if hasattr(config, "FARBE_IG") else (0, 0, 0)
         if hasattr(canvas, "setStrokeColor"):
@@ -321,30 +389,7 @@ class AnnotationRenderer:
         else:
             farbe_hex = _rgb_to_hex(farbe)
             canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
-
-
-    def _zeichne_marker(self, canvas, x, y_pos, w, h, marker, oy, ist_pdf):
-        linien_breite = config.LINIENBREITE_STANDARD
-
-        for aufgabenname in config.KI_AUFGABEN.values():
-            marker_wert = marker.get(aufgabenname)
-            if not marker_wert:
-                continue
-
-            annot_liste = config.AUFGABEN_ANNOTATIONEN.get(
-                self._get_aufgaben_id_by_name(aufgabenname), [])
-
-            for annot in annot_liste:
-                if not annot.get("name"):
-                    continue
-                if annot["name"] != marker_wert:
-                    continue
-
-                if annot.get("VerwendeHartKodiert"):
-                    self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, y_pos, w, h, oy, ist_pdf, linien_breite)
-                elif annot.get("bild"):
-                    self._zeichne_bild(canvas, annot["bild"], x, y_pos + oy, w, h, ist_pdf)
-
+  
     def _zeichne_hartkodiert(self, canvas, aufgabenname, wert, x, y_pos, w, h, oy, ist_pdf, linien_breite):
         if aufgabenname == "betonung":
             if wert == "Hauptbetonung":
@@ -375,18 +420,189 @@ class AnnotationRenderer:
         elif aufgabenname == "ig":
             self._zeichne_ig(canvas, x, y_pos, w, h, wert, oy, linien_breite)
 
-    def _zeichne_bild(self, canvas, pfad, x, y, w, h, ist_pdf):
-        if ist_pdf:
-            try:
-                canvas.drawImage(pfad, x, y, width=w, height=h, preserveAspectRatio=True, mask='auto')
-            except Exception as e:
-                print(f"Fehler beim Einfügen von Bild {pfad}: {e}")
+    def _zeichne_token(self, canvas, index, element, x, y_pos, schrift, ist_pdf=False):
+        token = element.get('token', '')
+        tag = f'token_{index}'
 
-    def _get_aufgaben_id_by_name(self, name):
-        for id, n in config.KI_AUFGABEN.items():
-            if n == name:
-                return id
-        return None
+        if not ist_pdf:
+            # Token auf Tkinter-Canvas zeichnen
+            canvas.create_text(
+                x, y_pos,
+                anchor='nw',
+                text=token,
+                font=schrift,
+                fill='black',
+                tags=(tag,)
+            )
+            w = schrift.measure(token)
+            h = schrift.metrics("linespace")
+            marker_y = y_pos
+        else:
+            # Token auf PDF-Canvas zeichnen
+            y_pdf = self._pdf_y_position(canvas, y_pos, schrift[1])
+            pdf_schriftname, pdf_schriftgroesse = schrift
+            canvas.setFont(pdf_schriftname, pdf_schriftgroesse)
+            canvas.drawString(x, y_pdf, token)
+            w = canvas.stringWidth(token, pdf_schriftname, pdf_schriftgroesse)
+            h = pdf_schriftgroesse
+            marker_y = y_pdf
+
+        linien_breite = config.LINIENBREITE_STANDARD
+        marker = element.get("annotation", {})
+
+        if isinstance(marker, str):
+            # Falls marker fälschlich ein String ist (nicht dict), überspringen
+            return
+
+        for aufgabenname in config.KI_AUFGABEN.values():
+            marker_wert = marker.get(aufgabenname) if isinstance(marker, dict) else None
+            if not marker_wert:
+                continue
+
+            aufgaben_id = self._get_aufgaben_id_by_name(aufgabenname)
+            annot_liste = config.AUFGABEN_ANNOTATIONEN.get(aufgaben_id, [])
+
+            for annot in annot_liste:
+                name = annot.get("name")
+                if name is not None and name != marker_wert:
+                    continue  # nur wenn expliziter Match
+
+                # Y-Verschiebung je nach Aufgabe
+                oy = (h * 0.2) if aufgabenname == "ig" else (-h * 0.8)
+
+                if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
+                    self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, marker_y, w, h, oy, ist_pdf, linien_breite)
+                elif annot.get("bild"):
+                    self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h, ist_pdf)
+                else:
+                    # Weitere Darstellungen möglich
+                    pass
+
+
+    # def _zeichne_token(self, canvas, index, element, x, y_pos, schrift, ist_pdf=False):
+    #     token = element.get('token', '')
+    #     tag = f'token_{index}'
+
+    #     if not ist_pdf:
+    #         # Token auf Tkinter-Canvas zeichnen
+    #         canvas.create_text(x, y_pos,
+    #                         anchor='nw', text=token,
+    #                         font=schrift, fill='black',
+    #                         tags=(tag,))
+    #         w = schrift.measure(token)
+    #         h = schrift.metrics("linespace")
+    #         marker_y = y_pos
+    #     else:
+    #         # Token auf PDF-Canvas zeichnen
+    #         y_pdf = self._pdf_y_position(canvas, y_pos, schrift[1])
+    #         pdf_schriftname, pdf_schriftgroesse = schrift
+    #         canvas.setFont(pdf_schriftname, pdf_schriftgroesse)
+    #         canvas.drawString(x, y_pdf, token)
+    #         w = canvas.stringWidth(token, pdf_schriftname, pdf_schriftgroesse)
+    #         h = pdf_schriftgroesse
+    #         marker_y = y_pdf
+
+    #     linien_breite = config.LINIENBREITE_STANDARD
+    #     marker = element.get("annotation", {})
+
+    #     if isinstance(marker, str):
+    #         # ggf. Umwandlung falls nötig
+    #         pass
+
+    #     for aufgabenname in config.KI_AUFGABEN.values():
+    #         marker_wert = marker.get(aufgabenname) if isinstance(marker, dict) else None
+    #         if not marker_wert:
+    #             continue
+
+    #         annot_liste = config.AUFGABEN_ANNOTATIONEN.get(
+    #             self._get_aufgaben_id_by_name(aufgabenname), [])
+
+    #         for annot in annot_liste:
+    #             if not annot.get("name") or annot["name"] != marker_wert:
+    #                 continue
+
+    #             # Verschiebung Y je nach Aufgabe (oben/unten)
+    #             oy = (h * 0.2) if aufgabenname == "ig" else (-h * 0.8)
+
+    #             if annot.get("VerwendeHartKodiert"):
+    #                 self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, marker_y, w, h, oy, ist_pdf, linien_breite)
+    #             elif annot.get("bild"):
+    #                 self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h, ist_pdf)
+    #             else:
+    #                 # weitere Markerarten, wenn nötig
+    #                 pass
+
+    
+    # def _zeichne_marker(self, canvas, element, x, y_pos, schrift, ist_pdf):
+    #     linien_breite = config.LINIENBREITE_STANDARD
+    #     w = schrift.measure(element.get('token', ''))
+    #     h = schrift.metrics("linespace")
+
+    #     # Marker-Daten aus dem Element:
+    #     marker = element.get("annotation", {})
+    #     if isinstance(marker, str):
+    #         # Falls annotation ein String ist, z.B. "betonung=haupt;ig", ggf. in dict parsen (je nach Datenformat)
+    #         # Hier beispielhaft: marker = parse_annotation_string(marker)
+    #         # Falls schon dict, dann ok.
+    #         pass
+
+    #     # Für jede Aufgabe (person, betonung, pause, gedanken, spannung, ig, ...)
+    #     for aufgabenname in config.KI_AUFGABEN.values():
+    #         marker_wert = marker.get(aufgabenname) if isinstance(marker, dict) else None
+    #         if not marker_wert:
+    #             continue
+
+    #         # Liste aller Annotationsinfos für diese Aufgabe:
+    #         annot_liste = config.AUFGABEN_ANNOTATIONEN.get(
+    #             self._get_aufgaben_id_by_name(aufgabenname), [])
+
+    #         for annot in annot_liste:
+    #             if not annot.get("name"):
+    #                 continue
+    #             if annot["name"] != marker_wert:
+    #                 continue
+
+    #             # oy je nach Annotationstyp festlegen
+    #             if aufgabenname == "ig":
+    #                 # IG-Marker unter Token zeichnen
+    #                 oy = h * 0.2
+    #             else:
+    #                 # Andere Marker über Token zeichnen
+    #                 oy = -h * 0.8
+
+    #             if annot.get("VerwendeHartKodiert"):
+    #                 self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, y_pos, w, h, oy, ist_pdf, linien_breite)
+    #             elif annot.get("bild"):
+    #                 self._zeichne_bild(canvas, annot["bild"], x, y_pos + oy, w, h, ist_pdf)
+    #             else:
+    #                 # Falls keine Hartkodiert oder Bild, kannst du hier z.B. weitere Zeichnungsarten ergänzen
+    #                 pass
+ 
+    
+    # def _zeichne_marker(self, canvas, element, x, y_pos, schrift, ist_pdf):
+
+    #     linien_breite = config.LINIENBREITE_STANDARD
+
+    #     for aufgabenname in config.KI_AUFGABEN.values():
+    #         marker_wert = marker.get(aufgabenname)
+    #         if not marker_wert:
+    #             continue
+
+    #         annot_liste = config.AUFGABEN_ANNOTATIONEN.get(
+    #             self._get_aufgaben_id_by_name(aufgabenname), [])
+
+    #         for annot in annot_liste:
+    #             if not annot.get("name"):
+    #                 continue
+    #             if annot["name"] != marker_wert:
+    #                 continue
+
+    #             if annot.get("VerwendeHartKodiert"):
+    #                 self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, y_pos, w, h, oy, ist_pdf, linien_breite)
+    #             elif annot.get("bild"):
+    #                 self._zeichne_bild(canvas, annot["bild"], x, y_pos + oy, w, h, ist_pdf)
+
+
       
     # def _zeichne_betonung(self,canvas, x, y_pos, w, h, betonung, oy, ist_pdf, linien_breite):
     #     if betonung == "haupt":
