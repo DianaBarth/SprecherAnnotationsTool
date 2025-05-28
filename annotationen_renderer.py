@@ -25,7 +25,9 @@ class AnnotationRenderer:
         self.y_pos = 10
         self.letzte_zeile_y_pos = 10
         self.zeilen_hoehe = 30  # Höhe pro Textzeile (kann dynamisch bestimmt werden)
+        self.canvas_elemente_pro_token = {}
      
+
     def _pdf_y_position(self, pdf_canvas, y_gui_pos, text_hoehe):
         """Konvertiert GUI-y-Koordinate in PDF-y-Koordinate (invertiert)"""
         seiten_hoehe = pdf_canvas._pagesize[1]
@@ -117,6 +119,10 @@ class AnnotationRenderer:
 
         print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
         self._zeichne_token(canvas, index, element, self.x_pos, self.y_pos, schrift)
+
+          # Position speichern für späteres Annotation-Update
+        self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos}
+
 
         self.x_pos += text_breite + extra_space  # x-Position für das nächste Token aktualisieren
         print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
@@ -306,119 +312,234 @@ class AnnotationRenderer:
                 return aufgaben_id
         return None
 
-    def _zeichne_pause_atempause(self, canvas, x, y_pos, w, h, oy, linien_breite):
+    def _zeichne_pause_atem(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_ATEMPAUSE
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
-            canvas.setLineWidth(linien_breite)
-            canvas.line(x, y_pos + oy + h, x + w, y_pos + oy + h)
+            canvas.setLineWidth(config.LINIENBREITE_STANDARD)  # feste Breite aus config
+            length = config.MARKER_BREITE_LANG * 2  # feste Länge aus config
+            canvas.line(x, y_pos + oy + h + 2, x + length, y_pos + oy + h + 2)  # y + 2 verschoben
         else:
             farbe_hex = zu_Hex_farbe(farbe)
             canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
 
     def _zeichne_pause_stau(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_STAU
+        farbe = config.FARBE_STAUPAUSE
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_PDF_farbe(farbe))
-            canvas.setLineWidth(linien_breite)
-            canvas.line(x, y_pos + oy + h, x + w, y_pos + oy + h)
+            canvas.setFillColor(zu_PDF_farbe(farbe))
+            canvas.rect(x, y_pos + oy, w, h, fill=1, stroke=0)
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
+            # Für Tkinter ähnliches gefülltes Rechteck zeichnen
+            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h/2, fill=farbe_hex, outline="")
 
     def _zeichne_gedanken_weiter(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_GEDANKEN_ANFANG
+        farbe = config.FARBE_GEDANKEN  # korrigierter Farbname entsprechend Original
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
+            canvas.setDash(*config.GEDANKEN_STRICHMUSTER)  # Strichmuster setzen
+            # Linie horizontal in der Mitte des Rechtecks
+            canvas.line(x, y_pos + oy + h / 2, x + config.MARKER_BREITE_LANG, y_pos + oy + h / 2)
+            canvas.setDash()  # Dash zurücksetzen
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
+            # Bei Tkinter: gestrichelte Linie zeichnen (wenn unterstützt)
+            # create_line unterstützt dash-Pattern als Tupel
+            canvas.create_line(
+                x, y_pos + oy + h / 2, x + config.MARKER_BREITE_LANG, y_pos + oy + h / 2,
+                fill=farbe_hex, width=linien_breite, dash=config.GEDANKEN_STRICHMUSTER
+            )
 
     def _zeichne_gedanken_ende(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_GEDANKEN_ENDE
+        farbe = config.FARBE_GEDANKEN  # Farbe an Original angepasst
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
+            off = w / 2
+            # Obere horizontale Linie
+            canvas.line(x + off, y_pos + oy, x + off + w, y_pos + oy)
+            # Untere horizontale Linie
+            canvas.line(x + off, y_pos + oy + h, x + off + w, y_pos + oy + h)
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
+            off = w / 2
+            # Obere Linie
+            canvas.create_line(x + off, y_pos + oy, x + off + w, y_pos + oy, fill=farbe_hex, width=linien_breite)
+            # Untere Linie
+            canvas.create_line(x + off, y_pos + oy + h, x + off + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
 
     def _zeichne_gedanken_pause(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        # ggf. eigene Farbe oder Stil
-        farbe = config.FARBE_GEDANKEN_PAUSE if hasattr(config, "FARBE_GEDANKEN_PAUSE") else config.FARBE_GEDANKEN_ANFANG
+        farbe = config.FARBE_GEDANKEN
+        max_radius_px = 11  # ca. 0.3 cm
+
         if self.ist_PDF:
-            canvas.setStrokeColor(zu_PDF_farbe(farbe))
-            canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
+            canvas.setFillColor(zu_PDF_farbe(farbe))
+            radius = min(max_radius_px, w / 4)
+            canvas.circle(x + w / 2, y_pos + oy + h / 2, radius, fill=1, stroke=0)
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
+            radius = min(max_radius_px, w / 4)
+            cx = x + w / 2
+            cy = y_pos + oy + h / 2
+            canvas.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, fill=farbe_hex, outline="")
 
     def _zeichne_spannung_start(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_SPANNUNG_START
+        farbe = config.FARBE_SPANNUNG
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
+            steps = 10
+            path = canvas.beginPath()
+            for i in range(steps):
+                t = i / float(steps)
+                x1 = x + t * w
+                y1 = y_pos + oy + h / 2 + t * config.SPANNUNG_NEIGUNG  # steigend im PDF (nach oben)
+                if i == 0:
+                    path.moveTo(x1, y1)
+                else:
+                    path.lineTo(x1, y1)
+            canvas.drawPath(path)
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
+            points = []
+            steps = 10
+            for i in range(steps + 1):
+                t = i / steps
+                x1 = x + t * w
+                # hier Vorzeichen umdrehen, weil y im Tkinter nach unten wächst
+                y1 = y_pos + oy + h / 2 - t * config.SPANNUNG_NEIGUNG
+                points.append((x1, y1))
+            for i in range(len(points) - 1):
+                canvas.create_line(points[i][0], points[i][1], points[i+1][0], points[i+1][1], fill=farbe_hex, width=linien_breite)
+
 
     def _zeichne_spannung_halten(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_SPANNUNG_HALTEN
+        farbe = config.FARBE_SPANNUNG
+        y = y_pos + oy + h / 2
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
+            path = canvas.beginPath()
+            path.moveTo(x, y)
+            path.lineTo(x + w, y)
+            canvas.drawPath(path)
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
+            canvas.create_line(x, y, x + w, y, fill=farbe_hex, width=linien_breite)
 
+ 
     def _zeichne_spannung_stop(self, canvas, x, y_pos, w, h, oy, linien_breite):
-        farbe = config.FARBE_SPANNUNG_STOPP
+        farbe = config.FARBE_SPANNUNG
+        y = y_pos + oy + h / 2
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
-        else:
-            farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
 
-    def _zeichne_person(self, canvas, x, y_pos, w, h, sprecher, oy, linien_breite):
-        if not sprecher:
-            return
-        farbe = config.FARBE_SPRECHER.get(sprecher.lower())
-        if not farbe:
-            return
-        if self.ist_PDF:
-            canvas.setStrokeColor(zu_PDF_farbe(farbe))
-            canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
-        else:
-            farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
+            # Markierungspunkt (kann als kleiner Kreis oder Punkt umgesetzt werden)
+            canvas.circle(x + w, y, 1, fill=1, stroke=0)
 
-    def _zeichne_ig(self, canvas, x, y_pos, w, h, wert, oy, linien_breite):  
-        # Einfacher Rahmen in Standardfarbe
-        farbe = config.FARBE_IG if hasattr(config, "FARBE_IG") else (0, 0, 0)
+            # Abfallender Bogen
+            steps = 10
+            path = canvas.beginPath()
+            for i in range(steps):
+                t = i / float(steps)
+                x1 = x + t * w
+                y1 = y - t * config.SPANNUNG_NEIGUNG  # abfallend im PDF (nach unten)
+                if i == 0:
+                    path.moveTo(x1, y1)
+                else:
+                    path.lineTo(x1, y1)
+            canvas.drawPath(path)
+        else:
+            farbe_hex = zu_Hex_farbe(farbe)
+
+            # Markierungspunkt als kleinen Kreis
+            radius = 2
+            cx = x + w
+            cy = y
+            canvas.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, fill=farbe_hex, outline="")
+
+            # Abfallender Bogen als Linie mit mehreren Segmenten
+            points = []
+            steps = 10
+            for i in range(steps + 1):
+                t = i / steps
+                x1 = x + t * w
+                y1 = y + t * config.SPANNUNG_NEIGUNG  # Vorzeichen invertiert für GUI!
+                points.append((x1, y1))
+            for i in range(len(points) - 1):
+                canvas.create_line(points[i][0], points[i][1], points[i+1][0], points[i+1][1], fill=farbe_hex, width=linien_breite)
+
+    
+    def _zeichne_ik(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False):
+        farbe = config.FARBE_UNTERSTREICHUNG
+        punkt_radius = 0.8
+
+        if numerisch:
+            zeichenbreite = config.ZEICHENBREITE
+            for i in range(len(token)):
+                punkt_x = x + i * zeichenbreite + zeichenbreite / 2
+                punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
+                if self.ist_PDF:
+                    canvas.setFillColor(zu_PDF_farbe(farbe))
+                    canvas.circle(punkt_x, punkt_y, punkt_radius, fill=1, stroke=0)
+                else:
+                    canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius,
+                                    punkt_x + punkt_radius, punkt_y + punkt_radius,
+                                    fill=zu_Hex_farbe(farbe), outline="")
+            return
+
+        ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
+        if igNr >= len(ig_indices):
+            return
+
+        i = ig_indices[igNr]
+        zeichenbreite = config.ZEICHENBREITE
+        for j in range(2):
+            punkt_x = x + (i + j) * zeichenbreite + zeichenbreite / 2
+            punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
+            if self.ist_PDF:
+                canvas.setFillColor(zu_PDF_farbe(farbe))
+                canvas.circle(punkt_x, punkt_y, punkt_radius, fill=1, stroke=0)
+            else:
+                canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius,
+                                punkt_x + punkt_radius, punkt_y + punkt_radius,
+                                fill=zu_Hex_farbe(farbe), outline="")
+
+    def _zeichne_ich(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False):
+        farbe = config.FARBE_UNTERSTREICHUNG
+        unterstrich_y_pos = y_pos + oy + h + config.ZEILENABSTAND * 0.1
+
+        if numerisch:
+            if self.ist_PDF:
+                canvas.setStrokeColor(zu_PDF_farbe(farbe))
+                canvas.setLineWidth(linien_breite)
+                canvas.line(x, unterstrich_y_pos, x + len(token) * config.ZEICHENBREITE, unterstrich_y_pos)
+            else:
+                canvas.create_line(x, unterstrich_y_pos, x + len(token) * config.ZEICHENBREITE, unterstrich_y_pos,
+                                fill=zu_Hex_farbe(farbe), width=linien_breite)
+            return
+
+        ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
+        if igNr >= len(ig_indices):
+            return
+
+        i = ig_indices[igNr]
+        start_x = x + i * config.ZEICHENBREITE
+        end_x = start_x + 2 * config.ZEICHENBREITE
+
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            canvas.rect(x, y_pos + oy, w, h, fill=0)
+            canvas.line(start_x, unterstrich_y_pos, end_x, unterstrich_y_pos)
         else:
-            farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_rectangle(x, y_pos + oy, x + w, y_pos + oy + h, outline=farbe_hex, width=linien_breite)
-  
-    def _zeichne_hartkodiert(self, canvas, aufgabenname, wert, x, y_pos, w, h, oy, linien_breite):
-        if aufgabenname == "betonung":
-            if wert == "Hauptbetonung":
-                self._zeichne_betonung_haupt(canvas, x, y_pos, w, h, oy, linien_breite)
-            elif wert == "Nebenbetonung":
-                self._zeichne_betonung_neben(canvas, x, y_pos, w, h, oy, linien_breite)
-        elif aufgabenname == "pause":
+            canvas.create_line(start_x, unterstrich_y_pos, end_x, unterstrich_y_pos,
+                            fill=zu_Hex_farbe(farbe), width=linien_breite)
+
+
+    def _zeichne_hartkodiert(self, canvas, aufgabenname, token, wert, x, y_pos, w, h, oy, linien_breite):      
+        if aufgabenname == "pause":
             if wert == "Atempause":
                 self._zeichne_pause_atem(canvas, x, y_pos, w, h, oy, linien_breite)
             elif wert == "Staupause":
@@ -437,11 +558,30 @@ class AnnotationRenderer:
                 self._zeichne_spannung_halten(canvas, x, y_pos, w, h, oy, linien_breite)
             elif wert == "Stoppen":
                 self._zeichne_spannung_stop(canvas, x, y_pos, w, h, oy, linien_breite)
-        elif aufgabenname == "person":
-            self._zeichne_person(canvas, x, y_pos, w, h, wert, oy, linien_breite)
         elif aufgabenname == "ig":
-            self._zeichne_ig(canvas, x, y_pos, w, h, wert, oy, linien_breite)
-      
+            if token.isdigit():  # Vollständig numerisches Token (z. B. "30")
+                letzter_wert = wert.split("-")[-1]
+                if letzter_wert == "ik":
+                    self._zeichne_ik(canvas, x, y_pos, w, h,  oy, linien_breite, token, igNr=0, numerisch=True)
+                elif letzter_wert == "ich":
+                    self._zeichne_ich(canvas, x, y_pos, w, h,  oy, linien_breite, token, igNr=0, numerisch=True)
+                return  # Keine weitere Bearbeitung nötig
+
+            # Alle "ig"-Vorkommen im Token finden
+            ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
+            if not ig_indices:
+                return  # Kein "ig" im Token → nichts tun
+            # Zerlege den Wert in eine Liste z. B. ["ik", "ik", "ich"]
+            ig_werte = wert.split("-")
+            # Für jedes vorkommende "ig" im Token:
+            for igNr, art in enumerate(ig_werte):
+                if igNr >= len(ig_indices):
+                    break  # Mehr Anweisungen als "ig"-Vorkommen? Ignorieren.
+                if art == "ik":
+                    self._zeichne_ik(canvas, x, y_pos, w, h,  oy, linien_breite, token, igNr, numerisch = False)
+                elif art == "ich":
+                    self._zeichne_ich(canvas, x, y_pos, w, h,  oy, linien_breite, token, igNr, numerisch = False)
+
     def _zeichne_token(self, canvas, index, element, x, y_pos, schrift):
         token = element.get('token', '')
         tag = f'token_{index}'
@@ -493,27 +633,20 @@ class AnnotationRenderer:
                 oy = (h * 0.2) if aufgabenname == "ig" else (-h * 0.8)
 
                 if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
-                    self._zeichne_hartkodiert(canvas, aufgabenname, marker_wert, x, marker_y, w, h, oy, linien_breite)
+                    self._zeichne_hartkodiert(canvas, aufgabenname, token, marker_wert, x, marker_y, w, h, oy, linien_breite)
                 elif annot.get("bild"):
                     self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h)
                 elif marker_wert:
                     self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert)
                 else:
                     pass
-
-    def annotation_aendern(self, canvas, wortnr):
+  
+    def annotation_aendern(self, canvas, wortnr, element):
         tag = f'token_{wortnr}'
-
-        # 1. Vorherige Darstellung des Tokens entfernen (Text + Annotationen)
         canvas.delete(tag)
 
-        # 2. Token-Element und Position aus self.canvas_elemente_pro_token holen
-        element = self.json_dicts[wortnr]
         x = self.canvas_elemente_pro_token[wortnr]["x"]
-        y_pos = self.canvas_elemente_pro_token[wortnr]["y"]
+        y = self.canvas_elemente_pro_token[wortnr]["y"]
 
-        # 3. Schriftinfo (Font, Farbe) - je nach Implementierung
-        schrift = self.ermittle_schrift(element)
-
-        # 4. Token und Annotationen neu zeichnen
-        self._zeichne_token(canvas, wortnr, element, x, y_pos, schrift)
+        schrift = self.schrift_holen(element)
+        self._zeichne_token(canvas, wortnr, element, x, y, schrift)
