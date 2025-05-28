@@ -436,9 +436,6 @@ class AnnotationRenderer:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
 
-            # Markierungspunkt (kann als kleiner Kreis oder Punkt umgesetzt werden)
-            canvas.circle(x + w, y, 1, fill=1, stroke=0)
-
             # Abfallender Bogen
             steps = 10
             path = canvas.beginPath()
@@ -454,13 +451,7 @@ class AnnotationRenderer:
         else:
             farbe_hex = zu_Hex_farbe(farbe)
 
-            # Markierungspunkt als kleinen Kreis
-            radius = 2
-            cx = x + w
-            cy = y
-            canvas.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, fill=farbe_hex, outline="")
-
-            # Abfallender Bogen als Linie mit mehreren Segmenten
+             # Abfallender Bogen als Linie mit mehreren Segmenten
             points = []
             steps = 10
             for i in range(steps + 1):
@@ -471,15 +462,18 @@ class AnnotationRenderer:
             for i in range(len(points) - 1):
                 canvas.create_line(points[i][0], points[i][1], points[i+1][0], points[i+1][1], fill=farbe_hex, width=linien_breite)
 
-    
     def _zeichne_ik(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False):
         farbe = config.FARBE_UNTERSTREICHUNG
         punkt_radius = 0.8
-
+        print(f"[_zeichne_ik] numerisch True: token='{token}' Länge={len(token)}, durchschnittsbreite= {self.Durchschnittsbreite}")
+        # Falls numerisch == True, zeichnen wir für jeden Buchstaben einen Punkt unter das Token
         if numerisch:
-            zeichenbreite = config.ZEICHENBREITE
+            zeichenbreite =self.Durchschnittsbreite
+            print(f"[_zeichne_ik] numerisch True: token='{token}' Länge={len(token)}")
             for i in range(len(token)):
-                punkt_x = x + i * zeichenbreite + zeichenbreite / 2
+                # x-Position des Punkts für das i-te Zeichen
+                punkt_x = x + i * zeichenbreite 
+                # y-Position etwas unterhalb des Tokens (h + Zeilenabstand * 0.1)
                 punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
                 if self.ist_PDF:
                     canvas.setFillColor(zu_PDF_farbe(farbe))
@@ -488,14 +482,22 @@ class AnnotationRenderer:
                     canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius,
                                     punkt_x + punkt_radius, punkt_y + punkt_radius,
                                     fill=zu_Hex_farbe(farbe), outline="")
-            return
+            return  # Fertig mit numerisch, keine weitere Verarbeitung
 
+        # Für nicht-numerisch: Wir suchen alle Positionen von "ig" im Token
         ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
+        print(f"[_zeichne_ik] token='{token}', gefundene 'ig' Indices: {ig_indices}, benötigte ignr = {igNr}")
+        
+        # Prüfen, ob igNr im Bereich der gefundenen "ig"-Stellen liegt
         if igNr >= len(ig_indices):
+            print(f"[_zeichne_ik] igNr {igNr} zu groß, Abbruch")
             return
 
+        # Die Startposition des i-ten "ig"
         i = ig_indices[igNr]
-        zeichenbreite = config.ZEICHENBREITE
+        zeichenbreite =self.Durchschnittsbreite
+
+        # Für beide Buchstaben "i" und "g" zeichnen wir einen kleinen Punkt darunter
         for j in range(2):
             punkt_x = x + (i + j) * zeichenbreite + zeichenbreite / 2
             punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
@@ -507,27 +509,35 @@ class AnnotationRenderer:
                                 punkt_x + punkt_radius, punkt_y + punkt_radius,
                                 fill=zu_Hex_farbe(farbe), outline="")
 
+
     def _zeichne_ich(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False):
         farbe = config.FARBE_UNTERSTREICHUNG
+        # y-Position der Unterstreichung, leicht unterhalb des Tokens
         unterstrich_y_pos = y_pos + oy + h + config.ZEILENABSTAND * 0.1
 
+        # Falls numerisch == True, zeichnen wir eine durchgehende Linie unter das gesamte Token
         if numerisch:
+            print(f"[_zeichne_ich] numerisch True: token='{token}' Länge={len(token)}, durchschnittsbreite= {self.Durchschnittsbreite}")
             if self.ist_PDF:
                 canvas.setStrokeColor(zu_PDF_farbe(farbe))
                 canvas.setLineWidth(linien_breite)
-                canvas.line(x, unterstrich_y_pos, x + len(token) * config.ZEICHENBREITE, unterstrich_y_pos)
+                canvas.line(x, unterstrich_y_pos, x + len(token) *self.Durchschnittsbreite, unterstrich_y_pos)
             else:
-                canvas.create_line(x, unterstrich_y_pos, x + len(token) * config.ZEICHENBREITE, unterstrich_y_pos,
+                canvas.create_line(x, unterstrich_y_pos, x + len(token) *self.Durchschnittsbreite, unterstrich_y_pos,
                                 fill=zu_Hex_farbe(farbe), width=linien_breite)
-            return
+            return  # Fertig mit numerisch
 
+        # Für nicht-numerisch: Wie oben "ig" Positionen suchen
         ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
+        print(f"[_zeichne_ich] token='{token}', gefundene 'ig' Indices: {ig_indices}")
+        
         if igNr >= len(ig_indices):
+            print(f"[_zeichne_ich] igNr {igNr} zu groß, Abbruch")
             return
 
         i = ig_indices[igNr]
-        start_x = x + i * config.ZEICHENBREITE
-        end_x = start_x + 2 * config.ZEICHENBREITE
+        start_x = x + i*self.Durchschnittsbreite
+        end_x = start_x + 2*self.Durchschnittsbreite  # Länge "ig" = 2 Zeichen
 
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
@@ -536,6 +546,8 @@ class AnnotationRenderer:
         else:
             canvas.create_line(start_x, unterstrich_y_pos, end_x, unterstrich_y_pos,
                             fill=zu_Hex_farbe(farbe), width=linien_breite)
+    
+    
 
 
     def _zeichne_hartkodiert(self, canvas, aufgabenname, token, wert, x, y_pos, w, h, oy, linien_breite):      
@@ -598,6 +610,7 @@ class AnnotationRenderer:
                 fill=schriftfarbe,
                 tags=(tag,)
             )
+            self.Durchschnittsbreite = schriftobjekt.measure("M")
             w = schriftobjekt.measure(token)
             h = schriftobjekt.metrics("linespace")
             marker_y = y_pos
@@ -610,6 +623,7 @@ class AnnotationRenderer:
                 r, g, b = schriftfarbe
                 canvas.setFillColorRGB(r, g, b)
             canvas.drawString(x, y_pdf, token)
+            self.Durchschnittsbreite = canvas.stringWidth("M", pdf_schriftname, pdf_schriftgroesse)
             w = canvas.stringWidth(token, pdf_schriftname, pdf_schriftgroesse)
             h = pdf_schriftgroesse
             marker_y = y_pdf
