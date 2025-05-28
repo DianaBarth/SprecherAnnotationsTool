@@ -340,14 +340,14 @@ class AnnotationRenderer:
             canvas.setLineWidth(linien_breite)
             canvas.setDash(*config.GEDANKEN_STRICHMUSTER)  # Strichmuster setzen
             # Linie horizontal in der Mitte des Rechtecks
-            canvas.line(x, y_pos + oy + h / 2, x + config.MARKER_BREITE_LANG, y_pos + oy + h / 2)
+            canvas.line(x, y_pos + oy + h / 2, x + w, y_pos + oy + h / 2)
             canvas.setDash()  # Dash zurücksetzen
         else:
             farbe_hex = zu_Hex_farbe(farbe)
             # Bei Tkinter: gestrichelte Linie zeichnen (wenn unterstützt)
             # create_line unterstützt dash-Pattern als Tupel
             canvas.create_line(
-                x, y_pos + oy + h / 2, x + config.MARKER_BREITE_LANG, y_pos + oy + h / 2,
+                x, y_pos + oy + h / 2, x + w, y_pos + oy + h / 2,
                 fill=farbe_hex, width=linien_breite, dash=config.GEDANKEN_STRICHMUSTER
             )
 
@@ -365,9 +365,9 @@ class AnnotationRenderer:
             farbe_hex = zu_Hex_farbe(farbe)
             off = w / 2
             # Obere Linie
-            canvas.create_line(x + off, y_pos + oy, x + off + w, y_pos + oy, fill=farbe_hex, width=linien_breite)
+            canvas.create_line(x , y_pos + oy, x + w, y_pos + oy, fill=farbe_hex, width=linien_breite)
             # Untere Linie
-            canvas.create_line(x + off, y_pos + oy + h, x + off + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
+            canvas.create_line(x , y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite)
 
     def _zeichne_gedanken_pause(self, canvas, x, y_pos, w, h, oy, linien_breite):
         farbe = config.FARBE_GEDANKEN
