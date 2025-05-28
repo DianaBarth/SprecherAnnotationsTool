@@ -78,6 +78,9 @@ class AnnotationenEditor(ttk.Frame):
         """Wird aufgerufen, wenn ein Token im Canvas angeklickt wird."""
         json_dict = self.json_dicts[idx]
 
+           # Token visuell markieren (roten Rahmen)
+        self.renderer.markiere_token_mit_rahmen(self.canvas, idx)
+
         # Rechte Seite vorher leeren
         for child in self.annotation_frame.winfo_children():
             child.destroy()

@@ -35,6 +35,34 @@ class AnnotationRenderer:
         self.x_pos = 10
         self.y_pos = 10
 
+    def markiere_token_mit_rahmen(self, canvas, wortNr):
+        """
+        Löscht alle bisherigen Rahmen und zeichnet einen roten Rahmen um das Token mit der angegebenen wortNr.
+        """
+        # Alte Rahmen entfernen
+        canvas.delete("rahmen")
+
+        # Tag des Tokens, wie beim Zeichnen vergeben
+        tag = f"token_{wortNr}"
+        bbox = canvas.bbox(tag)
+        if bbox is None:
+            print(f"Kein Token mit Nummer {wortNr} gefunden (Tag: {tag})")
+            return
+
+        x1, y1, x2, y2 = bbox
+        padding = 2
+        rahmen = canvas.create_rectangle(
+            x1 - padding,
+            y1 - padding,
+            x2 + padding,
+            y2 + padding,
+            outline="red",
+            width=2,
+            tags=("rahmen", f"rahmen_{wortNr}")
+        )
+        print(f"Rahmen um Token {wortNr} bei ({x1}, {y1}, {x2}, {y2}) gezeichnet")
+        return rahmen
+
     def rendern(self, index=0, dict_element=None, naechstes_dict_element=None, gui_canvas=None, pdf_canvas=None):
         if gui_canvas is not None:
             self.ist_PDF = False
@@ -92,7 +120,6 @@ class AnnotationRenderer:
 
         self.x_pos += text_breite + extra_space  # x-Position für das nächste Token aktualisieren
         print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
-
 
     def get_person_color(self, person):
         print(f"get_person_color aufgerufen mit person={person}")
