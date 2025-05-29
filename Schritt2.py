@@ -44,6 +44,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
 
     eingabeordner = Path(eingabeordner)
     ausgabeordner = Path(ausgabeordner)
+    
     ausgabeordner.mkdir(parents=True, exist_ok=True)
 
     if ausgewaehlte_kapitel is not None:

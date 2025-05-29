@@ -7,6 +7,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.pdfbase.pdfmetrics import stringWidth
 import hashlib
+from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 # ---------------------------------------------
@@ -452,6 +453,10 @@ def visualisiere_annotationen(eingabe_ordner, ausgabe_ordner, ausgewaehlte_kapit
     """
     Lädt JSON-Annotationen, filtert Kapitel optional und erstellt PDFs.
     """
+
+    eingabe_ordner = Path(eingabe_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
+
     os.makedirs(ausgabe_ordner, exist_ok=True)
 
     dateien = [fn for fn in os.listdir(eingabe_ordner) if fn.endswith('.json')]

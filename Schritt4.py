@@ -1,6 +1,7 @@
 import os
 import json
 import re
+from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 # Konfiguration
@@ -45,6 +46,9 @@ def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
 
 
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = False ):
+
+    ki_ordner = Path(ki_ordner)
+
     try:
         if not isinstance(dateipfad, str):
             raise ValueError(f"Unerwarteter Dateipfad: {dateipfad}")

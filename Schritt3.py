@@ -1,5 +1,6 @@
 import os
 import json
+from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 satzzeichen = {".", "!", "?"}
@@ -27,6 +28,9 @@ def dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_call
     print(f"[DEBUG -------------------------STARTE Schritt 3 für {kapitelname}")
     print(f"[DEBUG] Durchsuche Ordner: {eingabe_ordner}")
     
+    eingabe_ordner = Path(eingabe_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
+
     for root, _, files in os.walk(eingabe_ordner):
         for datei in files:
             if not datei.endswith(".json"):

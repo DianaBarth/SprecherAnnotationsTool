@@ -1,5 +1,6 @@
 import os
 from docx import Document
+from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
@@ -9,6 +10,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, aus
 
     print(f"[DEBUG -------------------------STARTE Schritt 1 für {ausgewaehlte_kapitel}]")
 
+    ausgabe_ordner = Path(ausgabe_ordner)  # <-- neu
 
     if not os.path.exists(ausgabe_ordner):
         os.makedirs(ausgabe_ordner, exist_ok=True)

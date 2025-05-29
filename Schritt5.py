@@ -4,6 +4,7 @@ import glob
 import traceback
 import shutil
 from collections import defaultdict
+from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 # Personen aus ZusatzInfo_2 der kapitel_config.json extrahieren
@@ -77,6 +78,10 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
     print(f"[DEBUG] quellordner_annotationen: {quellordner_annotationen}")
     print(f"[DEBUG] ziel_ordner: {ziel_ordner}")
     print(f"[DEBUG] ausgewaehlte_kapitel: {ausgewaehlte_kapitel}")
+
+    quellordner_kapitel = Path(quellordner_kapitel)
+    quellordner_annotationen =Path(quellordner_annotationen)   
+    ziel_ordner = Path( ziel_ordner)
 
     try:
         kapitel_namen = ermittele_kapitel_namen(quellordner_kapitel)
