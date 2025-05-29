@@ -1,5 +1,6 @@
 # ------------------ Imports ------------------
 import ast
+import copy
 import concurrent.futures
 import os
 import psutil
@@ -30,23 +31,59 @@ from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
 from system_ressourcen import Systemressourcen
 
-def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, progress_queue=None):
+
+def lade_prompt_datei(ki_id):
+        print(f"[INFO] Lade Prompt für KI-ID: {ki_id}")
+
+        # Überprüfe, ob ki_id in der Konfiguration existiert
+        if ki_id not in config.KI_AUFGABEN:
+            raise ValueError(f"[FEHLER] Unbekannte KI-ID: {ki_id}")
+
+        prompts_ordner = os.path.join("Eingabe", "prompts")
+        dateiname = config.KI_AUFGABEN[ki_id] + ".txt"
+        dateipfad = os.path.join(prompts_ordner, dateiname)
+
+        print(f"[INFO] Erwarteter Pfad zur Prompt-Datei: {dateipfad}")
+
+        try:
+            with open(dateipfad, "r", encoding="utf-8") as f:
+                inhalt = f.read()
+                print(f"[OK] Prompt-Datei erfolgreich geladen ({len(inhalt)} Zeichen).")
+                return inhalt
+        except FileNotFoundError:
+            raise FileNotFoundError(f"[FEHLER] Die Datei '{dateipfad}' wurde nicht gefunden. Bitte sicherstellen, dass die Datei vorhanden ist.")
+        except Exception as e:
+            # Fange unerwartete Fehler ab
+            raise RuntimeError(f"[FEHLER] Fehler beim Laden der Prompt-Datei '{dateipfad}': {e}")
+        
+import traceback
+from pathlib import Path
+
+def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_progress_queue=None):
     max_retries = 3
     for versuch in range(1, max_retries + 1):
         try:
+            print(f"[DEBUG] KI-Task start Versuch {versuch} für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}")
+
             client = HuggingFaceClient()
+            print(f"[DEBUG] Modell prüfen/setzen: {modell_name}")
             client.check_and_set_model(modell_name)
 
             satz_ordner = Path(ordner["satz"])
+            if not satz_ordner.exists() or not satz_ordner.is_dir():
+                raise FileNotFoundError(f"Ordner für Satzdateien nicht gefunden: {satz_ordner}")
+
             satzdateien = [f for f in satz_ordner.iterdir() if kapitel_name in f.name]
             anzahl = len(satzdateien)
+            print(f"[DEBUG] Gefundene Satzdateien: {anzahl} für Kapitel {kapitel_name}")
 
             if anzahl == 0:
-                if progress_queue:
-                    progress_queue.put((kapitel_name, aufgaben_id, 100))
+                if mp_progress_queue:
+                    mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
                 return f"Keine Satzdateien für Kapitel {kapitel_name} gefunden."
 
             for i, datei in enumerate(satzdateien, start=1):
+                print(f"[DEBUG] Verarbeite Satzdatei {i}/{anzahl}: {datei}")
                 pfad_satz = datei  # Path-Objekt
 
                 daten_verarbeiten(
@@ -57,10 +94,12 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, prog
                     aufgaben_id,
                     force_var=False,
                 )
-                if progress_queue:
+                if mp_progress_queue:
                     fortschritt = int((i / anzahl) * 100)
-                    progress_queue.put((kapitel_name, aufgaben_id, fortschritt))
+                    mp_progress_queue.put((kapitel_name, aufgaben_id, fortschritt))
+                    print(f"[DEBUG] Fortschritt gesendet: {fortschritt}%")
 
+            print(f"[INFO] Task {aufgaben_id} für Kapitel {kapitel_name} erfolgreich abgeschlossen.")
             return f"Task {aufgaben_id} für Kapitel {kapitel_name} abgeschlossen"
 
         except Exception as e:
@@ -71,6 +110,8 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, prog
                 return None
             else:
                 print(f"[INFO] Starte Task {aufgaben_id} für Kapitel {kapitel_name} erneut...")
+
+
 
 
 def update_globalordner_in_config(config_path: str, neue_ordner: dict):
@@ -111,32 +152,37 @@ def warte_auf_freien_cpukern_und_ram(
     sleep_intervall: float = 0.5,
     verbose: bool = True
 ) -> bool:
-    """Warte, bis ein CPU-Kern unter max_auslastung_cpu ist und RAM-Auslastung unter max_auslastung_ram,
-    oder bis timeout abgelaufen ist. Gibt True zurück, wenn freie Ressourcen gefunden, sonst False."""
-    
-    # Initialer Aufruf, um gültige cpu_percent Werte zu bekommen
+    """
+    Warte, bis mindestens ein CPU-Kern unter max_auslastung_cpu ist und RAM-Auslastung unter max_auslastung_ram,
+    oder bis timeout abgelaufen ist. Gibt True zurück, wenn freie Ressourcen gefunden, sonst False.
+    """
+    # Erster Aufruf für valide CPU-Werte (Datenbasis)
     psutil.cpu_percent(percpu=True, interval=0.1)
-    
+
     start_time = time.perf_counter()
     while True:
-        cpu_last_pro_kern = psutil.cpu_percent(percpu=True)
+        cpu_last_pro_kern = psutil.cpu_percent(percpu=True, interval=0.1)
         ram_auslastung = psutil.virtual_memory().percent
 
         cpu_ok = any(last < max_auslastung_cpu for last in cpu_last_pro_kern)
         ram_ok = ram_auslastung < max_auslastung_ram
-        
-        if cpu_ok and ram_ok:
-            return True
-        
-        if time.perf_counter() - start_time > timeout:
-            if verbose:
-                print(f"[WARNUNG] Timeout bei Wartezeit (CPU<{max_auslastung_cpu}%, RAM<{max_auslastung_ram}%), starte Prozess trotzdem.")
-            return False
-        
-        if verbose:
-            print(f"[INFO] Warte auf freien CPU-Kern & RAM: CPU pro Kern: {cpu_last_pro_kern}, RAM: {ram_auslastung:.1f}%")
-        time.sleep(sleep_intervall)
 
+        if cpu_ok and ram_ok:
+            if verbose:
+                print(f"[INFO] Ressourcen frei: CPU-Kerne {cpu_last_pro_kern}, RAM {ram_auslastung:.1f}%")
+            return True
+
+        elapsed = time.perf_counter() - start_time
+        if elapsed > timeout:
+            if verbose:
+                print(f"[WARNUNG] Timeout nach {timeout}s: CPU<{max_auslastung_cpu}%, RAM<{max_auslastung_ram}%, starte trotzdem.")
+            return False
+
+        if verbose:
+            print(f"[INFO] Warte... CPU pro Kern: {cpu_last_pro_kern}, RAM: {ram_auslastung:.1f}%, verstrichene Zeit: {elapsed:.1f}s")
+        
+        print(f"warte_auf_freien_cpukern_und_ram geht schlafen")
+        time.sleep(sleep_intervall)
 
 class FehlerAnzeige(ttk.LabelFrame):
     def __init__(self, parent, logfile_path, refresh_interval=2000):
@@ -239,11 +285,10 @@ class DashBoard(ttk.Frame):
         super().__init__(notebook)
         self.client = client
      
-        manager = Manager()
-        self.progress_queue = manager.Queue()  # Queue wird zwischen Prozessen geteilt
-        self.progress_queue_active = False
+        # manager = Manager()
+        # self.progress_queue = manager.Queue()  # Queue wird zwischen Prozessen geteilt
+        # self.progress_queue_active =
         self.thread_queue = queue.Queue()
-        
         self.tasks_running = False
         self.tasks_lock = threading.Lock()
 
@@ -311,7 +356,7 @@ class DashBoard(ttk.Frame):
         self.rowconfigure(7, weight=1)  # Fehleranzeige wächst mit
 
         if config.FehlerAnzeigen:
-            logfile = "meinLog_lezterDurchlauf.log"  # Beispiel-Logpfad anpassen
+            logfile ='meinLog_letzterDurchlauf.log'  # Beispiel-Logpfad anpassen
             self.fehlermonitor = FehlerAnzeige(self, logfile)
             self.fehlermonitor.grid(row=7, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
 
@@ -524,30 +569,7 @@ class DashBoard(ttk.Frame):
 
 
 
-    @staticmethod
-    def lade_prompt_datei(ki_id):
-        print(f"[INFO] Lade Prompt für KI-ID: {ki_id}")
 
-        # Überprüfe, ob ki_id in der Konfiguration existiert
-        if ki_id not in config.KI_AUFGABEN:
-            raise ValueError(f"[FEHLER] Unbekannte KI-ID: {ki_id}")
-
-        prompts_ordner = os.path.join("Eingabe", "prompts")
-        dateiname = config.KI_AUFGABEN[ki_id] + ".txt"
-        dateipfad = os.path.join(prompts_ordner, dateiname)
-
-        print(f"[INFO] Erwarteter Pfad zur Prompt-Datei: {dateipfad}")
-
-        try:
-            with open(dateipfad, "r", encoding="utf-8") as f:
-                inhalt = f.read()
-                print(f"[OK] Prompt-Datei erfolgreich geladen ({len(inhalt)} Zeichen).")
-                return inhalt
-        except FileNotFoundError:
-            raise FileNotFoundError(f"[FEHLER] Die Datei '{dateipfad}' wurde nicht gefunden. Bitte sicherstellen, dass die Datei vorhanden ist.")
-        except Exception as e:
-            # Fange unerwartete Fehler ab
-            raise RuntimeError(f"[FEHLER] Fehler beim Laden der Prompt-Datei '{dateipfad}': {e}")
 
     def _set_task_spinner(self, task_id, aktivieren=True):
         if not hasattr(self, "_active_task_spinners"):
@@ -637,8 +659,10 @@ class DashBoard(ttk.Frame):
 
             if wert == 0:
                 tasks.pop(task_id, None)
+                self._set_task_spinner(task_id,False)
             else:
                 tasks[task_id] = wert
+                self._set_task_spinner(task_id,True)
 
             task_ids = list(tasks.keys())
             durchschnitt = sum(tasks.values()) / len(tasks) if tasks else 0
@@ -939,6 +963,7 @@ class DashBoard(ttk.Frame):
         if not ordner or "Eingabe" not in ordner:
             print(f"Fehler", "GLOBALORDNER ist nicht korrekt gesetzt oder unvollständig.")
         else:    
+            self.ordner = ordner
             # Versuche, Pfad zur .docx-Datei aus Eingabe-Ordner zu rekonstruieren
             eingabe_ordner = Path(ordner["Eingabe"])
         
@@ -952,7 +977,7 @@ class DashBoard(ttk.Frame):
                     messagebox.showwarning("Datei nicht gefunden", f"Die ursprüngliche .docx-Datei konnte nicht gefunden werden:\n{original_docx}")
                     return
 
-                self.selected_file.set(str(original_docx))
+                self.selected_file.set(str(Path(original_docx)))
                 print(f"[DEBUG] Rekonstruierte .docx-Datei: {repr(original_docx)}")
 
                 self.output_folder = ergebnisse_ordner
@@ -969,9 +994,6 @@ class DashBoard(ttk.Frame):
                 else:
                     messagebox.showwarning("Keine Kapitel-Konfiguration", f"Die Datei {self.kapitel_config_datei} wurde nicht gefunden.")
                     self.kapitel_config_datei = None
-
-                # Ordnerstruktur setzen
-                self.ordner = {k: Path(v) for k, v in ordner.items()}
 
                 # Optional: Textbox aktualisieren
                 if hasattr(self, "textbox"):
@@ -995,6 +1017,7 @@ class DashBoard(ttk.Frame):
             return
 
         pfad_obj = Path(file_path)
+
         self.selected_file.set(str(pfad_obj))
         print(f"[DEBUG] Ausgewählter Pfad: {repr(pfad_obj)}")
 
@@ -1070,13 +1093,15 @@ class DashBoard(ttk.Frame):
             label = ttk.Label(self.chapter_frame, text="Keine Kapitel gefunden.")
             label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
             return
-
-        self.all_var = tk.BooleanVar(value=False)
-
+   
         def alle_auswaehlen_toggle():
             wert = self.all_var.get()
             for var in self.chapter_vars.values():
                 var.set(wert)
+                
+        self.all_var = tk.BooleanVar(value=True)
+        alle_auswaehlen_toggle()
+     
 
         style = ttk.Style()
         style.configure("HervorgehobeneCheckbutton.TCheckbutton",
@@ -1137,6 +1162,14 @@ class DashBoard(ttk.Frame):
         self.all_var.set(alle_aktiv)
 
     def start_tasks(self):
+         # Leere eventuell verbliebene Aufgaben aus früheren Läufen
+        while not self.thread_queue.empty():
+            try:
+                self.thread_queue.get_nowait()
+                self.thread_queue.task_done()
+            except queue.Empty:
+                break
+
         # Sicherstellen, dass nicht bereits eine Verarbeitung läuft
         with self.tasks_lock:
             if self.tasks_running:
@@ -1154,17 +1187,56 @@ class DashBoard(ttk.Frame):
             self.kapitel_config.kapitel_liste = list(self.kapitel_config.kapitel_daten.keys())
 
         ausgewaehlte_kapitel = [name for name, var in self.chapter_vars.items() if var.get()]
+        selected_file_path = self.selected_file.get()
+        task_flags = {key: var.get() for key, var in self.task_vars.items()}
+        model_selection_boxes = getattr(self, "model_selection_boxes", None)
+        kapitel_liste = list(self.kapitel_config.kapitel_liste)
+        kapitel_daten = copy.deepcopy(self.kapitel_config.kapitel_daten)
+        ordner_nur_str = {k: str(v) for k, v in self.ordner.items()}
+        max_workers = self.max_workers
+        abort_flag = self.abort_flag
+        progress_queue = self.master.progress_queue
+        mp_progress_queue = self.master.mp_progress_queue
+
+        modelle_für_tasks = {}
+        if model_selection_boxes:
+            for aid, combobox in model_selection_boxes.items():
+                try:
+                    modelle_für_tasks[aid] = combobox.get()
+                except Exception as e:
+                    print(f"[WARNUNG] Fehler beim Auslesen des Modells für Aufgabe {aid}: {e}")
+
+
         print(f"[DEBUG] Ausgewählte Kapitel: {ausgewaehlte_kapitel}", flush=True)
-
+        bereits_in_queue = set()
         for kapitel in ausgewaehlte_kapitel:
+            if kapitel in bereits_in_queue:
+                print(f"[WARNUNG] Kapitel mehrfach in Queue eingefügt: {kapitel}", flush=True)
+            bereits_in_queue.add(kapitel)
             self.thread_queue.put(kapitel)
+          
+        kapitel_anzahl = len(ausgewaehlte_kapitel)
+        max_threads = min(self.max_workers, kapitel_anzahl)
 
-        max_threads = self.max_workers
         try:
-            with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
+           with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
                 futures = []
                 for _ in range(max_threads):
-                    futures.append(thread_executor.submit(self._thread_worker))
+                    futures.append(thread_executor.submit(
+                        self._thread_worker,
+                        selected_file_path,
+                        kapitel_liste,
+                        ordner_nur_str,
+                        task_flags,
+                        progress_queue,  
+                        mp_progress_queue,                  
+                        abort_flag,
+                        kapitel_daten,
+                        modelle_für_tasks,
+                        max_workers
+                    ))
+
+                concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
 
                 for future in concurrent.futures.as_completed(futures):
                     try:
@@ -1176,27 +1248,31 @@ class DashBoard(ttk.Frame):
             self.enable_controls()
             with self.tasks_lock:
                 self.tasks_running = False
+            self.progress_queue_active = False
+            self.master.stoppe_progress_pruefung()
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
             
 
-    def _thread_worker(self):
-        while not self.thread_queue.empty():
+    def _thread_worker(self,
+                    selected_file_path,
+                    kapitel_liste,
+                    ordner_nur_str,
+                    task_flags,
+                    progress_queue,
+                    mp_progress_queue,
+                    abort_flag,
+                    kapitel_daten,
+                    modelle_für_tasks,
+                    max_workers):
+        print("[DEBUG] Thread Worker gestartet", flush=True)
+
+        while True:
             try:
                 kapitel = self.thread_queue.get_nowait()
             except queue.Empty:
                 break
 
-            selected_file_path = self.selected_file.get()
-            kapitel_liste = self.kapitel_config.kapitel_liste
-            ordner_nur_str = {k: str(v) for k, v in self.ordner.items()}
-            task_flags = self.task_flags
-            progress_queue = self.progress_queue
-            abort_flag = self.abort_flag
-            kapitel_config = self.kapitel_config
-            model_selection_boxes = getattr(self, "model_selection_boxes", None)
-            max_workers = self.max_workers
-
-            print(f"starte Verabreitung {kapitel}")
+            print(f"starte Verarbeitung {kapitel}")
 
             self.verarbeite_kapitel(
                 kapitel,
@@ -1205,31 +1281,29 @@ class DashBoard(ttk.Frame):
                 ordner_nur_str,
                 task_flags,
                 progress_queue,
+                mp_progress_queue,
                 abort_flag,
-                kapitel_config,
-                model_selection_boxes,
+                kapitel_daten,
+                modelle_für_tasks,
                 max_workers
             )
 
             self.thread_queue.task_done()
 
-
     def verarbeite_kapitel(self, kapitel_name,
                         selected_file_path,
-                        kapitel_liste,
+                        kapitel_liste,                        
                         ordner_nur_str,
                         task_flags,
                         progress_queue,
+                        mp_progress_queue,
                         abort_flag,
-                        kapitel_config,
-                        model_selection_boxes,
-                        max_workers):
-
-
-        if not hasattr(self, "_verarbeite_kapitel_counter"):
-            self._verarbeite_kapitel_counter = 0
-        self._verarbeite_kapitel_counter += 1
-        print(f"[DEBUG] Starte Verarbeitung für Kapitel: {kapitel_name} (Call #{self._verarbeite_kapitel_counter})", flush=True)
+                        kapitel_daten,
+                        modelle_für_tasks,
+                        max_workers
+                        ):
+        
+        print(f"[DEBUG] Starte Verarbeitung für Kapitel: {kapitel_name}", flush=True)
 
         warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
         print(f"[DEBUG] Ressourcen-Check abgeschlossen für Kapitel: {kapitel_name}", flush=True)
@@ -1243,7 +1317,6 @@ class DashBoard(ttk.Frame):
 
             if task_flags.get(1, False):
                 print(f"[DEBUG] Starte Aufgabe 1: Extraktion für Kapitel: {kapitel_name}", flush=True)
-                self._set_task_spinner(1, True)
                 progress_queue.put((kapitel_name, "1", 0.1))
 
                 extrahiere_kapitel_mit_config(
@@ -1254,8 +1327,7 @@ class DashBoard(ttk.Frame):
                     lambda k, w: progress_queue.put((k, "1", w))
                 )
                 print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-                self._set_task_spinner(1, False)
-
+               
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Aufgabe 1.2.", flush=True)
                     return
@@ -1270,8 +1342,7 @@ class DashBoard(ttk.Frame):
                     lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.1", fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-                self._set_task_spinner(1, False)
-
+             
             if task_flags.get(2, False):
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Aufgabe 2.", flush=True)
@@ -1287,7 +1358,7 @@ class DashBoard(ttk.Frame):
                     lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.2", fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-                self._set_task_spinner(2, False)
+             
 
             next_key = None
 
@@ -1303,9 +1374,7 @@ class DashBoard(ttk.Frame):
                     print(f"[INFO] Keine aktiven KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
                 else:
                     print(f"[INFO] Starte parallele KI-Aufgaben für Kapitel {kapitel_name}", flush=True)
-                    self.progress_queue_active = True
-                    self.prüfe_progress_queue()
-
+                  
                     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                         futures = []
 
@@ -1314,15 +1383,22 @@ class DashBoard(ttk.Frame):
                             task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
                             print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}", flush=True)
 
-                            prompt_datei_text = self.lade_prompt_datei(aufgaben_id)
-                            zusatz_info = kapitel_config.kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+                            try:
+                                prompt_datei_text = lade_prompt_datei(aufgaben_id)
+                            except Exception as e:
+                                print(f"[FEHLER] Laden der Prompt-Datei für Aufgabe {aufgaben_id} fehlgeschlagen: {e}", flush=True)
+                                traceback.print_exc()
+                                continue  # Diese KI-Task überspringen
+
+                            zusatz_info = kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+            
+                            print(f"zusatzinfo: {zusatz_info}")
                             prompt = prompt_datei_text + "\n" + zusatz_info
+                            print(f"prompt_datei_text: {prompt_datei_text}")
 
-                            modell_name = None
-                            if model_selection_boxes and aufgaben_id in model_selection_boxes:
-                                modell_name = model_selection_boxes[aufgaben_id].get()
-                                print(f"[DEBUG] Modell für {task_name}: {modell_name}", flush=True)
-
+                            modell_name = modelle_für_tasks.get(aufgaben_id, None)                    
+                            print(f"modell_name: {modell_name}")
+                            
                             warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
 
                             future = executor.submit(
@@ -1333,7 +1409,7 @@ class DashBoard(ttk.Frame):
                                 modell_name,
                                 {"satz": ordner_nur_str["satz"], 
                                 "ki": ordner_nur_str["ki"]},
-                                progress_queue
+                                mp_progress_queue,
                             )
                             futures.append(future)
 
@@ -1346,15 +1422,14 @@ class DashBoard(ttk.Frame):
                                     max_key = max(config.KI_AUFGABEN.keys())
                                     next_key = max_key + 1
                                 else:
-                                    next_key = 3
+                                    next_key = 3 # falls keine KI-Aufgaben definiert wären,defautlwert
                             except Exception as e:
                                 print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
                                 traceback.print_exc()
-
-                    self.progress_queue_active = False
+                  
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
             else:
-                next_key = 3
+                next_key = 3 # falls keine KI-Aufgaben genutzt werden , defailtwert
 
             if task_flags.get(next_key, False):
                 if abort_flag.is_set():
@@ -1362,14 +1437,14 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Zusammenführung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "final 1", 0.1))
+                progress_queue.put((kapitel_name, next_key, 0.1))
 
                 Merge_annotationen(
                     ordner_nur_str["json"],
                     ordner_nur_str["ki"],
                     ordner_nur_str["merge"],
                     [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, "final 1", w))
+                    lambda w: progress_queue.put((kapitel_name, next_key + ".1", w))
                 )
 
                 if abort_flag.is_set():
@@ -1377,7 +1452,7 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "final 2", 0.1))
+                progress_queue.put((kapitel_name, next_key + ".2", 0.1))
 
                 visualisiere_annotationen(
                     ordner_nur_str["merge"],
@@ -1392,220 +1467,6 @@ class DashBoard(ttk.Frame):
         except Exception as e:
             print(f"[FEHLER] Verarbeitung für Kapitel '{kapitel_name}' fehlgeschlagen:", str(e), flush=True)
             traceback.print_exc()
-
-    # def verarbeite_kapitel(self, kapitel_name):
-    #     if not hasattr(self, "_verarbeite_kapitel_counter"):
-    #         self._verarbeite_kapitel_counter = 0
-    #     self._verarbeite_kapitel_counter += 1
-    #     print(f"[DEBUG] Starte Verarbeitung für Kapitel: {kapitel_name} (Call #{self._verarbeite_kapitel_counter})", flush=True)
-
-    #     import traceback
-    #     traceback.print_stack()
-
-    #     warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
-    #     print(f"[DEBUG] Ressourcen-Check abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-
-    #     try:
-    #         if self.abort_flag.is_set():
-    #             print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
-    #             return
-
-    #         ordner = self.ordner
-    #         ordner_nur_str = {k: str(v) for k, v in ordner.items()}
-    #         print(f"[DEBUG] Verwende Ordnerstruktur: {ordner_nur_str}", flush=True)
-
-    #         if self.task_flags.get(1, False):
-    #             print(f"[DEBUG] Starte Aufgabe 1: Extraktion für Kapitel: {kapitel_name}", flush=True)
-    #             self._set_task_spinner(1, True)
-    #             self.progress_queue.put((kapitel_name, "1", 0.1))
-
-    #             extrahiere_kapitel_mit_config(
-    #                 self.selected_file.get(),
-    #                 self.kapitel_config.kapitel_liste,
-    #                 ordner_nur_str["txt"],
-    #                 [kapitel_name], 
-    #                 lambda k, w: self.progress_queue.put((k, "1", w))
-    #             )
-    #             print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-    #             self._set_task_spinner(1, False)
-
-    #             if self.abort_flag.is_set():
-    #                 print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Aufgabe 1.2.", flush=True)
-    #                 return
-
-    #             print(f"[DEBUG] Starte Aufgabe 1.2: Vorverarbeitung für Kapitel: {kapitel_name}", flush=True)
-    #             self.progress_queue.put((kapitel_name, "Vorverarbeitung", 0.1))
-
-    #             verarbeite_kapitel_und_speichere_json(
-    #                 ordner_nur_str["txt"],
-    #                 ordner_nur_str["json"],
-    #                 [kapitel_name],
-    #                 lambda kapitel, fortschritt: self.progress_queue.put((kapitel, "2.1", fortschritt))
-    #             )
-    #             print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-    #             self._set_task_spinner(1, False)
-
-    #         if self.task_flags.get(2, False):
-    #             if self.abort_flag.is_set():
-    #                 print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Aufgabe 2.", flush=True)
-    #                 return
-
-    #             print(f"[DEBUG] Starte Aufgabe 2: Satzaufteilung für Kapitel: {kapitel_name}", flush=True)
-    #             self.progress_queue.put((kapitel_name, "Satzbildung", 0.1))
-
-    #             dateien_aufteilen(
-    #                 kapitel_name,
-    #                 ordner_nur_str["json"],
-    #                 ordner_nur_str["satz"],
-    #                 lambda kapitel, fortschritt: self.progress_queue.put((kapitel, "2.2", fortschritt))
-    #             )
-    #             print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-    #             self._set_task_spinner(2, False)
-
-    #         next_key = None
-
-    #         if getattr(config, "NUTZE_KI", True):
-    #             if self.abort_flag.is_set():
-    #                 print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
-    #                 return
-
-    #             aktive_tasks = [aid for aid in config.KI_AUFGABEN if self.task_flags.get(aid, False)]
-    #             print(f"[DEBUG] Aktive KI-Tasks für Kapitel {kapitel_name}: {aktive_tasks}", flush=True)
-
-    #             if not aktive_tasks:
-    #                 print(f"[INFO] Keine aktiven KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
-    #             else:
-    #                 print(f"[INFO] Starte parallele KI-Aufgaben für Kapitel {kapitel_name}", flush=True)
-    #                 self.progress_queue_active = True
-    #                 self.prüfe_progress_queue()
-
-    #                 with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-    #                     futures = []
-
-    #                     for aufgaben_id in aktive_tasks:
-    #                         aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
-    #                         task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
-    #                         print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}", flush=True)
-
-    #                         prompt_datei_text = self.lade_prompt_datei(aufgaben_id)
-    #                         zusatz_info = self.kapitel_config.kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
-    #                         prompt = prompt_datei_text + "\n" + zusatz_info
-
-    #                         modell_name = None
-    #                         if hasattr(self, "model_selection_boxes") and aufgaben_id in self.model_selection_boxes:
-    #                             modell_name = self.model_selection_boxes[aufgaben_id].get()
-    #                             print(f"[DEBUG] Modell für {task_name}: {modell_name}", flush=True)
-
-    #                         warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
-
-    #                         future = executor.submit(
-    #                             ki_task_process,
-    #                             kapitel_name,
-    #                             aufgaben_id,
-    #                             prompt,
-    #                             modell_name,
-    #                             {"satz": ordner_nur_str["satz"], 
-    #                             "ki": ordner_nur_str["ki"]},
-    #                             self.progress_queue
-    #                         )
-    #                         futures.append(future)
-
-    #                     for future in concurrent.futures.as_completed(futures):
-    #                         try:
-    #                             future.result()
-    #                             print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
-
-    #                             if config.KI_AUFGABEN:
-    #                                 max_key = max(config.KI_AUFGABEN.keys())
-    #                                 next_key = max_key + 1
-    #                             else:
-    #                                 next_key = 3
-    #                         except Exception as e:
-    #                             print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
-    #                             traceback.print_exc()
-
-    #                     self.progress_queue_active = False
-    #                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
-    #         else:
-    #             next_key = 3
-
-    #         if self.task_flags.get(next_key, False):
-    #             if self.abort_flag.is_set():
-    #                 print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Merge.", flush=True)
-    #                 return
-
-    #             print(f"[DEBUG] Starte Zusammenführung für Kapitel {kapitel_name}", flush=True)
-    #             self.progress_queue.put((kapitel_name, "final 1", 0.1))
-
-    #             Merge_annotationen(
-    #                 ordner_nur_str["json"],
-    #                 ordner_nur_str["ki"],
-    #                 ordner_nur_str["merge"],
-    #                 [kapitel_name],
-    #                 lambda w: self.progress_queue.put((kapitel_name, "final 1", w))
-    #             )
-
-    #             if self.abort_flag.is_set():
-    #                 print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Visualisierung.", flush=True)
-    #                 return
-
-    #             print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
-    #             self.progress_queue.put((kapitel_name, "final 2", 0.1))
-
-    #             visualisiere_annotationen(
-    #                 ordner_nur_str["merge"],
-    #                 ordner_nur_str["pdf"],
-    #                 [kapitel_name],
-    #                 lambda w: self.progress_queue.put((kapitel_name, "final 2", w))
-    #             )
-
-    #         self.progress_queue.put((kapitel_name, "Fertig", 1.0))
-    #         print(f"[INFO] Kapitel abgeschlossen: {kapitel_name}", flush=True)
-
-    #     except Exception as e:
-    #         print(f"[FEHLER] Verarbeitung für Kapitel '{kapitel_name}' fehlgeschlagen:", str(e), flush=True)
-    #         traceback.print_exc()
-
-    def prüfe_progress_queue(self):
-        if not self.progress_queue_active:
-            return  # Polling stoppen, wenn Flag False ist
-
-        try:
-            while not self.progress_queue.empty():
-                kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
-                self.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)
-        except Exception as e:
-            print(f"[FEHLER bei Queue-Check] {e}")
-
-        self.after(200, self.prüfe_progress_queue)  # alle 200 ms erneut prüfen
-
-    # def process_queue(self):
-    #     try:
-    #         while True:
-    #             item = self.queue.get_nowait()
-    #             if item[0] == 'update_status':
-    #                 _, task_id, text = item
-    #                 if task_id == "gesamt":
-    #                     if hasattr(self, "gesamt_status_label"):
-    #                         self.gesamt_status_label.config(text=text)
-    #                 elif task_id in self.task_status_labels:
-    #                     self.task_status_labels[task_id].config(text=text)
-    #                 elif task_id == "Dokument" and "Dokument" in self.kapitel_task_labels:
-    #                     self.kapitel_task_labels["Dokument"].config(text=text)
-    #             elif item[0] == 'aktualisiere_progressbar':
-    #                 _, task_id, wert = item
-    #                 if task_id == "gesamt":
-    #                     if hasattr(self, "gesamt_progressbar"):
-    #                         self.gesamt_progressbar["value"] = wert
-    #                 elif task_id in self.kapitel_progressbars:
-    #                     self.kapitel_progressbars[task_id]["value"] = wert
-    #             elif item[0] == 'set_label':
-    #                 _, text = item
-    #                 self.aktive_aufgabe_label.config(text=text)
-    #             self.queue.task_done()
-    #     except queue.Empty:
-    #         pass
-    #     self.after(100, self.process_queue)
 
     def stop_tasks(self):
         if hasattr(self, 'abort_flag'):

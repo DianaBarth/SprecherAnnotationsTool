@@ -1,12 +1,13 @@
 import tkinter as tk
 from tkinter import ttk
-
+import queue
 from log_manager import LogManager
 from kapitel_config import KapitelConfig
 from dashboard import DashBoard
 from modellwahl import InstallationModellwahl
 from config_editor import ConfigEditor
 from huggingface_client import HuggingFaceClient
+import multiprocessing
 
 import Eingabe.config as config # Importiere das komplette config-Modul
 
@@ -16,6 +17,13 @@ class SprecherAnnotationsTool(tk.Tk):
     def __init__(self, logger):
         super().__init__()
         self.title("Sprecher-Annotationen-Tool")
+
+        # Queue und Flag initialisieren
+        self.progress_queue = queue.Queue()
+        self.mp_progress_queue = multiprocessing.Queue()  # für Prozesse
+        self.progress_queue_active = False
+
+
 
         # HuggingFace Client initialisieren
         self.client = HuggingFaceClient()
@@ -28,6 +36,7 @@ class SprecherAnnotationsTool(tk.Tk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
+        self.starte_progress_pruefung()
         # KapitelConfig, Dashboard etc. anlegen
         self.kapitel_config = KapitelConfig(self, self.notebook)
         self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client)
@@ -38,6 +47,41 @@ class SprecherAnnotationsTool(tk.Tk):
         # Anfangs den Dashboard-Tab auswählen (Achtung: Attributname ist klein)
         self.notebook.select(self.dashboard)
 
+    
+    def starte_progress_pruefung(self):
+        if not self.progress_queue_active:
+            self.progress_queue_active = True
+            self.after(0, self.pruefe_progress_queue)
+            self.after(0, self.pruefe_mp_progress_queue)  # <--- MP-Queue auch prüfen
+
+    def pruefe_progress_queue(self):
+            try:
+                while not self.progress_queue.empty():
+                    kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
+                    print(f"melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
+                    self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)  # deine GUI-Update-Funktion
+            except Exception as e:
+                print(f"[FEHLER bei Queue-Check] {e}")
+
+            if self.progress_queue_active:
+                self.after(200, self.pruefe_progress_queue)  # alle 200 ms prüfen
+                
+    def pruefe_mp_progress_queue(self):
+        try:
+            while not self.mp_progress_queue.empty():
+                item = self.mp_progress_queue.get_nowait()
+
+                if isinstance(item, tuple) and len(item) == 3:
+                    kapitel_name, aufgaben_id, wert = item
+                    print(f"[MP] melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
+                    self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)
+                else:
+                    print(f"[WARNUNG] Unerwartetes Format in mp_progress_queue: {item}", flush=True)
+        except Exception as e:
+            print(f"[FEHLER bei MP-Queue-Check] {e}", flush=True)
+
+        if self.progress_queue_active:
+            self.after(200, self.pruefe_mp_progress_queue)
 
 if __name__ == "__main__":
     logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')

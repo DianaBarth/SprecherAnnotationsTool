@@ -4,6 +4,9 @@ from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
+
+    ausgabe_ordner =Path(ausgabe_ordner)
+
     print(f"[DEBUG] Starte Kapitel-Extraktion mit Datei: {docx_datei}")
     print(f"[DEBUG] Zielordner: {ausgabe_ordner}")
     print(f"[DEBUG] kapitel_namen: {kapitel_namen}") 
@@ -13,7 +16,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, aus
         print(f"[FEHLER] Docx-Datei existiert nicht: {docx_datei}")
         return
 
-    ausgabe_ordner = Path(ausgabe_ordner)  
+  
 
     if not os.path.exists(ausgabe_ordner):
         os.makedirs(ausgabe_ordner, exist_ok=True)
