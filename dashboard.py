@@ -52,14 +52,17 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, prog
             satzdateien = [f for f in os.listdir(ordner["satz"]) if kapitel_name in f]
             anzahl = len(satzdateien)
 
+            satz_ordner = Path(ordner["satz"])
+            ki_ordner = Path(ordner["ki"])
+
             for i, dateiname in enumerate(satzdateien, start=1):
-                pfad_satz = os.path.join(ordner["satz"], dateiname)
+                pfad_satz = os.path.join(satz_ordner, dateiname)
 
                 daten_verarbeiten(
                     client,
                     prompt,
                     pfad_satz,
-                    ordner["ki"],
+                    ki_ordner,
                     aufgaben_id,
                     force_var=False,
                 )
@@ -79,16 +82,30 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, prog
             else:
                 print(f"[INFO] Starte Task {aufgaben_id} für Kapitel {kapitel_name} erneut...")
     
-def warte_auf_freien_cpu_kern(max_auslastung: float = 50.0, timeout: float = 30.0) -> bool:
-    """Warte, bis ein CPU-Kern unter max_auslastung ist oder timeout abgelaufen ist."""
+def warte_auf_freien_cpukern_und_ram(
+    max_auslastung_cpu: float = 50.0,
+    max_auslastung_ram: float = 80.0,
+    timeout: float = 30.0
+) -> bool:
+    """Warte, bis ein CPU-Kern unter max_auslastung_cpu ist und RAM-Auslastung unter max_auslastung_ram,
+    oder bis timeout abgelaufen ist. Gibt True zurück, wenn freie Ressourcen gefunden, sonst False."""
+    
     start_time = time.perf_counter()
     while True:
         cpu_last_pro_kern = psutil.cpu_percent(percpu=True)
-        if any(last < max_auslastung for last in cpu_last_pro_kern):
+        ram_auslastung = psutil.virtual_memory().percent
+
+        cpu_ok = any(last < max_auslastung_cpu for last in cpu_last_pro_kern)
+        ram_ok = ram_auslastung < max_auslastung_ram
+        
+        if cpu_ok and ram_ok:
             return True
+        
         if time.perf_counter() - start_time > timeout:
-            print("[WARNUNG] Timeout bei CPU-Wartezeit, starte Prozess trotzdem.")
+            print(f"[WARNUNG] Timeout bei Wartezeit (CPU<{max_auslastung_cpu}%, RAM<{max_auslastung_ram}%), starte Prozess trotzdem.")
             return False
+        
+        print(f"[INFO] Warte auf freien CPU-Kern & RAM: CPU pro Kern: {cpu_last_pro_kern}, RAM: {ram_auslastung:.1f}%")
         time.sleep(0.5)
 
 
@@ -1099,8 +1116,12 @@ class DashBoard(ttk.Frame):
                                 print(f"[DEBUG] Modell für {task_name}: {modell_name}")
 
                             # CPU-Auslastung prüfen:
-                            warte_auf_freien_cpu_kern(max_auslastung=95.0)
-
+                            warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram = 80.0, timeout = 30.0)
+                            
+                            ordner_nur_str = {
+                                "satz": str(self.ordner["satz"]),
+                                "ki": str(self.ordner["ki"]),
+                            }
                             # Task in separatem Prozess starten
                             future = executor.submit(
                                 ki_task_process,
@@ -1108,7 +1129,7 @@ class DashBoard(ttk.Frame):
                                 aufgaben_id,
                                 prompt,
                                 modell_name,
-                                self.ordner,
+                                ordner_nur_str,
                                 self.progress_queue
                             )
                             futures.append(future)
