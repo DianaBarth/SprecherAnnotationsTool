@@ -5,6 +5,8 @@ import glob
 import shutil
 import threading
 import json
+import psutil
+import time
 import tkinter as tk
 import datetime
 import time
@@ -28,6 +30,7 @@ import threading
 import re
 import json
 import traceback
+from multiprocessing import Manager
 
 import Eingabe.config as config # Importiere das komplette config-Modul
 from annotationen_editor import AnnotationenEditor
@@ -37,6 +40,57 @@ from Schritt3 import dateien_aufteilen
 from Schritt4 import daten_verarbeiten
 from Schritt5 import Merge_annotationen
 from Schritt6 import visualisiere_annotationen
+
+
+def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, progress_queue=None):
+    max_retries = 3
+    for versuch in range(1, max_retries + 1):
+        try:
+            client = HuggingFaceClient()
+            client.check_and_set_model(modell_name)
+
+            satzdateien = [f for f in os.listdir(ordner["satz"]) if kapitel_name in f]
+            anzahl = len(satzdateien)
+
+            for i, dateiname in enumerate(satzdateien, start=1):
+                pfad_satz = os.path.join(ordner["satz"], dateiname)
+
+                daten_verarbeiten(
+                    client,
+                    prompt,
+                    pfad_satz,
+                    ordner["ki"],
+                    aufgaben_id,
+                    force_var=False,
+                )
+                # Fortschritt nach jeder Datei aktualisieren
+                if progress_queue:
+                    fortschritt = int((i / anzahl) * 100)
+                    progress_queue.put((kapitel_name, aufgaben_id, fortschritt))
+
+            return f"Task {aufgaben_id} für Kapitel {kapitel_name} abgeschlossen"
+
+        except Exception as e:
+            print(f"[WARNUNG] Fehler bei KI-Task (Versuch {versuch}/{max_retries}): {e}")
+            traceback.print_exc()
+            if versuch == max_retries:
+                print(f"[FEHLER] Task {aufgaben_id} für Kapitel {kapitel_name} nach {max_retries} Versuchen fehlgeschlagen.")
+                return None
+            else:
+                print(f"[INFO] Starte Task {aufgaben_id} für Kapitel {kapitel_name} erneut...")
+    
+def warte_auf_freien_cpu_kern(max_auslastung: float = 50.0, timeout: float = 30.0) -> bool:
+    """Warte, bis ein CPU-Kern unter max_auslastung ist oder timeout abgelaufen ist."""
+    start_time = time.perf_counter()
+    while True:
+        cpu_last_pro_kern = psutil.cpu_percent(percpu=True)
+        if any(last < max_auslastung for last in cpu_last_pro_kern):
+            return True
+        if time.perf_counter() - start_time > timeout:
+            print("[WARNUNG] Timeout bei CPU-Wartezeit, starte Prozess trotzdem.")
+            return False
+        time.sleep(0.5)
+
 
 class FehlerAnzeige(ttk.LabelFrame):
     def __init__(self, parent, logfile_path, refresh_interval=2000):
@@ -143,8 +197,11 @@ class DashBoard(ttk.Frame):
     def __init__(self, parent, notebook, kapitel_config, client):
         super().__init__(notebook)
         self.client = client
-        self.queue = queue.Queue()  # Queue für UI-Updates und Thread-Kommunikation
-        self.after(100, self.process_queue)
+     
+        manager = Manager()
+        self.progress_queue = manager.Queue()  # Queue wird zwischen Prozessen geteilt
+        self.progress_queue_active = False
+        
         self.master= parent  # Zugriff auf die Hauptanwendung
         
       
@@ -193,7 +250,7 @@ class DashBoard(ttk.Frame):
       
         self.shutdown_controller = ShutdownController(self)
 
-        self.laufende_ki_tasks = defaultdict(set)  # Kapitelname → Menge von Aufgaben-IDs
+        self.kapitel_tasks = {}  # Struktur: {kapitel_name: {task_id: wert}}
 
          # UI-Elemente bauen (muss als Methode definiert sein)
         self._build_widgets()
@@ -524,7 +581,7 @@ class DashBoard(ttk.Frame):
             self.after(200, self._animate_task_spinners)
 
 
-    def aktualisiere_progressbar(self, kapitel_name, task_id = None, wert = 0):
+    def aktualisiere_progressbar(self, kapitel_name, task_id = None, wert = 0, mehrere = False):
         pb = self.kapitel_progressbars.get(kapitel_name)
         lbl = self.kapitel_task_labels.get(kapitel_name)
 
@@ -534,7 +591,10 @@ class DashBoard(ttk.Frame):
                 pb.grid_remove()
                 lbl.grid_remove()
             else:
-                lbl.config(text=f"Aufgabe: {task_id}")
+                if mehrere:
+                    lbl.config(text=f"Aufgaben: {task_id}")
+                else:
+                    lbl.config(text=f"Aufgabe: {task_id}")
                 lbl.grid()
                 pb.grid()
 
@@ -555,30 +615,30 @@ class DashBoard(ttk.Frame):
         if hasattr(self, "gesamt_status_label") and self.gesamt_status_label:
             self.gesamt_status_label["text"] = f"Gesamtfortschritt: {int(gesamt)} %"
 
+    def melde_KI_Tasks_fortschritt(self, kapitel_name, task_id, wert):
+        """Wird von parallelen Tasks aufgerufen, um Fortschritt zu melden."""
+        # Task-Dict initialisieren
+        if kapitel_name not in self.kapitel_tasks:
+            self.kapitel_tasks[kapitel_name] = {}
 
-    def aktualisiere_laufende_ki_tasks(self, kapitel_name, task_id=None, wert=None):
-        if not hasattr(self, "task_fortschritt"):
-            self.task_fortschritt = {}
+        tasks = self.kapitel_tasks[kapitel_name]
+        
+        # Fortschritt aktualisieren
+        if wert == 0:
+            tasks.pop(task_id, None)
+        else:
+            tasks[task_id] = wert
 
-        if kapitel_name not in self.task_fortschritt:
-            self.task_fortschritt[kapitel_name] = {}
-
-        if task_id is not None and wert is not None:
-            self.task_fortschritt[kapitel_name][task_id] = wert
-        elif task_id is not None and wert is None:
-            # Task abgeschlossen
-            self.task_fortschritt[kapitel_name][task_id] = 1.0
-
-        # Durchschnitt berechnen
-        task_dict = self.task_fortschritt.get(kapitel_name, {})
-        if task_dict:
-            durchschnitt = sum(task_dict.values()) / len(task_dict)
+        # Aggregierte Infos
+        task_ids = list(tasks.keys())
+        if tasks:
+            durchschnitt = sum(tasks.values()) / len(tasks)
         else:
             durchschnitt = 0
 
-        self.aktualisiere_progressbar(kapitel_name, task_id, round(durchschnitt * 100, 1))
-
-
+        mehrere = len(task_ids) > 1
+        self.aktualisiere_progressbar(kapitel_name, task_ids, durchschnitt, mehrere)
+   
     def InhaltsverzeichnisAuslesenMitDialog(self):
         if not self.selected_file.get():
             messagebox.showwarning("Fehler", "Bitte zuerst eine Word-Datei laden.")
@@ -752,7 +812,7 @@ class DashBoard(ttk.Frame):
             return
 
         self.model_selection_boxes = {}
-        self.task_status_labels = {}
+        # self.task_status_labels = {}
 
         for i, (schritt_nr, beschreibung) in enumerate(self.aufgaben_input.items()):
             var = tk.BooleanVar(value=(schritt_nr == 1))  # hier int 1 statt str "1"
@@ -761,7 +821,7 @@ class DashBoard(ttk.Frame):
             frame.columnconfigure(0, weight=3)
             frame.columnconfigure(1, weight=1)
             frame.columnconfigure(2, weight=0)
-            frame.columnconfigure(3, weight=0)
+            #frame.columnconfigure(3, weight=0)
 
             cb = tk.Checkbutton(frame, text=beschreibung, variable=var)
             cb.grid(row=0, column=0, sticky="w")
@@ -778,9 +838,9 @@ class DashBoard(ttk.Frame):
                 combo.grid(row=0, column=2, padx=5, sticky="w")
                 self.model_selection_boxes[schritt_nr] = combo
 
-            status_label = ttk.Label(frame, text="", foreground="gray", width=30)
-            status_label.grid(row=0, column=3, padx=5, sticky="w")
-            self.task_status_labels[schritt_nr] = status_label
+            # status_label = ttk.Label(frame, text="", foreground="gray", width=30)
+            # status_label.grid(row=0, column=3, padx=5, sticky="w")
+            # self.task_status_labels[schritt_nr] = status_label
 
         # Button außerhalb der Loop in eigenem Frame
         btn_frame = ttk.Frame(self.aufg_frame)
@@ -903,6 +963,7 @@ class DashBoard(ttk.Frame):
             frame.grid_columnconfigure(0, weight=1)
             frame.grid_columnconfigure(1, weight=0)
             frame.grid_columnconfigure(2, weight=0)
+            frame.grid_columnconfigure(3, weight=0)
 
             cb = ttk.Checkbutton(frame, text=name, variable=var)
             cb.grid(row=0, column=0, sticky="w")
@@ -913,7 +974,7 @@ class DashBoard(ttk.Frame):
             self.kapitel_progressbars[name] = pb
 
             lbl_task = ttk.Label(frame, text="", width=20, anchor="w")
-            lbl_task.grid(row=0, column=1, sticky="w", padx=(5, 0))
+            lbl_task.grid(row=0, column=2, sticky="w", padx=(5, 0))
             lbl_task.grid_remove()
             self.kapitel_task_labels[name] = lbl_task
 
@@ -947,9 +1008,18 @@ class DashBoard(ttk.Frame):
             self.threads.append(thread)
 
     def verarbeite_kapitel(self, kapitel_name):
-        self.laufende_ki_tasks[kapitel_name] = set()
+    
         try:
             print(f"[DEBUG] Beginne Verarbeitung für Kapitel: {kapitel_name}")         
+            print(f"[INFO] Starte Verarbeitung für Kapitel: {kapitel_name}")
+
+            # Prüfe, ob der Abbruch-Flag gesetzt ist (z.B. Abbruch-Button gedrückt)
+            if self.abort_flag.is_set():
+                print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).")
+                return
+            
+            
+            
             ordner = self.ordner
 
             if self.task_flags.get(1, False):
@@ -965,9 +1035,7 @@ class DashBoard(ttk.Frame):
                 )
                 self._set_task_spinner(1, False)
 
-            if self.task_flags.get(2, False):
-                self._set_task_spinner(2, True)
-                # aufgabe 2.1- schritt 2
+                 # aufgabe 1.2- schritt 2
                 if self.abort_flag.is_set(): return
                 self.aktualisiere_progressbar(kapitel_name, "Vorverarbeitung", 0.1)
                 verarbeite_kapitel_und_speichere_json(
@@ -976,8 +1044,10 @@ class DashBoard(ttk.Frame):
                     [kapitel_name],
                     lambda kapitel, fortschritt: self.aktualisiere_progressbar(kapitel, "2.1", fortschritt)
                 )
+                self._set_task_spinner(1, False)
 
-                # aufgabe 2.2 - schritt 3
+            if self.task_flags.get(2, False):
+                 # aufgabe 2 - schritt 3
                 if self.abort_flag.is_set(): return
                 self.aktualisiere_progressbar(kapitel_name, "Satzbildung", 0.1)
                 dateien_aufteilen(
@@ -989,56 +1059,83 @@ class DashBoard(ttk.Frame):
                 self._set_task_spinner(2, False)
 
 
-            if getattr(config, "NUTZE_KI",True):
-                # aufgaben 3-7 etc - schritt 4
+            next_key = None  
+
+            if getattr(config, "NUTZE_KI", True):
+                # Abbruchprüfung nochmal vor KI-Tasks
                 if self.abort_flag.is_set():
+                    print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).")
                     return
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    futures = []
 
-                    aktive_tasks = [aid for aid in config.KI_AUFGABEN if self.task_flags.get(aid, False)]
+                # Aktive KI-Aufgaben aus config (boolean-Flags in self.task_flags)
+                aktive_tasks = [aid for aid in config.KI_AUFGABEN if self.task_flags.get(aid, False)]
 
-                    for idx, aufgaben_id in enumerate(aktive_tasks):
-                        aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
-                        task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
-                        print(f"[DEBUG] Plane {task_name} für {kapitel_name}")
+                if not aktive_tasks:
+                    print(f"[INFO] Keine aktiven KI-Aufgaben für Kapitel {kapitel_name}.")
+                else:
+                    print(f"[INFO] Starte KI-Aufgaben parallel: {aktive_tasks} für Kapitel {kapitel_name}")
+                        
+                    self.progress_queue_active = True
+                    self.prüfe_progress_queue()  # zyklisches Polling starten
 
-                        prompt = self.lade_prompt_datei(aufgaben_id) + "\n" + self.kapitel_config.kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
-                        print(f"(Aufgabenstellung {aufgaben_key}: {prompt})")
+                    # ProcessPoolExecutor für parallele KI-Tasks (eigenständige Prozesse)
+                    with concurrent.futures.ProcessPoolExecutor() as executor:
+                        futures = []
 
-                        modell_name = None
-                        if hasattr(self, "model_selection_boxes") and aufgaben_id in self.model_selection_boxes:
-                            modell_name = self.model_selection_boxes[aufgaben_id].get()
-                            print(f"[DEBUG] Modell für {task_name}: {modell_name}")
+                        for aufgaben_id in aktive_tasks:
+                            aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
+                            task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
+                            print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}")
 
-                        self.client.check_and_set_model(modell_name)
+                            # Prompt laden (z.B. von Datei oder GUI)
+                            prompt_datei_text = self.lade_prompt_datei(aufgaben_id)  # Deine Methode zum Laden der Prompts
+                            zusatz_info = self.kapitel_config.kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+                            prompt = prompt_datei_text + "\n" + zusatz_info
 
-                        futures.append(
-                            executor.submit(
-                                self.verarbeite_KI_Task,
+                            # Modell aus GUI-Auswahl oder Standard
+                            modell_name = None
+                            if hasattr(self, "model_selection_boxes") and aufgaben_id in self.model_selection_boxes:
+                                modell_name = self.model_selection_boxes[aufgaben_id].get()
+                                print(f"[DEBUG] Modell für {task_name}: {modell_name}")
+
+                            # CPU-Auslastung prüfen:
+                            warte_auf_freien_cpu_kern(max_auslastung=95.0)
+
+                            # Task in separatem Prozess starten
+                            future = executor.submit(
+                                ki_task_process,
                                 kapitel_name,
                                 aufgaben_id,
                                 prompt,
                                 modell_name,
-                                ordner,
-                                idx + 1,  # tasknr
-                                len(aktive_tasks)  # anzahl_tasks
+                                self.ordner,
+                                self.progress_queue
                             )
-                        )
+                            futures.append(future)
 
-                    # Warte auf alle Tasks
-                    for future in futures:
-                        future.result()
+                        # Auf alle Prozesse warten und ggf. Exceptions erhalten
+                        for future in concurrent.futures.as_completed(futures):
+                            try:
+                                future.result()
+                               
+                                # Bestimme den nächsten Key nach dem höchsten in KI_AUFGABEN
+                                if config.KI_AUFGABEN:
+                                    max_key = max(config.KI_AUFGABEN.keys())
+                                    next_key = max_key + 1
+                                else:
+                                    next_key = 3  # fallback, falls KI_AUFGABEN leer ist
+                                                              
+                            except Exception as e:
+                                print(f"[ERROR] Fehler bei KI-Aufgabe: {e}")
 
-                    # Bestimme den nächsten Key nach dem höchsten in KI_AUFGABEN
-                    if config.KI_AUFGABEN:
-                        max_key = max(config.KI_AUFGABEN.keys())
-                        next_key = max_key + 1
-                    else:
-                        next_key = 3  # fallback, falls KI_AUFGABEN leer ist
+                        # Nachfolgende Verarbeitung (z.B. Zusammenführen, Ausgabe, etc.)
+                        self.progress_queue_active = False  # Polling stoppen
+                        print(f"[INFO] Verarbeitung Kapitel {kapitel_name} abgeschlossen.")
+
             else:
                 next_key = 3
-                
+
+         
             if self.task_flags.get(next_key, False):
                 # aufgabe 8.1 schritt 5
                 if self.abort_flag.is_set(): return
@@ -1068,558 +1165,46 @@ class DashBoard(ttk.Frame):
             print(f"[FEHLER] Verarbeitung für Kapitel '{kapitel_name}' fehlgeschlagen:", str(e))
             traceback.print_exc()
 
+    def prüfe_progress_queue(self):
+        if not self.progress_queue_active:
+            return  # Polling stoppen, wenn Flag False ist
 
-    def verarbeite_KI_Task(self, kapitel_name, aufgaben_id, prompt, modell_name, ordner, tasknr=None, anzahl_tasks=None):
         try:
-            # Spinner für diese Aufgabe aktivieren
-            self._set_task_spinner(aufgaben_id, True)
-
-            # Task-Label zusammensetzen
-            aufgaben_text = config.KI_AUFGABEN.get(aufgaben_id, f"ID {aufgaben_id}")
-            task_label = f"Task {tasknr}/{anzahl_tasks}: {aufgaben_text}" if tasknr and anzahl_tasks else f"Aufgabe {aufgaben_id}: {aufgaben_text}"
-            print(f"[THREAD-DEBUG] Starte {task_label} für {kapitel_name}")
-
-            # Satzdateien für dieses Kapitel sammeln
-            satzdateien = [f for f in os.listdir(ordner["satz"]) if kapitel_name in f]
-            anzahl = len(satzdateien)
-
-            # Laufenden Task registrieren
-            self.laufende_ki_tasks[kapitel_name].add(aufgaben_id)
-            self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, 0)
-
-            # Verarbeite jede Satzdatei
-            for i, dateiname in enumerate(satzdateien, start=1):
-                if self.abort_flag.is_set():
-                    print(f"[ABBRUCH] Während {task_label} bei Satzdatei {dateiname}")
-                    return
-
-                fortschritt = i / anzahl
-                pfad_satz = os.path.join(ordner["satz"], dateiname)
-
-                # Fortschritt aktualisieren
-                #self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, fortschritt)
-
-                # Verarbeitung starten mit Callback
-                daten_verarbeiten(
-                    self.client,
-                    prompt,
-                    pfad_satz,
-                    ordner["ki"],
-                    aufgaben_id,
-                    self.force_var,
-                    None
-                )
-                    #lambda w: self.aktualisiere_laufende_ki_tasks(
-                     #   kapitel_name, task_label, min(1.0, fortschritt + w / anzahl)
-             #       )
-          #      )
-
-            # Task als abgeschlossen markieren
-       #     self.aktualisiere_laufende_ki_tasks(kapitel_name, task_label, 1.0)
-            self.laufende_ki_tasks[kapitel_name].discard(aufgaben_id)
-
-            # Spinner für diese Aufgabe deaktivieren
-            self._set_task_spinner(aufgaben_id, False)
-
-            print(f"[THREAD-DEBUG] {task_label} abgeschlossen für {kapitel_name}")
-
+            while not self.progress_queue.empty():
+                kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
+                self.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)
         except Exception as e:
-            # Spinner deaktivieren auch bei Fehler
-            self._set_task_spinner(aufgaben_id, False)
-            print(f"[FEHLER] bei {task_label}: {e}")
+            print(f"[FEHLER bei Queue-Check] {e}")
 
-        
-        
-    def stop_tasks(self):
-        print("[DEBUG] Abbruchsignal wird gesetzt")
-        self.abort_flag.set()
-        for t in self.threads:
-            if t.is_alive():
-                print(f"[DEBUG] Warte auf Thread: {t.name}")
-                t.join()
+        self.after(200, self.prüfe_progress_queue)  # alle 200 ms erneut prüfen
 
-
-
-    # def start_tasks(self):
-    #     print("start_tasks wurde aufgerufen")
-    #     self.abort_flag = threading.Event()
-    #     self.abort_flag.clear()
-    #     startzeit = time.time()
-    #     self.disable_controls()
-
-    #     chosen_tasks = [k for k, v in self.task_vars.items() if v.get()]
-    #     ausgewaehlte_kapitel = [k for k, v in self.chapter_vars.items() if v.get()]
-
-    #     if not self.selected_file.get():
-    #         messagebox.showwarning("Fehler", "Bitte zuerst eine .docx-Datei auswählen.")
-    #         self.enable_controls()
-    #         return
-
-    #     if not chosen_tasks:
-    #         messagebox.showwarning("Fehler", "Bitte Aufgaben auswählen.")
-    #         self.enable_controls()
-    #         return
-
-    #     if not self.ordner:
-    #         messagebox.showwarning("Fehler", "Ordner für Ergebnisse nicht gefunden. Bitte Word-Datei erneut auswählen.")
-    #         self.enable_controls()
-    #         return
-
-    #     force = self.force_var.get()
-
-    #     def run_task_parallel(task_id):
-    #         if self.abort_flag.is_set():
-    #             print(f"[INFO] Task {task_id} übersprungen (Abbruch erkannt)")
-    #             return
-    #         print(f"[INFO] Starte Task {task_id} mit paralleler Kapitelverarbeitung")
-    #         threads = []
-    #         for kapitel in ausgewaehlte_kapitel:
-    #             if self.abort_flag.is_set():
-    #                 break
-    #             t = threading.Thread(target=self._execute_task_einzeln, args=(task_id, kapitel, force))
-    #             t.start()
-    #             threads.append(t)
-    #         for t in threads:
-    #             t.join()
-    #         print(f"[INFO] Task {task_id} fertig")
-
-    #     ki_task_ids = {str(k) for k in config.KI_AUFGABEN.keys()}
-
-    #     # Task 1 (Kapitel extrahieren mit Config) - parallel pro Kapitel
-    #     if "1" in chosen_tasks:
-    #         run_task_parallel("1")
-
-    #     # Task 2 (Verarbeitung und Aufteilen) - parallel pro Kapitel
-    #     if "2" in chosen_tasks:
-    #         run_task_parallel("2")
-
-    #     # KI-Tasks 3-7 (oder beliebige aus config.KI_AUFGABEN) - parallel pro Kapitel
-    #     tasks_ki = [t for t in chosen_tasks if t in ki_task_ids]
-    #     ki_threads = []
-    #     for task_id in tasks_ki:
-    #         if self.abort_flag.is_set():
-    #             break
-    #         t = threading.Thread(target=run_task_parallel, args=(task_id,))
-    #         t.start()
-    #         ki_threads.append(t)
-    #     for t in ki_threads:
-    #         t.join()
-
-    #     # Task 8 (Merge + PDF-Erzeugung), immer am Ende, wenn gewählt und nicht abgebrochen
-    #     if "8" in chosen_tasks and not self.abort_flag.is_set():
-    #         print("[INFO] Starte Task 8 (Merge + PDF-Erzeugung)")
-    #         Schritt5.Merge_annotationen(
-    #             quellordner_kapitel=self.ordner["json"],
-    #             quellordner_annotationen=self.ordner["ki"],
-    #             ziel_ordner=self.ordner["merge"],
-    #             ausgewaehlte_kapitel=ausgewaehlte_kapitel,
-    #             progress_callback=lambda kapitel, wert: self.queue.put(('aktualisiere_progressbar', kapitel, wert))
-    #         )
-    #         threads_pdf = []
-    #         for kapitel in ausgewaehlte_kapitel:
-    #             if self.abort_flag.is_set():
-    #                 break
-    #             t = threading.Thread(target=Schritt6.visualisiere_annotationen, kwargs={
-    #                 "eingabe_ordner": self.ordner["merge"],
-    #                 "ausgabe_ordner": self.ordner["pdf"],
-    #                 "ausgewaehlte_kapitel": [kapitel],
-    #                 "progress_callback": lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             })
-    #             t.start()
-    #             threads_pdf.append(t)
-    #         for t in threads_pdf:
-    #             t.join()
-    #         print("[INFO] Task 8 fertig")
-
-    #     self.enable_controls()
-
-    #     dauer_str = f"{time.time() - startzeit:.2f} Sekunden"
-    #     self.aktive_aufgabe_label["text"] = "Abgebrochen" if self.abort_flag.is_set() else ""
-
-    #     if hasattr(self, 'task_manager'):
-    #         self.task_manager.show_task_finished_popup("Tasks", dauer_str)
-
-
-    # def _execute_task_einzeln(self, task_id, kapitel, force):
-    #     print(f"[DEBUG] Einzel-Task {task_id} startet für Kapitel {kapitel}")
-
+    # def process_queue(self):
     #     try:
-    #         self._set_task_spinner(task_id, True)
-    #         self.queue.put(('aktualisiere_progressbar', kapitel, 0))
-    #         self.queue.put(('update_status', kapitel, f"Starte Aufgabe {task_id}"))
-
-    #         ki_task_ids = {str(k) for k in config.KI_AUFGABEN.keys()}
-
-    #         if task_id == "1":
-    #             print(f"[DEBUG] Task 1: Kapitel extrahieren mit Config für {kapitel}")
-    #             Schritt1.extrahiere_kapitel_mit_config(
-    #                 self.selected_file.get(),
-    #                 self.kapitel_config_datei,
-    #                 self.ordner["txt"],
-    #                 ausgewaehlte_kapitel=[kapitel],
-    #                 progress_callback=lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             )
-
-    #         elif task_id == "2":
-    #             print(f"[DEBUG] Task 2: Verarbeitung + Aufteilen für {kapitel}")
-    #             Schritt2.verarbeite_kapitel_und_speichere_json(
-    #                 self.ordner["txt"], self.ordner["json"],
-    #                 ausgewaehlte_kapitel=[kapitel],
-    #                 progress_callback=lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             )
-    #             Schritt3.dateien_aufteilen(
-    #                 self.ordner["json"], self.ordner["satz"],
-    #                 progress_callback=lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             )
-
-    #         elif task_id in ki_task_ids:
-    #             ki_id = int(task_id)
-    #             prompt_text = lade_prompt_datei(ki_id)
-
-    #             modell_name = None
-    #             if hasattr(self, "model_selection_boxes") and task_id in self.model_selection_boxes:
-    #                 modell_name = self.model_selection_boxes[task_id].get()
-    #                 print(f"[DEBUG] Modell für Task {task_id}: {modell_name}")
-
-    #             self.client.CheckandSet_model(modell_name)
-
-    #             nicht_notwendig = self.kapitel_config.kapitel_daten.get(kapitel, {}).get("nicht_notwendige_unterschritte", [])
-    #             if ki_id in nicht_notwendig:
-    #                 print(f"[INFO] Task {task_id} für Kapitel {kapitel} übersprungen (nicht notwendig)")
-    #                 self.queue.put(('update_status', task_id, f"{kapitel} übersprungen"))
-    #                 return
-
-    #             zusatzinfo = self.kapitel_config.kapitel_daten.get(kapitel, {}).get(f"ZusatzInfo_{ki_id}", "")
-    #             prompt = prompt_text + zusatzinfo
-    #             kapitel_satz_ordner = self.ordner["satz"]
-
-    #             satz_dateien = sorted([
-    #                 f for f in os.listdir(kapitel_satz_ordner)
-    #                 if f.startswith(kapitel) and f.endswith(".json")
-    #             ])
-    #             if not satz_dateien:
-    #                 print(f"[INFO] Task {task_id} für Kapitel {kapitel} übersprungen (keine Satzdateien)")
-    #                 self.queue.put(('update_status', task_id, f"{kapitel} übersprungen"))
-    #                 return
-
-    #             gesamt_satz = len(satz_dateien)
-    #             for i, satz_datei_name in enumerate(satz_dateien, 1):
-    #                 if self.abort_flag.is_set():
-    #                     print(f"[INFO] Abbruch Task {task_id} Satz {i} Kapitel {kapitel}")
-    #                     break
-    #                 self.queue.put(('update_status', task_id, f"{kapitel}: Satz {i}/{gesamt_satz}"))
-    #                 satz_datei = os.path.join(kapitel_satz_ordner, satz_datei_name)
-    #                 Schritt4.daten_verarbeiten(
-    #                     self.client, prompt, satz_datei, self.ordner["ki"], ki_id, force,
-    #                     modell=modell_name
-    #                 )
-    #                 fortschritt = int(i / gesamt_satz * 100)
-    #                 self.queue.put(('aktualisiere_progressbar', f"{kapitel} Satz {i}", fortschritt))
-
-    #         else:
-    #             print(f"[WARN] Task {task_id} nicht erkannt")
-
-    #         self.queue.put(('aktualisiere_progressbar', kapitel, 100))
-    #         self.queue.put(('update_status', kapitel, f"Aufgabe {task_id} für {kapitel} abgeschlossen"))
-
-    #     except Exception as e:
-    #         print(f"[ERROR] Fehler bei Aufgabe {task_id}, Kapitel {kapitel}: {e}")
-    #         self.queue.put(('update_status', kapitel, f"Fehler: {e}"))
-
-    #     finally:
-    #         self._set_task_spinner(task_id, False)
-    #         self.queue.put(('set_label', ""))
-
-    #         if hasattr(self, "gesamt_progressbar"):
-    #             self.queue.put(('aktualisiere_progressbar', "gesamt", 100))
-    #         if hasattr(self, "gesamt_status_label"):
-    #             self.queue.put(('update_status', "gesamt", "Gesamtfortschritt: 100 %"))
-
-    #         endzeit_str = datetime.datetime.now().strftime("%H:%M:%S")
-    #         status_label = self.kapitel_task_labels.get("Dokument")
-    #         progressbar = self.kapitel_progressbars.get("Dokument")
-    #         if status_label:
-    #             self.queue.put(('update_status', "Dokument", f"✔ abgeschlossen ({endzeit_str})"))
-    #         if progressbar:
-    #             self.queue.put(('aktualisiere_progressbar', "Dokument", 100))
-
-    #         dauer = time.time() - startzeit
-    #         print(f"[INFO] Einzel-Task {task_id} für Kapitel {kapitel} fertig in {dauer:.2f} Sekunden")
-    #         self.aktive_aufgabe_label["text"] = ""
-
-    #         if hasattr(self, "shutdown_controller") and self.shutdown_controller._is_shutdown_supported():
-    #             self.shutdown_controller.show_task_finished_popup(task_id, f"{dauer:.2f} Sekunden")
-
-
-    # def start_tasks(self):
-    #         print("start_tasks wurde aufgerufen")
-    #         self.abort_flag = threading.Event()  # Abbruch-Flag
-    #         self.abort_flag.clear()
-    #         startzeit = time.time()
-    #         self.disable_controls()
-    #         chosen_tasks = [k for k, v in self.task_vars.items() if v.get()]
-
-    #         if not self.selected_file.get():
-    #             messagebox.showwarning("Fehler", "Bitte zuerst eine .docx-Datei auswählen.")
-    #             self.enable_controls()
-    #             return
-    #         if not chosen_tasks:
-    #             messagebox.showwarning("Fehler", "Bitte Aufgaben auswählen.")
-    #             self.enable_controls()
-    #             return
-    #         if not self.ordner:
-    #             messagebox.showwarning("Fehler", "Ordner für Ergebnisse nicht gefunden. Bitte Word-Datei erneut auswählen.")
-    #             self.enable_controls()
-    #             return
-
-    #         force = self.force_var.get()
-
-    #         def run_task_parallel(task_id):
-    #             if self.abort_flag.is_set():
-    #                 print(f"[INFO] Task {task_id} übersprungen (Abbruch erkannt)")
-    #                 return
-    #             print(f"[INFO] Starte Task {task_id} mit paralleler Kapitelverarbeitung")
-    #             ausgewaehlte_kapitel = [k for k, v in self.chapter_vars.items() if v.get()]
-    #             threads = []
-    #             for kapitel in ausgewaehlte_kapitel:
-    #                 if self.abort_flag.is_set():
-    #                     break
-    #                 t = threading.Thread(target=self._execute_task_einzeln, args=(task_id, kapitel, force))
-    #                 t.start()
-    #                 threads.append(t)
-    #             for t in threads:
-    #                 t.join()
-    #             print(f"[INFO] Task {task_id} fertig")
-
-    #         ki_task_ids = {str(k) for k in config.KI_AUFGABEN.keys()}
-
-    #         if "1" in chosen_tasks:
-    #             run_task_parallel("1")
-
-    #         if "2" in chosen_tasks:
-    #             run_task_parallel("2")
-
-    #         tasks_3_7 = [t for t in chosen_tasks if t in ki_task_ids]
-    #         threads_3_7 = []
-    #         for task_id in tasks_3_7:
-    #             if self.abort_flag.is_set():
-    #                 break
-    #             t = threading.Thread(target=run_task_parallel, args=(task_id,))
-    #             t.start()
-    #             threads_3_7.append(t)
-
-    #         for t in threads_3_7:
-    #             t.join()
-
-    #         if config.KI_AUFGABEN:
-    #             max_key = max(config.KI_AUFGABEN.keys())
-    #             last_task_id = str(max_key + 1)
-    #         else:
-    #             last_task_id = "3"
-
-    #         if last_task_id in chosen_tasks and not self.abort_flag.is_set():
-    #             print(f"[INFO] Starte Task {last_task_id}")
-    #             Schritt5.Merge_annotationen(
-    #                 quellordner_kapitel=self.ordner["json"],
-    #                 quellordner_annotationen=self.ordner["ki"],
-    #                 ziel_ordner=self.ordner["merge"],
-    #                 ausgewaehlte_kapitel=[k for k, v in self.chapter_vars.items() if v.get()],
-    #                 progress_callback=lambda kapitel, wert: self.queue.put(('aktualisiere_progressbar', kapitel, wert))
-    #             )
-    #             ausgewaehlte_kapitel = [k for k, v in self.chapter_vars.items() if v.get()]
-    #             threads_schritt6 = []
-    #             for kapitel in ausgewaehlte_kapitel:
-    #                 if self.abort_flag.is_set():
-    #                     break
-    #                 t = threading.Thread(target=Schritt6.visualisiere_annotationen, kwargs={
-    #                     "eingabe_ordner": self.ordner["merge"],
-    #                     "ausgabe_ordner": self.ordner["pdf"],
-    #                     "ausgewaehlte_kapitel": [kapitel],
-    #                     "progress_callback": lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #                 })
-    #                 t.start()
-    #                 threads_schritt6.append(t)
-    #             for t in threads_schritt6:
-    #                 t.join()
-    #             print(f"[INFO] Task {last_task_id} fertig")
-    #             self.aktive_aufgabe_label["text"] = ""
-    #             dauer_str = f"{time.time() - startzeit:.2f} Sekunden"
-    #             if hasattr(self, 'task_manager'):
-    #                 self.task_manager.show_task_finished_popup(last_task_id, dauer_str)
-
-    #         self.enable_controls()
-    #         if self.abort_flag.is_set():
-    #             self.aktive_aufgabe_label["text"] = "Abgebrochen"
-
-    
-    # def _execute_task_einzeln(self, task_id, kapitel, force):
-    #     print(f"[DEBUG] Einzel-Task {task_id} startet für Kapitel {kapitel}")
-    #     ausgewaehlte_kapitel = [k for k, v in self.chapter_vars.items() if v.get()]
-    #     print(f"[DEBUG] Task {task_id} - Ausgewählte Kapitel: {ausgewaehlte_kapitel}")
-
-    #     startzeit = time.time()
-
-    #     self.kapitel_fortschritte.clear()
-    #     for kapitel_item in ausgewaehlte_kapitel:
-    #         self.queue.put(('aktualisiere_progressbar', kapitel_item, 0))
-    #     if hasattr(self, "gesamt_progressbar"):
-    #         self.queue.put(('aktualisiere_progressbar', "gesamt", 0))
-    #     if hasattr(self, "gesamt_status_label"):
-    #         self.queue.put(('update_status', "gesamt", "Gesamtfortschritt: 0 %"))
-
-    #     ki_task_ids = {str(k) for k in config.KI_AUFGABEN.keys()}
-    #     print(f"[DEBUG] KI Task IDs: {ki_task_ids}")
-
-    #     try:
-    #         print(f"[DEBUG] Starte Ausführung für Task {task_id} Kapitel {kapitel}")
-    #         self._set_task_spinner(task_id, True)
-
-    #         self.queue.put(('aktualisiere_progressbar', kapitel, 0))
-    #         self.queue.put(('update_status', kapitel, f"Starte Aufgabe {task_id}"))
-
-    #         if task_id == "1":
-    #             print("[DEBUG] Task 1: Kapitel extrahieren mit Config")
-    #             Schritt1.extrahiere_kapitel_mit_config(
-    #                 self.selected_file.get(),
-    #                 self.kapitel_config_datei,
-    #                 self.ordner["txt"],
-    #                 ausgewaehlte_kapitel=[kapitel],
-    #                 progress_callback=lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             )
-    #             print(f"[DEBUG] Task 1 für Kapitel {kapitel} abgeschlossen")
-
-    #         elif task_id == "2":
-    #             print("[DEBUG] Task 2: Kapitel verarbeiten und JSON speichern")
-    #             Schritt2.verarbeite_kapitel_und_speichere_json(
-    #                 self.ordner["txt"], self.ordner["json"],
-    #                 ausgewaehlte_kapitel=[kapitel],
-    #                 progress_callback=lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             )
-    #             print("[DEBUG] Task 2: Aufteilen der Dateien")
-    #             Schritt3.dateien_aufteilen(
-    #                 self.ordner["json"], self.ordner["satz"],
-    #                 progress_callback=lambda k, w: self.queue.put(('aktualisiere_progressbar', k, w))
-    #             )
-    #             print(f"[DEBUG] Task 2 für Kapitel {kapitel} abgeschlossen")
-
-    #         elif task_id in ki_task_ids:
-    #             ki_id = int(task_id)
-    #             print(f"[DEBUG] KI Task {ki_id} starten")
-    #             prompt_text = lade_prompt_datei(ki_id)
-
-    #             modell_name = None
-    #             if hasattr(self, "model_selection_boxes") and task_id in self.model_selection_boxes:
-    #                 modell_box = self.model_selection_boxes[task_id]
-    #                 if modell_box:
-    #                     modell_name = modell_box.get()
-    #                     print(f"[DEBUG] Verwendetes Modell für Task {task_id}: {modell_name}")
-
-    #             self.client.CheckandSet_model(modell_name)
-
-    #             nicht_notwendig = self.kapitel_config.kapitel_daten.get(kapitel, {}).get("nicht_notwendige_unterschritte", [])
-    #             print(f"[DEBUG] Nicht notwendige Unterschritte für Kapitel {kapitel}: {nicht_notwendig}")
-    #             if ki_id in nicht_notwendig:
-    #                 print(f"[INFO] Task {task_id} für Kapitel {kapitel} übersprungen (nicht notwendig)")
-    #                 self.queue.put(('update_status', task_id, f"{kapitel} übersprungen"))
-    #                 return
-
-    #             zusatzinfo = self.kapitel_config.kapitel_daten.get(kapitel, {}).get(f"ZusatzInfo_{ki_id}", "")
-    #             prompt = prompt_text + zusatzinfo
-    #             kapitel_satz_ordner = self.ordner["satz"]
-
-    #             satz_dateien = sorted(
-    #                 [f for f in os.listdir(kapitel_satz_ordner) if f.startswith(kapitel) and f.endswith(".json")]
-    #             )
-    #             print(f"[DEBUG] {len(satz_dateien)} Satzdateien gefunden für Kapitel {kapitel}")
-    #             if not satz_dateien:
-    #                 print(f"[INFO] Task {task_id} für Kapitel {kapitel} übersprungen (keine Satzdateien)")
-    #                 self.queue.put(('update_status', task_id, f"{kapitel} übersprungen"))
-    #                 return
-
-    #             gesamt_satz = len(satz_dateien)
-    #             for i, satz_datei_name in enumerate(satz_dateien, 1):
-    #                 if self.abort_flag.is_set():
-    #                     print(f"[INFO] Abbruch während Task {task_id} Satz {i} Kapitel {kapitel}")
-    #                     break
-    #                 self.queue.put(('update_status', task_id, f"{kapitel}: Satz {i}/{gesamt_satz}"))
-    #                 satz_datei = os.path.join(kapitel_satz_ordner, satz_datei_name)
-    #                 print(f"[DEBUG] Verarbeite Satzdatei {satz_datei_name} ({i}/{gesamt_satz})")
-    #                 Schritt4.daten_verarbeiten(
-    #                     self.client, prompt, satz_datei, self.ordner["ki"], ki_id, force,
-    #                     modell=modell_name
-    #                 )
-    #                 fortschritt = int(i / gesamt_satz * 100)
-    #                 self.queue.put(('aktualisiere_progressbar', f"{kapitel} Satz {i}", fortschritt))
-
-    #             print(f"[DEBUG] KI Task {task_id} für Kapitel {kapitel} abgeschlossen")
-
-    #         else:
-    #             print(f"[WARN] Task {task_id} nicht erkannt oder wird extern behandelt")
-
-    #         self.queue.put(('aktualisiere_progressbar', kapitel, 100))
-    #         self.queue.put(('update_status', kapitel, f"Aufgabe {task_id} für {kapitel} abgeschlossen"))
-
-    #     except Exception as e:
-    #         print(f"[ERROR] Fehler bei Aufgabe {task_id}, Kapitel {kapitel}: {e}")
-    #         self.queue.put(('update_status', kapitel, f"Fehler: {e}"))
-
-    #     finally:
-    #         self._set_task_spinner(task_id, False)
-    #         self.queue.put(('set_label', ""))
-
-    #         if hasattr(self, "gesamt_progressbar"):
-    #             self.queue.put(('aktualisiere_progressbar', "gesamt", 100))
-    #         if hasattr(self, "gesamt_status_label"):
-    #             self.queue.put(('update_status', "gesamt", "Gesamtfortschritt: 100 %"))
-
-    #         endzeit = time.time()
-    #         dauer = endzeit - startzeit
-    #         dauer_str = f"{dauer:.2f} Sekunden"
-
-    #         status_label = self.kapitel_task_labels.get("Dokument")
-    #         progressbar = self.kapitel_progressbars.get("Dokument")
-    #         endzeit_str = datetime.datetime.now().strftime("%H:%M:%S")
-
-    #         if status_label:
-    #             self.queue.put(('update_status', "Dokument", f"✔ abgeschlossen ({endzeit_str})"))
-    #         if progressbar:
-    #             self.queue.put(('aktualisiere_progressbar', "Dokument", 100))
-
-    #         print(f"[INFO] Einzel-Task {task_id} für Kapitel {kapitel} fertig in {dauer_str}")
-    #         self.aktive_aufgabe_label["text"] = ""
-
-    #         if hasattr(self, "shutdown_controller") and self.shutdown_controller._is_shutdown_supported():
-    #             print("[DEBUG] Zeige Shutdown-Popup an")
-    #             self.shutdown_controller.show_task_finished_popup(task_id, dauer_str)
-
-
-    def process_queue(self):
-        try:
-            while True:
-                item = self.queue.get_nowait()
-                if item[0] == 'update_status':
-                    _, task_id, text = item
-                    if task_id == "gesamt":
-                        if hasattr(self, "gesamt_status_label"):
-                            self.gesamt_status_label.config(text=text)
-                    elif task_id in self.task_status_labels:
-                        self.task_status_labels[task_id].config(text=text)
-                    elif task_id == "Dokument" and "Dokument" in self.kapitel_task_labels:
-                        self.kapitel_task_labels["Dokument"].config(text=text)
-                elif item[0] == 'aktualisiere_progressbar':
-                    _, task_id, wert = item
-                    if task_id == "gesamt":
-                        if hasattr(self, "gesamt_progressbar"):
-                            self.gesamt_progressbar["value"] = wert
-                    elif task_id in self.kapitel_progressbars:
-                        self.kapitel_progressbars[task_id]["value"] = wert
-                elif item[0] == 'set_label':
-                    _, text = item
-                    self.aktive_aufgabe_label.config(text=text)
-                self.queue.task_done()
-        except queue.Empty:
-            pass
-        self.after(100, self.process_queue)
+    #         while True:
+    #             item = self.queue.get_nowait()
+    #             if item[0] == 'update_status':
+    #                 _, task_id, text = item
+    #                 if task_id == "gesamt":
+    #                     if hasattr(self, "gesamt_status_label"):
+    #                         self.gesamt_status_label.config(text=text)
+    #                 elif task_id in self.task_status_labels:
+    #                     self.task_status_labels[task_id].config(text=text)
+    #                 elif task_id == "Dokument" and "Dokument" in self.kapitel_task_labels:
+    #                     self.kapitel_task_labels["Dokument"].config(text=text)
+    #             elif item[0] == 'aktualisiere_progressbar':
+    #                 _, task_id, wert = item
+    #                 if task_id == "gesamt":
+    #                     if hasattr(self, "gesamt_progressbar"):
+    #                         self.gesamt_progressbar["value"] = wert
+    #                 elif task_id in self.kapitel_progressbars:
+    #                     self.kapitel_progressbars[task_id]["value"] = wert
+    #             elif item[0] == 'set_label':
+    #                 _, text = item
+    #                 self.aktive_aufgabe_label.config(text=text)
+    #             self.queue.task_done()
+    #     except queue.Empty:
+    #         pass
+    #     self.after(100, self.process_queue)
 
     def stop_tasks(self):
         if hasattr(self, 'abort_flag'):

@@ -44,7 +44,7 @@ def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
         return None
 
 
-def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = False,progress_callback=None ):
+def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = False ):
     try:
         if not isinstance(dateipfad, str):
             raise ValueError(f"Unerwarteter Dateipfad: {dateipfad}")
@@ -99,8 +99,6 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
                 print(f"[INFO] Ergebnis gespeichert unter: {result_file_path}")
                 dekodiere_und_überschreibe(result_file_path)
                 
-        if progress_callback:
-            progress_callback(100)
     except Exception as e:
         print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
         
