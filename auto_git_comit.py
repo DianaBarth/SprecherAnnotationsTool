@@ -3,7 +3,7 @@ import subprocess
 import os
 import tkinter as tk
 from tkinter import simpledialog, messagebox
-
+import multiprocessing
 from sprecher_annotationstool import SprecherAnnotationsTool
 from log_manager import LogManager
 import subprocess
@@ -111,7 +111,9 @@ if __name__ == "__main__":
     print("NEUSTART Sprecher-Annotationen-Tool")
     print("-------------------------------------------------------------------------------------------")
 
+
     try:
+        multiprocessing.set_start_method("spawn", force=True)
         app = SprecherAnnotationsTool(logger)
         app.mainloop()
     except Exception as e:

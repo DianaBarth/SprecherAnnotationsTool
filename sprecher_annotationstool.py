@@ -1,14 +1,15 @@
 import tkinter as tk
 from tkinter import ttk
 import queue
+from multiprocessing import Manager
+import multiprocessing
+
+from huggingface_client import HuggingFaceClient
 from log_manager import LogManager
 from kapitel_config import KapitelConfig
 from dashboard import DashBoard
 from modellwahl import InstallationModellwahl
 from config_editor import ConfigEditor
-from huggingface_client import HuggingFaceClient
-import multiprocessing
-
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 class SprecherAnnotationsTool(tk.Tk):
@@ -20,10 +21,9 @@ class SprecherAnnotationsTool(tk.Tk):
 
         # Queue und Flag initialisieren
         self.progress_queue = queue.Queue()
-        self.mp_progress_queue = multiprocessing.Queue()  # für Prozesse
+        manager = Manager()
+        self.mp_progress_queue =manager.Queue()
         self.progress_queue_active = False
-
-
 
         # HuggingFace Client initialisieren
         self.client = HuggingFaceClient()
@@ -84,6 +84,7 @@ class SprecherAnnotationsTool(tk.Tk):
             self.after(200, self.pruefe_mp_progress_queue)
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn", force=True)
     logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 
     print("-------------------------------------------------------------------------------------------")

@@ -56,16 +56,23 @@ def lade_prompt_datei(ki_id):
             # Fange unerwartete Fehler ab
             raise RuntimeError(f"[FEHLER] Fehler beim Laden der Prompt-Datei '{dateipfad}': {e}")
         
-import traceback
-from pathlib import Path
 
 def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_progress_queue=None):
+    print(f"[DEBUG] KI-Task für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush = True)
+
     max_retries = 3
     for versuch in range(1, max_retries + 1):
         try:
-            print(f"[DEBUG] KI-Task start Versuch {versuch} für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}")
+            print(f"[DEBUG] KI-Task start Versuch {versuch} für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush = True)
 
-            client = HuggingFaceClient()
+            try:
+                print(f"[DEBUG] Initialisiere HuggingFaceClient() für {kapitel_name}/{aufgaben_id}")
+                client = HuggingFaceClient()
+            except Exception as e:
+                print(f"[FEHLER] Fehler bei Initialisierung des HuggingFaceClient: {e}", flush=True)
+                traceback.print_exc()
+                return None
+
             print(f"[DEBUG] Modell prüfen/setzen: {modell_name}")
             client.check_and_set_model(modell_name)
 
@@ -1162,7 +1169,7 @@ class DashBoard(ttk.Frame):
         self.all_var.set(alle_aktiv)
 
     def start_tasks(self):
-         # Leere eventuell verbliebene Aufgaben aus früheren Läufen
+        # Leere eventuell verbliebene Aufgaben aus früheren Läufen
         while not self.thread_queue.empty():
             try:
                 self.thread_queue.get_nowait()
@@ -1170,7 +1177,6 @@ class DashBoard(ttk.Frame):
             except queue.Empty:
                 break
 
-        # Sicherstellen, dass nicht bereits eine Verarbeitung läuft
         with self.tasks_lock:
             if self.tasks_running:
                 print("[WARNUNG] Aufgabenverarbeitung läuft bereits.", flush=True)
@@ -1178,7 +1184,7 @@ class DashBoard(ttk.Frame):
             self.tasks_running = True
 
         self.disable_controls() 
-        
+
         print("[DEBUG] Starte Aufgabenverarbeitung", flush=True)
         self.abort_flag.clear()
         self.task_flags = {key: var.get() for key, var in self.task_vars.items()}
@@ -1196,7 +1202,7 @@ class DashBoard(ttk.Frame):
         max_workers = self.max_workers
         abort_flag = self.abort_flag
         progress_queue = self.master.progress_queue
-        mp_progress_queue = self.master.mp_progress_queue
+        mp_progress_queue = self.master.mp_progress_queue 
 
         modelle_für_tasks = {}
         if model_selection_boxes:
@@ -1206,7 +1212,6 @@ class DashBoard(ttk.Frame):
                 except Exception as e:
                     print(f"[WARNUNG] Fehler beim Auslesen des Modells für Aufgabe {aid}: {e}")
 
-
         print(f"[DEBUG] Ausgewählte Kapitel: {ausgewaehlte_kapitel}", flush=True)
         bereits_in_queue = set()
         for kapitel in ausgewaehlte_kapitel:
@@ -1214,12 +1219,12 @@ class DashBoard(ttk.Frame):
                 print(f"[WARNUNG] Kapitel mehrfach in Queue eingefügt: {kapitel}", flush=True)
             bereits_in_queue.add(kapitel)
             self.thread_queue.put(kapitel)
-          
+        
         kapitel_anzahl = len(ausgewaehlte_kapitel)
         max_threads = min(self.max_workers, kapitel_anzahl)
 
         try:
-           with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
+            with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
                 futures = []
                 for _ in range(max_threads):
                     futures.append(thread_executor.submit(
@@ -1228,8 +1233,8 @@ class DashBoard(ttk.Frame):
                         kapitel_liste,
                         ordner_nur_str,
                         task_flags,
-                        progress_queue,  
-                        mp_progress_queue,                  
+                        progress_queue,
+                        mp_progress_queue, 
                         abort_flag,
                         kapitel_daten,
                         modelle_für_tasks,
@@ -1251,7 +1256,7 @@ class DashBoard(ttk.Frame):
             self.progress_queue_active = False
             self.master.stoppe_progress_pruefung()
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
-            
+
 
     def _thread_worker(self,
                     selected_file_path,
@@ -1363,73 +1368,64 @@ class DashBoard(ttk.Frame):
             next_key = None
 
             if getattr(config, "NUTZE_KI", True):
-                if abort_flag.is_set():
-                    print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
-                    return
+                    if abort_flag.is_set():
+                        print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
+                        return
 
-                aktive_tasks = [aid for aid in config.KI_AUFGABEN if task_flags.get(aid, False)]
-                print(f"[DEBUG] Aktive KI-Tasks für Kapitel {kapitel_name}: {aktive_tasks}", flush=True)
+                    aktive_tasks = [aid for aid in config.KI_AUFGABEN if task_flags.get(aid, False)]
+                    print(f"[DEBUG] Aktive KI-Tasks für Kapitel {kapitel_name}: {aktive_tasks}", flush=True)
 
-                if not aktive_tasks:
-                    print(f"[INFO] Keine aktiven KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
-                else:
-                    print(f"[INFO] Starte parallele KI-Aufgaben für Kapitel {kapitel_name}", flush=True)
-                  
-                    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-                        futures = []
+                    if not aktive_tasks:
+                        print(f"[INFO] Keine aktiven KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
+                    else:
+                        print(f"[INFO] Starte parallele KI-Aufgaben für Kapitel {kapitel_name}", flush=True)
 
-                        for aufgaben_id in aktive_tasks:
-                            aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
-                            task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
-                            print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}", flush=True)
+                        max_workers = min(len(aktive_tasks), os.cpu_count() or 1)
+                        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                            futures = []
 
-                            try:
-                                prompt_datei_text = lade_prompt_datei(aufgaben_id)
-                            except Exception as e:
-                                print(f"[FEHLER] Laden der Prompt-Datei für Aufgabe {aufgaben_id} fehlgeschlagen: {e}", flush=True)
-                                traceback.print_exc()
-                                continue  # Diese KI-Task überspringen
+                            for aufgaben_id in aktive_tasks:
+                                aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
+                                task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
+                                print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}", flush=True)
 
-                            zusatz_info = kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
-            
-                            print(f"zusatzinfo: {zusatz_info}")
-                            prompt = prompt_datei_text + "\n" + zusatz_info
-                            print(f"prompt_datei_text: {prompt_datei_text}")
+                                try:
+                                    prompt_datei_text = lade_prompt_datei(aufgaben_id)
+                                except Exception as e:
+                                    print(f"[FEHLER] Laden der Prompt-Datei für Aufgabe {aufgaben_id} fehlgeschlagen: {e}", flush=True)
+                                    traceback.print_exc()
+                                    continue
 
-                            modell_name = modelle_für_tasks.get(aufgaben_id, None)                    
-                            print(f"modell_name: {modell_name}")
-                            
-                            warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
+                                zusatz_info = kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+                                prompt = prompt_datei_text + "\n" + zusatz_info
+                                print(f"[DEBUG] Prompt-Text für {task_name}: {prompt[:200]}...", flush=True)
 
-                            future = executor.submit(
-                                ki_task_process,
-                                kapitel_name,
-                                aufgaben_id,
-                                prompt,
-                                modell_name,
-                                {"satz": ordner_nur_str["satz"], 
-                                "ki": ordner_nur_str["ki"]},
-                                mp_progress_queue,
-                            )
-                            futures.append(future)
+                                modell_name = modelle_für_tasks.get(aufgaben_id, None)
 
-                        for future in concurrent.futures.as_completed(futures):
-                            try:
-                                future.result()
-                                print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                                warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
 
-                                if config.KI_AUFGABEN:
-                                    max_key = max(config.KI_AUFGABEN.keys())
-                                    next_key = max_key + 1
-                                else:
-                                    next_key = 3 # falls keine KI-Aufgaben definiert wären,defautlwert
-                            except Exception as e:
-                                print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
-                                traceback.print_exc()
-                  
-                    print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                                future = executor.submit(
+                                    ki_task_process,
+                                    kapitel_name,
+                                    aufgaben_id,
+                                    prompt,
+                                    modell_name,
+                                    {"satz": ordner_nur_str["satz"], "ki": ordner_nur_str["ki"]},
+                                    mp_progress_queue 
+                                )
+                                futures.append(future)
+
+                            for future in concurrent.futures.as_completed(futures):
+                                try:
+                                    future.result()
+                                    print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                                except Exception as e:
+                                    print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
+                                    traceback.print_exc()
+
+                        print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
             else:
-                next_key = 3 # falls keine KI-Aufgaben genutzt werden , defailtwert
+                next_key = 3 # falls keine KI-Aufgaben genutzt werden , defaultwert
 
             if task_flags.get(next_key, False):
                 if abort_flag.is_set():
@@ -1497,3 +1493,19 @@ class DashBoard(ttk.Frame):
             yield widget
             if widget.winfo_children():
                 yield from self.iterate_widgets(widget)
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import Eingabe.config as config
+
+    ordner_nur_str = {
+        "satz": config.GLOBALORDNER["satz"],
+        "ki": config.GLOBALORDNER["ki"],
+    }
+
+    kapitel_name = "Prolog – Finis post portam"
+    aufgaben_id = 3
+    prompt = "finde betonungen"
+    modell_name = "leoLM/leo-mistral-hessianai-7b"
+
+    ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
