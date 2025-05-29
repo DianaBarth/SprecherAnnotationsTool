@@ -941,43 +941,48 @@ class DashBoard(ttk.Frame):
         else:    
             # Versuche, Pfad zur .docx-Datei aus Eingabe-Ordner zu rekonstruieren
             eingabe_ordner = Path(ordner["Eingabe"])
-            docx_dateien = list(eingabe_ordner.glob("*.docx"))
+        
+            # Leite .docx-Dateiname aus dem Ordnernamen ab
+            try:
+                ergebnisse_ordner = eingabe_ordner.parent  # .../Annotationstoolergebnisse/<dateiname_ohne_endung>
+                docx_name = ergebnisse_ordner.name + ".docx"
+                original_docx = ergebnisse_ordner.parent.parent / docx_name  # gehe zwei Ebenen nach oben
 
-            if not docx_dateien:
-                messagebox.showwarning("Keine .docx-Datei gefunden", f"Im Ordner {eingabe_ordner} wurde keine .docx-Datei gefunden.")
-                return
+                if not original_docx.is_file():
+                    messagebox.showwarning("Datei nicht gefunden", f"Die ursprüngliche .docx-Datei konnte nicht gefunden werden:\n{original_docx}")
+                    return
 
-            docx_pfad = docx_dateien[0]  # nehme die erste gefundene Datei
-            self.selected_file.set(str(docx_pfad))
-            print(f"[DEBUG] Geladene docx-Datei aus GLOBALORDNER: {repr(docx_pfad)}")
+                self.selected_file.set(str(original_docx))
+                print(f"[DEBUG] Rekonstruierte .docx-Datei: {repr(original_docx)}")
 
-            # Ausgabeordner-Struktur rekonstruieren
-            self.output_folder = eingabe_ordner.parent
-            self.kapitel_config.output_folder = str(self.output_folder)
+                self.output_folder = ergebnisse_ordner
+                self.kapitel_config.output_folder = str(self.output_folder)
 
-            # Kapitel-Konfigurationsdatei prüfen
-            self.kapitel_config_datei = self.output_folder / "kapitel_config.json"
-            if self.kapitel_config_datei.is_file():
-                try:
-                    self.kapitel_config.load_from_file(str(self.kapitel_config_datei))
-                    print(f"[INFO] Kapitel-Konfiguration geladen aus {self.kapitel_config_datei}")
-                except Exception as e:
-                    messagebox.showerror("Fehler", f"Konnte Kapitel-Konfiguration nicht laden: {e}")
+                self.kapitel_config_datei = self.output_folder / "kapitel_config.json"
+                if self.kapitel_config_datei.is_file():
+                    try:
+                        self.kapitel_config.load_from_file(str(self.kapitel_config_datei))
+                        print(f"[INFO] Kapitel-Konfiguration geladen aus {self.kapitel_config_datei}")
+                    except Exception as e:
+                        messagebox.showerror("Fehler", f"Konnte Kapitel-Konfiguration nicht laden: {e}")
+                        self.kapitel_config_datei = None
+                else:
+                    messagebox.showwarning("Keine Kapitel-Konfiguration", f"Die Datei {self.kapitel_config_datei} wurde nicht gefunden.")
                     self.kapitel_config_datei = None
-            else:
-                messagebox.showwarning("Keine Kapitel-Konfiguration", f"Die Datei {self.kapitel_config_datei} wurde nicht gefunden.")
-                self.kapitel_config_datei = None
 
-            # Ordnerstruktur neu setzen
-            self.ordner = {k: Path(v) for k, v in ordner.items()}
+                # Ordnerstruktur setzen
+                self.ordner = {k: Path(v) for k, v in ordner.items()}
 
-            # Textbox beschreiben (falls vorhanden)
-            if hasattr(self, "textbox"):
-                self.textbox.delete("1.0", "end")
-                self.textbox.insert("end", f"Geladenes Projekt: {docx_pfad.name}\nPfad: {docx_pfad.parent}")
+                # Optional: Textbox aktualisieren
+                if hasattr(self, "textbox"):
+                    self.textbox.delete("1.0", "end")
+                    self.textbox.insert("end", f"Geladenes Projekt: {original_docx.name}\nPfad: {original_docx.parent}")
 
-            # Checkboxen neu aufbauen
-            self.lade_kapitel_checkboxes()
+                # Kapitel-Checkboxen laden
+                self.lade_kapitel_checkboxes()
+
+            except Exception as e:
+                messagebox.showerror("Fehler", f"Beim Laden des Projekts ist ein Fehler aufgetreten:\n{e}")
 
 
     def select_word_file(self):
