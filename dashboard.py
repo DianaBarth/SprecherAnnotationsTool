@@ -18,7 +18,6 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
 
 
-# Eigene Module am Ende
 import Eingabe.config as config
 from annotationen_editor import AnnotationenEditor
 from Schritt1 import extrahiere_kapitel_mit_config

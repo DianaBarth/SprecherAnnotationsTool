@@ -86,7 +86,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
                 )
 
             if ki_ergebnis:                
-             
+                print("KI Roh-Ausgabe:\n", ki_ergebnis)
                 # → KI-Antwort in Textdatei speichern
                 antwort_log_datei = os.path.join(ki_ordner, f"{aufgaben_name}_KIAntwort.txt")
                 with open(antwort_log_datei, 'a', encoding='utf-8') as f:

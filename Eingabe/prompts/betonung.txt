@@ -8,7 +8,7 @@ Gegeben ist ein JSON mit Tokens aus mehrerer literarischen Sätzen eines Kapitel
 
 Erkenne Betonungen und klassifiziere als 'hauptbetonung' oder 'nebenbetonung'.  
 Pro Sinneinheit (Haupt-/Teilsatz) maximal 1 Hauptbetonung und 1 Nebenbetonung. Lieber zu wenige als zu viele.  
-Gib nur ein JSON-Array zurück. Falls keine Betonung gefunden wird, gib [] zurück.  
+Gib ein JSON-Array zurück. Falls keine Betonung gefunden wird, gib [] zurück.  
 
 Beispiel Eingabe:  
 [
@@ -23,3 +23,5 @@ Beispiel Ausgabe:
 [
   {"KapitelNummer": "1", "WortNr": 2, "Betonung": "hauptbetonung"}
 ]
+
+Antworte **nur** mit dem JSON-Array, keine weiteren Erklärungen oder Wiederholungen. Hier kommt dein Input:
