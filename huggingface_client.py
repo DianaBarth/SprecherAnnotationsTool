@@ -132,28 +132,38 @@ class HuggingFaceClient:
 
         print(f"[HuggingFaceClient] Modell '{model_name}' erfolgreich geladen.")
    
-    def generate(self, prompt: str, max_new_tokens: int = 2000) -> str:
+    def generate(self, prompt: str) -> str:
         if not self.model_name:
             raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
         
         print(f"[INFO] Generiere mit '{self.model_name}'")
+        
+        print("[INFO] Tokenizer-Aufruf gestartet")
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=config.MAX_TOTAL_TOKENS,  
-            return_attention_mask=True        
-        ).to(self.model.device)
+            max_length=config.MAX_TOTAL_TOKENS,
+            return_attention_mask=True
+        )
+        print("[INFO] Tokenizer-Aufruf fertig")
         
+        # Inputs auf das Device verschieben
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        print("[INFO] Inputs auf Device verschoben")
+        
+        print("[INFO] Model generate gestartet")
         outputs = self.model.generate(
             inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
-            max_new_tokens=max_new_tokens,
+            max_new_tokens=config.MAX_NEW_TOKENS,
             num_return_sequences=1,
-            pad_token_id=self.tokenizer.pad_token_id
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=getattr(self.tokenizer, "eos_token_id", None)  # optional, falls definiert
         )
-        print(f"[INFO] Generiert mit '{self.model_name}'")
+        print("[INFO] Model generate fertig")
+        
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 

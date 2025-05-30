@@ -49,17 +49,24 @@ class SprecherAnnotationsTool(tk.Tk):
 
     
     def starte_progress_pruefung(self):
+        print("[INFO] Starte Fortschrittsprüfung")
         if not self.progress_queue_active:
             self.progress_queue_active = True
             self.after(0, self.pruefe_progress_queue)
             self.after(0, self.pruefe_mp_progress_queue)  # <--- MP-Queue auch prüfen
 
+    def stoppe_progress_pruefung(self):
+        print("[INFO] Stoppe Fortschrittsprüfung")
+        self.progress_queue_active = False
+
     def pruefe_progress_queue(self):
+    
             try:
-                while not self.progress_queue.empty():
-                    kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
-                    print(f"melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
-                    self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)  # deine GUI-Update-Funktion
+                if self.progress_queue_active:
+                    while not self.progress_queue.empty():
+                        kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
+                        print(f"melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
+                        self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)  # deine GUI-Update-Funktion
             except Exception as e:
                 print(f"[FEHLER bei Queue-Check] {e}")
 
@@ -68,15 +75,16 @@ class SprecherAnnotationsTool(tk.Tk):
                 
     def pruefe_mp_progress_queue(self):
         try:
-            while not self.mp_progress_queue.empty():
-                item = self.mp_progress_queue.get_nowait()
+            if self.progress_queue_active:                   
+                while not self.mp_progress_queue.empty():
+                    item = self.mp_progress_queue.get_nowait()
 
-                if isinstance(item, tuple) and len(item) == 3:
-                    kapitel_name, aufgaben_id, wert = item
-                    print(f"[MP] melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
-                    self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)
-                else:
-                    print(f"[WARNUNG] Unerwartetes Format in mp_progress_queue: {item}", flush=True)
+                    if isinstance(item, tuple) and len(item) == 3:
+                        kapitel_name, aufgaben_id, wert = item
+                        print(f"[MP] melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
+                        self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)
+                    else:
+                        print(f"[WARNUNG] Unerwartetes Format in mp_progress_queue: {item}", flush=True)
         except Exception as e:
             print(f"[FEHLER bei MP-Queue-Check] {e}", flush=True)
 

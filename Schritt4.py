@@ -20,7 +20,7 @@ def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
 
         print("[INFO] Anfrage an lokales Modell über HuggingFaceClient …")
         # Modell explizit übergeben (falls gesetzt), sonst None
-        content = client.generate(prompt,max_new_tokens = config.MAX_NEW_TOKENS)
+        content = client.generate(prompt)
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
         if dateiname and wortnr_bereich:
@@ -34,7 +34,7 @@ def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
 def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
     try:
         print("[INFO] Anfrage an lokales Modell über HuggingFaceClient …")
-        content = client.generate(prompt_text, max_new_tokens=config.MAX_NEW_TOKENS)
+        content = client.generate(prompt_text)
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
         if dateiname and wortnr_bereich:
