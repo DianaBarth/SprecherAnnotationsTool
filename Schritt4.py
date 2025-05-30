@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import gc
 from pathlib import Path
 import Eingabe.config as config # Importiere das komplette config-Modul
 
@@ -105,6 +106,8 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
                 
     except Exception as e:
         print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
+    finally:
+        gc.collect()  # manuell Garbage Collector aufrufen, um Speicher freizugeben
         
 def dekodiere_und_überschreibe(pfad):
     with open(pfad, 'r', encoding='utf-8') as f:

@@ -299,7 +299,7 @@ class DashBoard(ttk.Frame):
         self.tasks_running = False
         self.tasks_lock = threading.Lock()
 
-        self.max_workers = psutil.cpu_count(logical=True) or 1  # Fallback 1, falls None
+        self.max_workers = psutil.cpu_count(logical=False) or 1  # Fallback 1, falls None [erstmal nur pyhsische und nicht logische]
       
         self.master = parent  # Zugriff auf die Hauptanwendung
         
