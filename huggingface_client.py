@@ -106,15 +106,19 @@ class HuggingFaceClient:
             elif "mistral" in model_name_lower:
                 print("[Debug] Lade Mistral Sprachmodell")
                 from transformers import MistralForCausalLM, AutoTokenizer
-                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code = True)
                   # Pad-Token setzen, falls nicht vorhanden
                 if self.tokenizer.pad_token is None:
                     self.tokenizer.pad_token = self.tokenizer.eos_token
-                    print(f"Pad token auf EOS token gesetzt: {self.tokenizer.pad_token}")                    
+                    print(f"Pad token auf EOS token gesetzt: {self.tokenizer.pad_token}")
                 self.model = MistralForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto"    )
+                    device_map="auto",              # ✅ wichtig bei großen Modellen
+                    offload_folder="./Offload",    # ✅ Pfad für Auslagerung
+                    trust_remote_code=True               
+                )
+
             else:
                 print("[Debug] Lade AutoModel")
                 from transformers import AutoTokenizer, AutoModelForTokenClassification
@@ -128,17 +132,18 @@ class HuggingFaceClient:
 
         print(f"[HuggingFaceClient] Modell '{model_name}' erfolgreich geladen.")
    
-    def generate(self, prompt: str, max_new_tokens: int = 200) -> str:
+    def generate(self, prompt: str, max_new_tokens: int = 2000) -> str:
         if not self.model_name:
             raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
         
-        print(f"[INFO] Generiere mit '{self.model_name}': {prompt}")
+        print(f"[INFO] Generiere mit '{self.model_name}'")
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
             padding=True,
             truncation=True,
-            return_attention_mask=True
+            max_length=config.MAX_TOTAL_TOKENS,  
+            return_attention_mask=True        
         ).to(self.model.device)
         
         outputs = self.model.generate(
@@ -148,7 +153,7 @@ class HuggingFaceClient:
             num_return_sequences=1,
             pad_token_id=self.tokenizer.pad_token_id
         )
-        
+        print(f"[INFO] Generiert mit '{self.model_name}'")
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 

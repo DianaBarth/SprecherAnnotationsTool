@@ -5,7 +5,7 @@ import Eingabe.config as config # Importiere das komplette config-Modul
 
 satzzeichen = {".", "!", "?"}
 annotation_trenner = "zeilenumbruch"
-MAX_WOERTER_PRO_DATEI = 5000
+
 
 def bereinige_eintrag(eintrag):
     """Entfernt 'annotation' sowie alle Felder, deren Key in KI_AUFGABEN.values() vorkommt."""
@@ -110,7 +110,7 @@ def dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_call
             for i, satz in enumerate(saetze, 1):
                 satz_woerter = sum(zaehle_woerter_in_eintrag(eintrag) for eintrag in satz)
                 print(f"[DEBUG] Satz {i}: Wörter = {satz_woerter}, aktueller Wortzähler = {wort_counter}")
-                if wort_counter + satz_woerter > MAX_WOERTER_PRO_DATEI:
+                if wort_counter + satz_woerter > config.MAX_PROMPT_TOKENS:
                     if abschnitt:
                         abschnitt_pfad = os.path.join(zielverzeichnis, f"{basisname}_{abschnitt_counter:03}.json")
                         print(f"[DEBUG] Speichere Abschnitt {abschnitt_counter} mit {len(abschnitt)} Einträgen in {abschnitt_pfad}")

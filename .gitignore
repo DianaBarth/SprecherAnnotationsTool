@@ -124,3 +124,4 @@ cython_debug/
 
 # Persönlicher Projektzustand
 Eingabe/kapitel_config.json
+Offload/

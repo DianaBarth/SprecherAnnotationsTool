@@ -18,6 +18,10 @@ AUFGABEN_ANNOTATIONEN = {3: [{'name': None, 'bild': None, 'HartKodiert': 'farbeJ
 
 FehlerAnzeigen = True
 
+MAX_NEW_TOKENS = 500    # Rückgabe der KI
+MAX_PROMPT_TOKENS = 1000 # Begrenzung der Json-Sätze
+MAX_TOTAL_TOKENS =2048  # Begrenzung der KI
+
 # Allgemein
 ANZAHL_ÜBERSCHRIFTENZEILEN = 2
 BILDHOEHE_PX = 19

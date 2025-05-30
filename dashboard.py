@@ -99,7 +99,7 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_p
                     str(pfad_satz),
                     ordner["ki"],
                     aufgaben_id,
-                    force_var=False,
+                    force=False,
                 )
                 if mp_progress_queue:
                     fortschritt = int((i / anzahl) * 100)
@@ -319,7 +319,7 @@ class DashBoard(ttk.Frame):
         
         self.chapter_vars: dict[str, tk.BooleanVar] = {}
         self.task_vars: dict[str, tk.BooleanVar] = {}
-        self.force_var = tk.BooleanVar(value=False)  # Checkbox für --force
+       # self.force_var = tk.BooleanVar(value=False)  # Checkbox für --force
         
         # Spinner-Labels für Tasks
         self.task_spinner_labels = {}  # task_id -> ttk.Label (Spinner)
@@ -1504,8 +1504,8 @@ if __name__ == "__main__":
     }
 
     kapitel_name = "Prolog – Finis post portam"
-    aufgaben_id = 3
-    prompt = "finde betonungen"
+    aufgaben_id =4
+    prompt = lade_prompt_datei(4)
     modell_name = "leoLM/leo-mistral-hessianai-7b"
 
     ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
