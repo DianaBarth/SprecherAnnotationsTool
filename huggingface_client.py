@@ -116,7 +116,6 @@ class HuggingFaceClient:
                     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                     device_map="auto",              # ✅ wichtig bei großen Modellen
                     offload_folder="./Offload",    # ✅ Pfad für Auslagerung
-                    trust_remote_code=True               
                 )
 
             else:
@@ -136,6 +135,11 @@ class HuggingFaceClient:
         if not self.model_name:
             raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
         
+        if torch.cuda.is_available():
+            print(torch.cuda.memory_summary())
+        else:
+            print("CUDA nicht verfügbar – alles läuft auf CPU")
+
         print(f"[INFO] Generiere mit '{self.model_name}'")
         
         print("[INFO] Tokenizer-Aufruf gestartet")
@@ -153,16 +157,19 @@ class HuggingFaceClient:
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
         print("[INFO] Inputs auf Device verschoben")
         
-        print("[INFO] Model generate gestartet")
-        outputs = self.model.generate(
-            inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            max_new_tokens=config.MAX_NEW_TOKENS,
-            num_return_sequences=1,
-            pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=getattr(self.tokenizer, "eos_token_id", None)  # optional, falls definiert
-        )
-        print("[INFO] Model generate fertig")
+        
+        start = time.time()
+        print("[INFO] Beginne model.generate()")
+        with torch.no_grad():
+            outputs = self.model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                max_new_tokens=10,
+                pad_token_id=self.tokenizer.pad_token_id,
+                do_sample=False  # deterministisch, schneller
+            )
+        print(f"[INFO] generate() fertig nach {time.time() - start:.2f} Sekunden")
+
         
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
