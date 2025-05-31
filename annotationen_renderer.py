@@ -74,6 +74,12 @@ class AnnotationRenderer:
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
     def auf_canvas_rendern(self, canvas, index, element,naechstes_element=None):
+       
+        for key in self.ignorierte_annotationen:
+            if key in element and element[key]:
+                print(f"Token '{element.get('token', '')}' wird ausgeblendet wegen gesetzter Annotation '{key}'")
+                return
+                          
         print(f"auf_canvas_rendern aufgerufen: index={index}, token={element.get('token', '')}, ist_PDF={self.ist_PDF}")
 
         token = element.get('token', '')

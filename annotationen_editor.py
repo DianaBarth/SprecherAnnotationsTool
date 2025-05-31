@@ -14,6 +14,7 @@ class AnnotationenEditor(ttk.Frame):
         self.dateipfad_json = dateipfad_json
         self.renderer = AnnotationRenderer(max_breite=680)
         self.json_dicts = []
+        self.filter_vars = {}  # <== Zustand der Filterbuttons
         self._lade_json_daten()
         self._erstelle_widgets()
 
@@ -40,9 +41,21 @@ class AnnotationenEditor(ttk.Frame):
         speichern_button = ttk.Button(top_frame, text="JSON speichern", command=self._json_speichern)
         speichern_button.pack(side='left', padx=5)
 
+        # 🔽 Filter-Leiste
+        filter_label = ttk.Label(top_frame, text="Annotationen ausblenden für:")
+        filter_label.pack(side='left', padx=10)
+
+        for aufgabenname in config.KI_AUFGABEN.values():
+            var = tk.BooleanVar(value=False)
+            self.filter_vars[aufgabenname] = var
+            btn = ttk.Checkbutton(
+                top_frame, text=aufgabenname, variable=var, command=self._zeichne_alle_tokens
+            )
+            btn.pack(side='left', padx=2)
+
         # Linker Bereich: Canvas + Scrollbar
         linker_frame = tk.Frame(self)
-        linker_frame.grid(row=1, column=0, sticky='nsew')  # row 1!
+        linker_frame.grid(row=1, column=0, sticky='nsew')
         linker_frame.columnconfigure(0, weight=1)
         linker_frame.rowconfigure(0, weight=1)
 
@@ -56,7 +69,7 @@ class AnnotationenEditor(ttk.Frame):
 
         # Rechter Bereich: Annotationen
         rechts_frame = tk.Frame(self)
-        rechts_frame.grid(row=1, column=1, sticky='nsew')  # row 1!
+        rechts_frame.grid(row=1, column=1, sticky='nsew')
         rechts_frame.columnconfigure(0, weight=1)
         rechts_frame.rowconfigure(0, weight=1)
 
@@ -77,7 +90,7 @@ class AnnotationenEditor(ttk.Frame):
             "<Configure>",
             lambda e: self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
         )
-   
+
         self.default_annotation_label = ttk.Label(
             self.annotation_frame,
             text="Bitte Wort auswählen, um dessen Annotationen zu sehen und zu ändern!",
@@ -91,11 +104,15 @@ class AnnotationenEditor(ttk.Frame):
         self._zeichne_alle_tokens()
         self.canvas.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
-        
+
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
-        self.renderer.positionen_zuruecksetzen()    
-        # nur Tokens zeichnen:
+        self.renderer.positionen_zuruecksetzen()
+
+        # 🧠 Filter-Status an Renderer übergeben
+        aktive_filter = [name for name, var in self.filter_vars.items() if var.get()]
+        self.renderer.ignorierte_annotationen = set(a.lower() for a in aktive_filter)
+
         for idx, json_dict in enumerate(self.json_dicts):
             naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
             self.renderer.rendern(index=idx, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=json_dict)
@@ -123,7 +140,7 @@ class AnnotationenEditor(ttk.Frame):
         print(f"Nach dem Löschen Widgets: {[type(c) for c in self.annotation_frame.winfo_children()]}")
 
         # Neue Annotationen bauen
-        tk.Label(self.annotation_frame, text=f"Token {idx}: '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
+        tk.Label(self.annotation_frame, text=f"Annotatationen für Token {idx}: '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
 
         row_index = 1
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
@@ -193,3 +210,11 @@ class AnnotationenEditor(ttk.Frame):
         for child in aktuelles_widget.winfo_children():
             if isinstance(child, AnnotationenEditor):
                 child.zeige_default_annotation_label()
+
+    def _toggle_filter(self, name):
+        name = name.lower()
+        if name in self.renderer.ignorierte_annotationen:
+            self.renderer.ignorierte_annotationen.remove(name)
+        else:
+            self.renderer.ignorierte_annotationen.add(name)
+        self._zeichne_alle_tokens()
