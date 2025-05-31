@@ -1,34 +1,21 @@
-Gegeben ist ein JSON mit Tokens aus mehreren literarischen Sätzen eines Kapitels. Jedes Objekt enthält: 
-- "KapitelNummer": der Nummer des Kapitels
-- "WortNr": die Position des Tokens im Kapitel
-- "token": das Wort oder Satzzeichen
+**Aufgabe:** Erkenne Pausen in folgendem literarischen Textabschnitt.  
+Klassifiziere markierte Wörter entweder als **"atempause** oder **"staupause"**.
 
-Finde Stellen, an denen nach dem Token eine Pause folgt.
-Klassifiziere diese als 'atempause' (kurz) oder 'staupause' (lang).
-Füge dabei nur an Satzgrenzen, bei Kommas, Gedankenstrichen oder nach Sinnabschnitten eine Atempause ein, 
-maxinmal alle 10-15 Silben und maximal 1 Staupause pro Satz, besser gar keine.
-Füge lieber weniger Pause ein als zu viele.
+**Regeln:**
 
-Gib nur ein JSON-Array zurück. Falls keine Gedanken gefunden werden, gib [] zurück.  
+    Setze Pausen nur an Satzgrenzen, bei Kommas, Gedankenstrichen oder nach Sinnabschnitten.
+    Maximal alle 10–15 Silben eine Atempause, maximal eine Staupause pro Satz (besser gar keine).
+    Lieber zu wenige als zu viele Pausen annotieren.
+    Gib ausschließlich ein gültiges JSON-Objekt mit Listen { "atempause": [...], "staupause": [...] }
+    Falls keine Pausen gefunden werden, gib zurück: { "atempause": [], "staupause": [] }
 
-[
-  {"KapitelNummer": "1", "WortNr": 1, "token": "Er"},
-  {"KapitelNummer" :"1", "WortNr": 2, "token": "ging"},
-  {"KapitelNummer": "1", "WortNr": 3, "token": "nach"},
-  {"KapitelNummer": "1", "WortNr": 4, "token": "draußen"},
-  {"KapitelNummer": "1", "WortNr": 5, "token": ","},
-  { "KapitelNummer": "1", "WortNr": 6, "token": "doch "},
-  {"KapitelNummer" :"1", "WortNr": 7,"token": "dann"},
-  {"KapitelNummer": "1", "WortNr": 8, "token": "blieb"},
-  {"KapitelNummer": "1", "WortNr": 9, "token": "er"},
-  {"KapitelNummer": "1", "WortNr": 10, "token": "stehen"},
-  {"KapitelNummer": "1", "WortNr": 11, "token": "."}
-]
+**Beispiel Eingabe:**  
+Er ging nach draußen, doch dann blieb er stehen.
 
-Beispiel Ausgabe: 
-[
+**Beispiel Ausgabe:**
+{
+  "atempause": [","],
+  "staupause": ["."]
+}.  
 
-  {"KapitelNummer": "1", "WortNr": 5, "Pause": "atempause"},
-  {"KapitelNummer": "1", "WortNr": 11, "Pause": "staupause"}
-
-]
+Jezt kommt deine Eingabe:

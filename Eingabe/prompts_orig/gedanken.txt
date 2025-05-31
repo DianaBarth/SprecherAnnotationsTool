@@ -1,44 +1,23 @@
 Aufgabe 3: Gedankenübergänge erkennen
 
-Gegeben ist ein JSON mit Tokens aus mehreren literarischen Sätzen eines Kapitels. Jedes Objekt enthält: 
-- "KapitelName": Nummer des Kapitels  
-- "WortNr": Position des Tokens im Kapitel  
-- "token": Wort oder Satzzeichen  
+Aufgabe:  
+Erkenne Übergänge von Gedanken im folgenden literarischen Textabschnitt.  
+Klassifiziere erkannte Übergänge als eine der folgenden Kategorien:  
+- "gedanken_weiter": bei Aufzählungen, Einschüben, Nebensatz-Enden  
+- "gedanken_ende": am Ende eines vollständigen Hauptsatzes  
+- "pause_gedanken": bei kurzer Unterbrechung oder zögerlicher Fortsetzung
 
-Erkenne Übergänge von Gedanken und klassifiziere sie als 'gedanken_weiter', 'gedanken_ende', 'pause_gedanken'.  
-- 'gedanken_weiter': Ende von Nebensätzen, Aufzählungen, Einschüben  
-- 'gedanken_ende': Ende eines Hauptsatzes  
-- 'pause_gedanken': leichte Verlangsamung oder Unterbrechung  
+**Regeln:**
+- Lieber zu wenige als zu viele Annotationen.
+- Gib ausschließlich ein gültiges JSON-Objekt mit Listen der Annotationen gedanken_weiter,gedanken_ende,pause_gedanken zurück.
+- Wenn keine Übergänge gefunden werden, gib: "{ gedanken_weiter": [], "gedanken_ende": [], "pause_gedanken": []}
 
-Lieber weniger als zu viele Gedanken.  
+**Beispiel Eingabe:**  
+Ich wollte gehen, doch dann erinnerte ich mich – vielleicht sollte ich bleiben. Aber war das wirklich eine gute Idee?
 
-Gib nur ein JSON-Array zurück. Falls keine Gedanken gefunden werden, gib [] zurück.  
-
-Beispiel Eingabe:  
-[
-  {"KapitelNummer": "1", "WortNr": 10, "token": "Ich"},
-  {"KapitelNummer": "1", "WortNr": 11, "token": "denke"},
-  {"KapitelNummer": "1", "WortNr": 12, "token": ","},
-  {"KapitelNummer": "1", "WortNr": 13, "token": "dass"},
-  {"KapitelNummer": "1", "WortNr": 14, "token": "wir"},
-  {"KapitelNummer": "1", "WortNr": 15, "token": "heute"},
-  {"KapitelNummer": "1", "WortNr": 16, "token": "gehen"},
-  {"KapitelNummer": "1", "WortNr": 17, "token": "."},
-  {"KapitelNummer": "1", "WortNr": 18, "token": "Aber"},
-  {"KapitelNummer": "1", "WortNr": 19, "token": "vielleicht"},
-  {"KapitelNummer": "1", "WortNr": 20, "token": "doch"},
-  {"KapitelNummer": "1", "WortNr": 21, "token": "nicht"},
-  {"KapitelNummer": "1", "WortNr": 22, "token": ","},
-  {"KapitelNummer": "1", "WortNr": 23, "token": "werde"},
-  {"KapitelNummer": "1", "WortNr": 24, "token": "ich"},
-  {"KapitelNummer": "1", "WortNr": 25, "token": "fragen"},
-  {"KapitelNummer": "1", "WortNr": 26, "token": ".""}
-]
-
-Beispiel Ausgabe:  
-[
-  {"KapitelNummer": "1", "WortNr": 12, "Gedanken": "gedanken_weiter"},
-  {"KapitelNummer": "1", "WortNr": 17, "Gedanken": "gedanken_ende"},
-  {"KapitelNummer": "1", "WortNr": 22, "Gedanken": "pause_gedanken"},
-  {"KapitelNummer": "1", "WortNr": 26, "Gedanken": "gedanken_ende"}
-]
+**Beispiel Ausgabe:**  
+{
+  "gedanken_weiter": [dann],
+  "gedanken_ende":[?],
+  "pause_gedanken": [-],
+}

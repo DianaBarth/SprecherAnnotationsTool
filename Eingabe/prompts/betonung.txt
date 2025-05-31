@@ -1,25 +1,19 @@
-Aufgabe 2: Betonungen erkennen
+Aufgabe: Erkenne Betonungen in folgendem literarischen Textabschnitt.  
+Klassifiziere markierte Wörter entweder als "hauptbetonung" oder "nebenbetonung".
 
-Aufgabe:  
-Gegeben ist ein JSON mit Tokens aus mehrerer literarischen Sätzen eines Kapitels. Jedes Objekt enthält:  
-- "KapitelName": Name des Kapitels  
-- "WortNr": Position des Tokens im Kapitel  
-- "token": Wort oder Satzzeichen  
+Regeln:
+- Maximal 1 Hauptbetonung und 1 Nebenbetonung pro Sinneinheit (z. B. Haupt- oder Teilsatz).
+- Lieber zu wenige als zu viele Betonungen.
+- Gib ausschließlich ein gültiges JSON-Objekt mit Listen der Annotationen hauptbetonung, nebenbetonung zurück.
+- Wenn keine Betonungen gefunden werden, gib: {"hauptbetonung": [], "nebenbetonung": []}
 
-Erkenne Betonungen und klassifiziere als 'hauptbetonung' oder 'nebenbetonung'.  
-Pro Sinneinheit (Haupt-/Teilsatz) maximal 1 Hauptbetonung und 1 Nebenbetonung. Lieber zu wenige als zu viele.  
-Gib nur ein JSON-Array zurück. Falls keine Betonung gefunden wird, gib [] zurück.  
+Beispiel Eingabe:*
+Dieses Haus ist hoch, aber das Nachbarhaus ist noch höher!
 
-Beispiel Eingabe:  
-[
-  {"KapitelNummer": "1", "WortNr": 1, "token": "Das"},
-  {"KapitelNummer" :"1", "WortNr": 2, "token": "Haus"},
-  {"KapitelNummer": "1", "WortNr": 3, "token": "ist"},
-  {"KapitelNummer": "1", "WortNr": 4, "token": "hoch"},
-  {"KapitelNummer": "1", "WortNr": 5, "token": "."}
-]
+Beispiel Ausgabe:
+{
+  "hauptbetonung": ["Nachbarhaus"],
+  "nebenbetonung": ["hoch", "höher"]
+}.  
 
-Beispiel Ausgabe:  
-[
-  {"KapitelNummer": "1", "WortNr": 2, "Betonung": "hauptbetonung"}
-]
+Jezt kommt deine Eingabe:
