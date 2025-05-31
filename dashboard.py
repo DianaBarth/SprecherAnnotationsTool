@@ -717,7 +717,7 @@ class DashBoard(ttk.Frame):
 
          # Neu: Eingabe für Kapitel_trenner
         ttk.Label(dialog, text="Kapitel-Trenner:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
-        kapitel_trenner_var = tk.StringVar(value="***")  # Beispiel als Standard: Gedankenstrich
+        kapitel_trenner_var = tk.StringVar(value="***")  
         ttk.Entry(dialog, textvariable=kapitel_trenner_var).grid(row=4, column=1, sticky="ew", padx=10, pady=5)
 
 

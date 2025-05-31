@@ -33,7 +33,9 @@ class KapitelConfig(ttk.Frame):
         self.notebook.hide(self)  # Versteckt den Tab
         
     def kapitel_manuell_bearbeiten(self):     
-
+        
+        self.kapitel_trenner = simpledialog.askstring("Kapitel-Trenner", "Welcher Trenner ist zwischen den Kapiteln?", initialvalue="***")   
+      
         self._load_current_kapitel()
         self._update_current_label()
         self.show()
@@ -48,7 +50,8 @@ class KapitelConfig(ttk.Frame):
         try:
             with open(dateipfad, "r", encoding="utf-8") as f:
                 daten = json.load(f)
-            # Übernehme kapitel_liste und kapitel_daten wie gewohnt…
+
+            # Kapitel-Liste und Daten wie gehabt laden
             if "kapitel_liste" in daten and "kapitel_daten" in daten:
                 self.kapitel_liste = daten["kapitel_liste"]
                 self.kapitel_daten = daten["kapitel_daten"]
@@ -58,6 +61,10 @@ class KapitelConfig(ttk.Frame):
             else:
                 self.kapitel_daten = daten
                 self.kapitel_liste = list(daten.keys())
+
+            # Neues: Kapitel-Trenner separat auslesen, falls vorhanden
+            self.kapitel_trenner = daten.get("kapitel_trenner", "–")  # Standard: Gedankenstrich
+
             self.index = 0
             self._load_current_kapitel()
             self._update_current_label()
@@ -65,6 +72,7 @@ class KapitelConfig(ttk.Frame):
             messagebox.showinfo("Erfolg", "Kapitel-Konfiguration erfolgreich geladen.")
         except Exception as e:
             messagebox.showerror("Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
+
 
     def _create_from_word(self, stilname, pfad, nummerierung="nein", praefix=None, aufsteigend=False, kapitel_trenner="***"):
         print(f"Starte Kapitel-Erkennung aus Word-Datei: {pfad}")
@@ -191,16 +199,28 @@ class KapitelConfig(ttk.Frame):
         if not prefix:
             messagebox.showwarning("Warnung", "Bitte einen gültigen Präfix eingeben.")
             return
+
         anzahl = simpledialog.askinteger("Kapitelanzahl", "Wie viele Kapitel gibt es?", minvalue=1)
         if not anzahl:
             return
-        # Erzeuge neue Kapitel
+
+        trenner = simpledialog.askstring("Kapitel-Trenner", "Welcher Trenner ist zwischen den Kapiteln?", initialvalue="***")
+        if trenner is None:
+            # Abbruch beim Trenner-Dialog
+            return
+
+        # Beispiel: Trenner speichern
+        self.kapitel_trenner = trenner
+
+        # Kapitel-Liste mit Trenner zusammenbauen
         self.kapitel_daten = {}
-        self.kapitel_liste = [f"{prefix}{i}" for i in range(1, anzahl + 1)]
+        self.kapitel_liste = [f"{prefix}{trenner}{i}" for i in range(1, anzahl + 1)]
+
         self.index = 0
         self._load_current_kapitel()
         self._update_current_label()
         self.show()
+
 
     
     def load_from_file(self, dateiname):
@@ -463,9 +483,9 @@ class KapitelConfig(ttk.Frame):
             daten_kapitel_daten_neu[kapitel] = neue_daten
 
         daten = {
+            "Kapitel_trenner": getattr(self, "kapitel_trenner", "***"),
             "kapitel_liste": self.kapitel_liste,
-            "kapitel_daten": daten_kapitel_daten_neu,
-            "Kapitel_trenner": self.kapitel_trenner
+            "kapitel_daten": daten_kapitel_daten_neu,    
         }
 
         erfolg = False
