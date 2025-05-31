@@ -9,7 +9,7 @@ from annotationen_renderer import AnnotationRenderer
 
 class AnnotationenEditor(ttk.Frame):
     def __init__(self, parent, notebook, dateipfad_json):
-        super().__init__(notebook)
+        super().__init__(parent)
         self.notebook = notebook
         self.dateipfad_json = dateipfad_json
         self.renderer = AnnotationRenderer(max_breite=680)
@@ -29,7 +29,8 @@ class AnnotationenEditor(ttk.Frame):
         self.grid(row=0, column=0, sticky="nsew")
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0, minsize=250)
-        self.rowconfigure(0, weight=1)
+        self.rowconfigure(0, weight=0)  # Button-Leiste
+        self.rowconfigure(1, weight=1)  # Hauptinhalt
 
         # Oben: Button-Leiste
         top_frame = ttk.Frame(self)
@@ -41,7 +42,7 @@ class AnnotationenEditor(ttk.Frame):
 
         # Linker Bereich: Canvas + Scrollbar
         linker_frame = tk.Frame(self)
-        linker_frame.grid(row=0, column=0, sticky='nsew')
+        linker_frame.grid(row=1, column=0, sticky='nsew')  # row 1!
         linker_frame.columnconfigure(0, weight=1)
         linker_frame.rowconfigure(0, weight=1)
 
@@ -51,10 +52,11 @@ class AnnotationenEditor(ttk.Frame):
         scrollbar_links = ttk.Scrollbar(linker_frame, orient='vertical', command=self.canvas.yview)
         scrollbar_links.grid(row=0, column=1, sticky='ns')
         self.canvas.configure(yscrollcommand=scrollbar_links.set)
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         # Rechter Bereich: Annotationen
         rechts_frame = tk.Frame(self)
-        rechts_frame.grid(row=0, column=1, sticky='nsew')
+        rechts_frame.grid(row=1, column=1, sticky='nsew')  # row 1!
         rechts_frame.columnconfigure(0, weight=1)
         rechts_frame.rowconfigure(0, weight=1)
 
@@ -71,12 +73,15 @@ class AnnotationenEditor(ttk.Frame):
         self.annotation_frame.columnconfigure(0, weight=1)
         self.annotation_frame.columnconfigure(1, weight=1)
 
-        self.annotation_frame.bind("<Configure>", lambda e: self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all')))
+        self.annotation_frame.bind(
+            "<Configure>",
+            lambda e: self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
+        )
 
         self._zeichne_alle_tokens()
-
         self.canvas.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
 
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
@@ -95,7 +100,10 @@ class AnnotationenEditor(ttk.Frame):
         self.renderer.markiere_token_mit_rahmen(self.canvas, idx)
 
         basename = os.path.basename(self.dateipfad_json)
-        self.kapitel_name = basename.replace("_gesamt.json", "") or "Kapitel1"
+        self.kapitel_name = basename.replace("_gesamt.json", "") 
+
+
+
         self.kapitel_konfig = self.lade_kapitel_konfig("Eingabe/kapitel_config.json")
 
         for child in self.annotation_frame.winfo_children():
@@ -145,3 +153,10 @@ class AnnotationenEditor(ttk.Frame):
             messagebox.showinfo("Erfolg", f"JSON erfolgreich gespeichert nach:\n{zielpfad}")
         except Exception as e:
             messagebox.showerror("Fehler", f"Fehler beim Speichern:\n{str(e)}")
+
+
+    def _on_canvas_resize(self, event):
+        neue_breite = event.width
+        print(f"Canvas wurde resized, neue Breite: {neue_breite}")
+        self.renderer.max_breite = neue_breite
+        self._zeichne_alle_tokens()

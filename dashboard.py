@@ -399,25 +399,35 @@ class DashBoard(ttk.Frame):
     def kapitel_annotation_editor_starten(self):
         ausgewaehlte_kapitel = [k for k, v in self.chapter_vars.items() if v.get()]
         if not ausgewaehlte_kapitel:
-            print("Keine Kapitel ausgewählt!")
+            messagebox.showwarning("Hinweis", "Keine Kapitel ausgewählt!")
             return
+
+        fehlende_kapitel = []
 
         for kapitel in ausgewaehlte_kapitel:
             dateipfad = os.path.join(config.GLOBALORDNER["merge"], f"{kapitel}_gesamt.json")
-            
-            # Tab-Frame anlegen
+
+            # Prüfung: existiert die Datei?
+            if not os.path.exists(dateipfad):
+                fehlende_kapitel.append(kapitel)
+                continue
+
             tab_frame = ttk.Frame(self.notebook)
-            
-            # AnnotationenEditor in diesem Tab initialisieren
             editor = AnnotationenEditor(tab_frame, self.notebook, dateipfad)
             editor.pack(expand=True, fill="both")
-            
-            # Tab zum Notebook hinzufügen
             self.notebook.add(tab_frame, text=kapitel)
-            
-        # Optional: ersten neuen Tab aktivieren
-        if ausgewaehlte_kapitel:
-            self.notebook.select(len(self.notebook.tabs()) - len(ausgewaehlte_kapitel))
+
+            # Falls Kapitel fehlen, Hinweis anzeigen
+        if fehlende_kapitel:
+            messagebox.showwarning(
+                "Fehlende Dateien",
+                "Für folgende Kapitel wurden keine JSON-Dateien gefunden:\n\n" +
+                "\n".join(fehlende_kapitel)
+            )
+        else:
+            # Optional: ersten neuen Tab aktivieren
+            if ausgewaehlte_kapitel:
+                self.notebook.select(len(self.notebook.tabs()) - len(ausgewaehlte_kapitel))
 
     def _build_widgets(self):
         # Haupt-Grid: 2 Spalten (Buttons rechts, Hauptinhalt links)
@@ -1059,11 +1069,12 @@ class DashBoard(ttk.Frame):
             "txt":    ergebnisse_ordner / "txt",
             "json":   ergebnisse_ordner / "json",
             "satz":   ergebnisse_ordner / "satz",
+            "absatz" : ergebnisse_ordner / "absatz",
             "ki":     ergebnisse_ordner / "ki",
             "merge":  ergebnisse_ordner / "merge",
             "pdf":    ergebnisse_ordner / "pdf",
-            "manuell": ergebnisse_ordner / "pdf",
-            "pdf2" : ergebnisse_ordner / "pdf",
+            "manuell": ergebnisse_ordner / "manuell",
+            "pdf2" : ergebnisse_ordner / "pdf2",
         }
         
         for pfad in self.ordner.values():
