@@ -486,6 +486,29 @@ def register_custom_font(font_path: str, font_name: str) -> bool:
         print(f"[FontDropdown] Fehler beim Registrieren von {font_name}: {e}")
         return False
 
+def parse_font_style(fontname):
+    # Beispiel input: "Cascadia Code Light"
+    # Output: ("Cascadia Code", "Light")
+
+    parts = fontname.split()
+    # Angenommen, die letzten 1-2 Wörter können Gewicht/Stil sein, rest Familie
+
+    # Häufige Gewicht/Stil-Bezeichnungen
+    style_keywords = { 'bold', 'italic'}
+
+    # Suche von hinten nach Stilwörtern
+    style_parts = []
+    for part in reversed(parts):
+        if part.lower() in style_keywords:
+            style_parts.insert(0, part)
+        else:
+            break
+
+    family_len = len(parts) - len(style_parts)
+    family = ' '.join(parts[:family_len])
+    style = ' '.join(style_parts)
+    return family, style
+
 class FontDropdown(tk.Frame):
     FONT_SIZE = 12
 
@@ -512,7 +535,7 @@ class FontDropdown(tk.Frame):
 
         self.update_filter()
 
-        base, style = self.parse_font_style(self.default_font)
+        base, style = parse_font_style(self.default_font)
         style_parts = style.split() if style else []
         self.display = ttk.Label(self, textvariable=self.var,
                                  font=(base, self.FONT_SIZE, *style_parts),
@@ -525,20 +548,6 @@ class FontDropdown(tk.Frame):
 
         self.canvas_window = None
      
-
-    def parse_font_style(self, full_fontname):
-        parts = full_fontname.split()
-        name_parts = []
-        style_parts = []
-        for part in parts:
-            if part.lower() in ["bold", "italic", "oblique"]:
-                style_parts.append(part.lower())
-            else:
-                name_parts.append(part)
-        base_name = " ".join(name_parts)
-        style = " ".join(style_parts)
-        return base_name, style
-
     def get(self):
         return self.var.get() or None
 
@@ -547,7 +556,7 @@ class FontDropdown(tk.Frame):
         if font_to_use != value:
             print(f"[FontDropdown] '{value}' nicht gefunden, ersetze durch '{font_to_use}'.")
         self.var.set(font_to_use)
-        base, style = self.parse_font_style(font_to_use)
+        base, style = parse_font_style(font_to_use)
         style_parts = style.split() if style else []
         self.display.config(font=(base, self.FONT_SIZE, *style_parts))
         self._check_path_and_font()
@@ -660,7 +669,7 @@ class FontDropdown(tk.Frame):
         canvas.create_window((0, 0), window=frame, anchor="nw")
 
         for fname in self.filtered_fonts:
-            base, style = self.parse_font_style(fname)
+            base, style = parse_font_style(fname)
             style_parts = style.split() if style else []
             lbl = tk.Label(frame, text=fname,
                            font=(base, self.FONT_SIZE, *style_parts),
@@ -987,7 +996,7 @@ class ConfigEditor(ttk.Frame):
         if ordner:
             eingabe_ordner = ordner.get("Eingabe")
         else:
-            eingabe_ordner = "\Eingabe"
+            eingabe_ordner = "Eingabe"
 
         ki_aufgaben_dict = getattr(config, "KI_AUFGABEN", {})
         aufgaben_annotationen_dict = getattr(config, "AUFGABEN_ANNOTATIONEN", {})

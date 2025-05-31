@@ -8,15 +8,17 @@ import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 
 class AnnotationenEditor(ttk.Frame):
-    def __init__(self, parent, notebook, dateipfad_json):
+    def __init__(self, parent, notebook, dateipfad_json,config_editor ):
         super().__init__(parent)
         self.notebook = notebook
         self.dateipfad_json = dateipfad_json
+        self.config_editor = config_editor 
         self.renderer = AnnotationRenderer(max_breite=680)
         self.json_dicts = []
         self.filter_vars = {}  # <== Zustand der Filterbuttons
         self._lade_json_daten()
         self._erstelle_widgets()
+     
 
     def _lade_json_daten(self):
         with open(self.dateipfad_json, 'r', encoding='utf-8') as f:

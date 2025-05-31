@@ -379,7 +379,7 @@ class DashBoard(ttk.Frame):
                 continue
 
             tab_frame = ttk.Frame(self.notebook)
-            editor = AnnotationenEditor(tab_frame, self.notebook, dateipfad)
+            editor = AnnotationenEditor(tab_frame, self.notebook, dateipfad, self.master.config_editor)
             editor.pack(expand=True, fill="both")
             self.notebook.add(tab_frame, text=kapitel)
 

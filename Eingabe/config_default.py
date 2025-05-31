@@ -1,13 +1,3 @@
-# ---------------------------------------------
-
-
-
-
-
-
-
-# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T09:08:11.520510
-
 GLOBALORDNER = {}
 
 NUTZE_KI = True	# Schaltet alle KI-Funktionen zentral ein/aus
@@ -51,18 +41,11 @@ LINIENABSTAND = 2
 ZEILENABSTAND = 5
 SPANNUNG_NEIGUNG = 3
 
-# Farben
 
-# Schriftarten
-SCHRIFTART_STANDARD = 'Cascadia Code Light'	# Schriftart für normalen Text
-SCHRIFTART_BETONUNG_HAUPT = 'Cascadia Mono SemiBold'	# Schriftart für Hauptbetonung
-SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Code'	# Schriftart für Nebenbetonung
-SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'	# Schriftart für Überschrift
-SCHRIFTART_UEBERSCHRIFT_HAUPT = 'Source Code Pro Black'	# Schriftart für Hauptüberschrift
-SCHRIFTART_UEBERSCHRIFT_NEBEN = 'Source Code Pro Medium'	# Schriftart für Nebenüberschrift
-SCHRIFTART_LEGENDE = 'Cascadia Code Light'	# Schriftart für Überschrift
-SCHRIFTART_LEGENDE_HAUPT = 'Cascadia Mono SemiBold'	# Schriftart für Hauptüberschrift
-SCHRIFTART_LEGENDE_NEBEN =  'Cascadia Code'	# Schriftart für Nebenüberschrift
+SCHRIFTART_STANDARD = 'Cascadia Code'
+SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'
+SCHRIFTART_LEGENDE = 'Cascadia Code'
+
 
 # Zeichenabstände für Marker
 MARKER_BREITE_KURZ = 4

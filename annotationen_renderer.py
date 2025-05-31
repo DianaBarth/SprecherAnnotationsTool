@@ -6,6 +6,7 @@ from reportlab.lib import colors
 import tkinter.font as tkFont
 import hashlib
 from collections import defaultdict
+import importlib
 import Eingabe.config as config  # Importiere das komplette config-Modul
 
 def zu_Hex_farbe(rgb):
@@ -16,11 +17,10 @@ def zu_PDF_farbe(rgb):
 
 
 class AnnotationRenderer:
-    def __init__(self, ignorierte_annotationen=None, ignorier_ig=False, max_breite=680):
+    def __init__(self,ignorierte_annotationen=None, ignorier_ig=False, max_breite=680):
         self.ignorierte_annotationen = set(a.lower() for a in (ignorierte_annotationen or []))
         self.ignorier_ig = ignorier_ig
         self.max_breite = max_breite
-
         self.x_pos = 10
         self.y_pos = 10
         self.letzte_zeile_y_pos = 10
@@ -174,8 +174,11 @@ class AnnotationRenderer:
                     return True
         print("Keine Hartkodierung aktiviert gefunden")
         return False
-
+      
     def schrift_holen(self, element=None):
+        importlib.reload(config)
+
+        print(f"verfügbare Schriften: {tkFont.families()}")
 
         betonung = element.get("betonung", None) if element else None    
         person = element.get("person", None) if element else None
@@ -185,52 +188,39 @@ class AnnotationRenderer:
             verwende_betonung = self.verwende_hartkodiert_fuer_annotation("betonung", betonung)
         else:
             verwende_betonung = False
-    
+
         if person:
             verwende_person_farbe = self.verwende_hartkodiert_fuer_annotation("person", person)
         else:
             verwende_person_farbe = False
 
-        # Schriftgröße und Familie bestimmen
+        # Schriftgröße bestimmen
         if "überschrift" in annotation.lower():
             groesse = config.UEBERSCHRIFT_GROESSE
-            if verwende_betonung:
-                if "hauptbetonung" in betonung.lower():
-                    familie = config.SCHRIFTART_UEBERSCHRIFT_HAUPT
-                elif "nebenbetonung" in betonung.lower():
-                    familie = config.SCHRIFTART_UEBERSCHRIFT_NEBEN
-                else:
-                    familie = config.SCHRIFTART_UEBERSCHRIFT
-            else:
-                familie = config.SCHRIFTART_UEBERSCHRIFT
-
+            familie = config.SCHRIFTART_UEBERSCHRIFT
         elif "legende" in annotation.lower():
             groesse = config.LEGENDE_GROESSE
-            if verwende_betonung:
-                if "hauptbetonung" in betonung.lower():
-                    familie = config.SCHRIFTART_LEGENDE_HAUPT
-                elif "nebenbetonung" in betonung.lower():
-                    familie = config.SCHRIFTART_LEGENDE_NEBEN
-                else:
-                    familie = config.SCHRIFTART_LEGENDE
-            else:
-                familie = config.SCHRIFTART_LEGENDE
-
+            familie = config.SCHRIFTART_LEGENDE
         else:
             groesse = config.TEXT_GROESSE
-            if verwende_betonung:
-                if "hauptbetonung" in betonung.lower():
-                    familie = config.SCHRIFTART_BETONUNG_HAUPT
-                elif "nebenbetonung" in betonung.lower():
-                    familie = config.SCHRIFTART_BETONUNG_NEBEN
-                else:
-                    familie = config.SCHRIFTART_STANDARD
+            familie = config.SCHRIFTART_STANDARD
+
+        # Gewicht und Stil setzen
+        if verwende_betonung:
+            if "hauptbetonung" in (betonung or "").lower():
+                weight = "bold"
+                slant = "roman"
+            elif "nebenbetonung" in (betonung or "").lower():
+                weight = "normal"
+                slant = "italic"  # kursiv für Nebenbetonung
             else:
-                familie = config.SCHRIFTART_STANDARD
+                weight = "normal"
+                slant = "roman"
+        else:
+            weight = "normal"
+            slant = "roman"
 
         # Farbe bestimmen
-        
-
         if verwende_person_farbe and person:
             farbe = self.get_person_color(person)
         else:
@@ -238,13 +228,18 @@ class AnnotationRenderer:
                 farbe = zu_PDF_farbe(config.FARBE_STANDARD)
             else:
                 farbe = zu_Hex_farbe(config.FARBE_STANDARD)
-                
+
         if self.ist_PDF:
-            return familie, groesse, farbe  # PDF bekommt auch Farbe zurück
+            print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Farbe: {farbe}")
+            return familie, groesse, farbe
         else:
-            schrift = tkFont.Font(family=familie, size=groesse)
-            return schrift, farbe  # GUI bekommt Schrift + Farbe für z. B. Label.config(fg=farbe)
-        
+            if familie not in tkFont.families():
+                print(f"[WARNUNG] Font-Familie '{familie}' nicht verfügbar – Fallback wahrscheinlich!")
+
+            schrift = tkFont.Font(family=familie, size=groesse, weight=weight, slant=slant)
+            print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Gewicht: {weight}, Stil: {slant}, Farbe: {farbe}")
+            return schrift, farbe
+
     def _zeichne_bild(self, canvas, pfad, x, y, w, h):
         if self.ist_PDF:
             try:
