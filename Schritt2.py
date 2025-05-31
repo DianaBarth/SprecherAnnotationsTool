@@ -1,11 +1,12 @@
 
 import os
-import regex as re
+import regex
+import re
 import json
 import pandas as pd
+
 from pathlib import Path
 from num2words import num2words
-import re
 
 import Eingabe.config as config # Importiere das komplette config-Modul
 
@@ -23,16 +24,28 @@ def roemisch_zu_int(roemisch):
         vorher = wert
     return ergebnis
 
+def ist_roemisch(token):
+    # Regex für römische Zahlen (grob)
+    return re.fullmatch(r'M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})', token.upper()) is not None
+
 def ersetze_zahl_in_token(token):
+    # Falls am Ende ein Punkt (oder anderes Satzzeichen) steht, für die Prüfung und Umwandlung ignorieren
+    token_clean = token.rstrip('.:,;!?')
+
+    if ist_roemisch(token_clean):
+        zahl = roemisch_zu_int(token_clean)
+        if zahl > 0:
+            wort = num2words(zahl, lang='de')
+            # Original token: Ersetze nur den römischen Teil durch das Wort, rest (z.B. Punkt) bleibt
+            return token.replace(token_clean, wort)
+
     zahlen = re.findall(r'\d+', token)
     if not zahlen:
         return token  # Keine Zahl gefunden
     
-    # Wenn Token komplett Zahl, ersetze einfach komplett
     if token.isdigit():
         return num2words(int(token), lang='de')
     
-    # Sonst ersetze jede Zahl durch _ + Wort
     for zahl_str in zahlen:
         wort = num2words(int(zahl_str), lang='de')
         token = token.replace(zahl_str, "_" + wort)
@@ -40,12 +53,12 @@ def ersetze_zahl_in_token(token):
 
 def extrahiere_kapitelname(kapitelname):
     # Suche nach führender arabischer Zahl (z.B. 12)
-    match_arabisch = re.match(r"^(\d+)", kapitelname)
+    match_arabisch = regex.match(r"^(\d+)", kapitelname)
     if match_arabisch:
         return match_arabisch.group(1)
 
     # Suche nach führender römischer Zahl (z.B. XII)
-    match_roemisch = re.match(r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))", kapitelname, flags=re.IGNORECASE)
+    match_roemisch = regex.match(r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))", kapitelname, flags=re.IGNORECASE)
     if match_roemisch and match_roemisch.group(1):
         return str(roemisch_zu_int(match_roemisch.group(1)))
 
@@ -93,13 +106,13 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         report_step()
 
         # Schritt 2: Zeilenumbrüche durch Platzhalter ersetzen
-        text = re.sub(r"\r\n|\r|\n", " _BREAK_BREAKY ", text)
-        text = re.sub(r"(_BREAK__BREAKY)+", " _BREAK__BREAKY ", text)
+        text = regex.sub(r"\r\n|\r|\n", " _BREAK_BREAKY ", text)
+        text = regex.sub(r"(_BREAK__BREAKY)+", " _BREAK__BREAKY ", text)
         current_step += 1
         report_step()
 
         # Schritt 3: Tokenisierung (inkl. _BREAK_ erhalten)
-        woerter_und_satzzeichen = re.split(r"\s+|(?<=\p{P})|(?=\p{P})|_BREAK_", text, flags=re.UNICODE)
+        woerter_und_satzzeichen = regex.split(r"\s+|(?<=\p{P})|(?=\p{P})|_BREAK_", text, flags=re.UNICODE)
         woerter_und_satzzeichen = [token for token in woerter_und_satzzeichen if token.strip()]
         current_step += 1
         report_step()
@@ -119,7 +132,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                 token_annotationen.append("zeilenumbruch")
                 zeilen_nr += 1
             else:
-                if re.match(r"[\p{P}]", token):
+                if regex.match(r"[\p{P}]", token):
                     if token == '–' or token in ['(', ')', '{', '}', '[', ']']:
                         token_annotationen.append("satzzeichenMitSpace")
                     elif token in ['.', '!', '?', ':', ';']:
@@ -135,12 +148,14 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         if len(woerter_und_satzzeichen) != len(annotationen):
             raise ValueError(f"Längen von Tokens und Annotationen stimmen nicht überein.")
 
+        tokenInklZahlwoerter = [ersetze_zahl_in_token(t) for t in woerter_und_satzzeichen]
+
         # Schritt 5: DataFrame und Speichern als JSON
         df = pd.DataFrame({
             "KapitelNummer": kapitelname,
             "WortNr": range(1, len(woerter_und_satzzeichen) + 1),
             "token": woerter_und_satzzeichen,
-            "tokenInklZahlwoerter": ersetze_zahl_in_token(woerter_und_satzzeichen),
+            "tokenInklZahlwoerter": tokenInklZahlwoerter,
             "annotation": annotationen,
         })
 
