@@ -29,7 +29,7 @@ from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
 from system_ressourcen import Systemressourcen
-
+from config_editor import ConfigEditor
 
 def lade_prompt_datei(ki_id):
         print(f"[INFO] Lade Prompt für KI-ID: {ki_id}")
@@ -116,40 +116,6 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_p
                 return None
             else:
                 print(f"[INFO] Starte Task {aufgaben_id} für Kapitel {kapitel_name} erneut...")
-
-
-
-
-def update_globalordner_in_config(config_path: str, neue_ordner: dict):
-    with open(config_path, "r", encoding="utf-8") as f:
-        code = f.read()
-
-    baum = ast.parse(code)
-
-    class GlobalordnerUpdater(ast.NodeTransformer):
-        def visit_Assign(self, node):
-            # Prüfe, ob globales Dict GLOBALORDNER zugewiesen wird
-            if (len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id == "GLOBALORDNER"):
-                # Erzeuge neuen Dict-Knoten mit neuen Ordner-Pfaden
-                keys = [ast.Constant(k) for k in neue_ordner.keys()]
-                values = [ast.Constant(str(v).replace("\\", "/")) for v in neue_ordner.values()]
-                new_dict = ast.Dict(keys=keys, values=values)
-                node.value = new_dict
-                return node
-            return node
-
-    updater = GlobalordnerUpdater()
-    neuer_baum = updater.visit(baum)
-    ast.fix_missing_locations(neuer_baum)
-
-    neuer_code = ast.unparse(neuer_baum)
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        f.write(neuer_code)
-
-    print(f"[INFO] GLOBALORDNER in {config_path} wurde aktualisiert.")
 
 def warte_auf_freien_cpukern_und_ram(
     max_auslastung_cpu: float = 50.0,
@@ -977,7 +943,7 @@ class DashBoard(ttk.Frame):
     def lade_docx_aus_globalordner(self):
         ordner = config.GLOBALORDNER
         if not ordner or "Eingabe" not in ordner:
-            print(f"Fehler", "GLOBALORDNER ist nicht korrekt gesetzt oder unvollständig.")
+            print(f"GLOBALORDNER ist nicht korrekt gesetzt oder unvollständig.")
         else:    
             self.ordner = ordner
             # Versuche, Pfad zur .docx-Datei aus Eingabe-Ordner zu rekonstruieren
@@ -1080,19 +1046,9 @@ class DashBoard(ttk.Frame):
         for pfad in self.ordner.values():
             pfad.mkdir(parents=True, exist_ok=True)
             print(f"[DEBUG] Ordner erstellt: {repr(pfad)}")
-        
-        config.GLOBALORDNER.clear()
-        config.GLOBALORDNER.update(self.ordner)
-
-        config_py_pathGlobal = os.path.join(self.ordner["Eingabe"],"config.py")
-        config_py_pathLokal = os.path.join("Eingabe","config.py")
-        
-        try:
-            update_globalordner_in_config(str(config_py_pathGlobal), self.ordner)
-            update_globalordner_in_config(config_py_pathLokal, self.ordner)
-        except Exception as e:
-            messagebox.showerror("Fehler", f"Konnte GLOBALORDNER in config.py nicht aktualisieren:\n{e}")
-
+ 
+        self.update_globalordner_in_config(self.ordner)
+       
         self.lade_kapitel_checkboxes()
       
     def lade_kapitel_checkboxes(self):
@@ -1505,19 +1461,36 @@ class DashBoard(ttk.Frame):
             yield widget
             if widget.winfo_children():
                 yield from self.iterate_widgets(widget)
+    def update_globalordner_in_config(self, neue_ordner: dict):
+            config.GLOBALORDNER.clear()
+            config.GLOBALORDNER.update({
+                k: str(v).replace("\\", "/") for k, v in neue_ordner.items()
+            })
 
-if __name__ == "__main__":
-    from pathlib import Path
-    import Eingabe.config as config
+            editor = getattr(self.master, "config_editor", None)
+            if editor is not None and hasattr(editor, "_save"):
+                editor._save()
+                print("[INFO] GLOBALORDNER wurde über config_editor._save() gespeichert.")
+            else:
+                print("[WARNUNG] Kein config_editor verfügbar – Änderungen nicht automatisch gespeichert.")
+                
 
-    ordner_nur_str = {
-        "satz": config.GLOBALORDNER["satz"],
-        "ki": config.GLOBALORDNER["ki"],
-    }
+# if __name__ == "__main__":
+#     from pathlib import Path
+#     import Eingabe.config as config
 
-    kapitel_name = "Prolog – Finis post portam"
-    aufgaben_id =4
-    prompt = lade_prompt_datei(4)
-    modell_name = "leoLM/leo-mistral-hessianai-7b"
+#     ordner_nur_str = {
+#         "satz": config.GLOBALORDNER["satz"],
+#         "ki": config.GLOBALORDNER["ki"],
+#     }
 
-    ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
+#     kapitel_name = "Prolog – Finis post portam"
+#     aufgaben_id =4
+#     prompt = lade_prompt_datei(4)
+#     modell_name = "leoLM/leo-mistral-hessianai-7b"
+
+#     ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
+
+
+
+  

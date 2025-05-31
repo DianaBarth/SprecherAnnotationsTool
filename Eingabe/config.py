@@ -1,16 +1,16 @@
 # ---------------------------------------------
 
-# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T08:37:41.551122
-
-# ---------------------------------------------
 
 
 
-GLOBALORDNER = {}	# Ordnerstruktur für Ein- und Ausgabe
 
 
 
-GLOBALORDNER = {}	# Ordnerstruktur für Ein- und Ausgabe
+# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T09:08:11.520510
+
+
+
+GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/json', 'satz': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/satz', 'absatz': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/absatz', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
 
 NUTZE_KI = True	# Schaltet alle KI-Funktionen zentral ein/aus
 KI_AUFGABEN = {3: 'person', 4: 'betonung', 5: 'pause', 6: 'gedanken', 7: 'spannung', 8: 'ig'}	# Aufgabenübersicht mit Aktivierungsstatus und Parametern
@@ -56,15 +56,15 @@ SPANNUNG_NEIGUNG = 3
 # Farben
 
 # Schriftarten
-SCHRIFTART_STANDARD = 'Cascadia Code'	# Schriftart für normalen Text
-SCHRIFTART_BETONUNG_HAUPT = 'Monotype Corsiva'	# Schriftart für Hauptbetonung
-SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Mono SemiBold'	# Schriftart für Nebenbetonung
+SCHRIFTART_STANDARD = 'Cascadia Code Light'	# Schriftart für normalen Text
+SCHRIFTART_BETONUNG_HAUPT = 'Cascadia Mono SemiBold'	# Schriftart für Hauptbetonung
+SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Code'	# Schriftart für Nebenbetonung
 SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'	# Schriftart für Überschrift
 SCHRIFTART_UEBERSCHRIFT_HAUPT = 'Source Code Pro Black'	# Schriftart für Hauptüberschrift
 SCHRIFTART_UEBERSCHRIFT_NEBEN = 'Source Code Pro Medium'	# Schriftart für Nebenüberschrift
-SCHRIFTART_LEGENDE = 'Cascadia Code'	# Schriftart für Überschrift
-SCHRIFTART_LEGENDE_HAUPT = 'Source Code Pro ExtraLight'	# Schriftart für Hauptüberschrift
-SCHRIFTART_LEGENDE_NEBEN = 'Cascadia Mono SemiBold'	# Schriftart für Nebenüberschrift
+SCHRIFTART_LEGENDE = 'Cascadia Code Light'	# Schriftart für Überschrift
+SCHRIFTART_LEGENDE_HAUPT = 'Cascadia Mono SemiBold'	# Schriftart für Hauptüberschrift
+SCHRIFTART_LEGENDE_NEBEN =  'Cascadia Code'	# Schriftart für Nebenüberschrift
 
 # Zeichenabstände für Marker
 MARKER_BREITE_KURZ = 4
@@ -114,15 +114,15 @@ SPANNUNG_NEIGUNG = 3
 # Farben
 
 # Schriftarten
-SCHRIFTART_STANDARD = 'Cascadia Code Light'	# Schriftart für normalen Text
-SCHRIFTART_BETONUNG_HAUPT = 'Cascadia Code SemiBold' 	# Schriftart für Hauptbetonung
-SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Code'	# Schriftart für Nebenbetonung
+SCHRIFTART_STANDARD = 'Cascadia Code'	# Schriftart für normalen Text
+SCHRIFTART_BETONUNG_HAUPT = 'Monotype Corsiva'	# Schriftart für Hauptbetonung
+SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Mono SemiBold'	# Schriftart für Nebenbetonung
 SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'	# Schriftart für Überschrift
 SCHRIFTART_UEBERSCHRIFT_HAUPT = 'Source Code Pro Black'	# Schriftart für Hauptüberschrift
 SCHRIFTART_UEBERSCHRIFT_NEBEN = 'Source Code Pro Medium'	# Schriftart für Nebenüberschrift
-SCHRIFTART_LEGENDE = 'Cascadia Code Light'	# Schriftart für Überschrift
-SCHRIFTART_LEGENDE_HAUPT ='Cascadia Code SemiBold'	# Schriftart für Hauptüberschrift
-SCHRIFTART_LEGENDE_NEBEN = 'Cascadia Code'	# Schriftart für Nebenüberschrift
+SCHRIFTART_LEGENDE = 'Cascadia Code'	# Schriftart für Überschrift
+SCHRIFTART_LEGENDE_HAUPT = 'Source Code Pro ExtraLight'	# Schriftart für Hauptüberschrift
+SCHRIFTART_LEGENDE_NEBEN = 'Cascadia Mono SemiBold'	# Schriftart für Nebenüberschrift
 
 # Zeichenabstände für Marker
 MARKER_BREITE_KURZ = 4

@@ -1,15 +1,20 @@
 # ---------------------------------------------
-# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T08:37:41.551122
-# ---------------------------------------------
 
-GLOBALORDNER = {}	# Ordnerstruktur für Ein- und Ausgabe
+
+
+
+
+
+
+# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T09:08:11.520510
+
+GLOBALORDNER = {}
 
 NUTZE_KI = True	# Schaltet alle KI-Funktionen zentral ein/aus
 KI_AUFGABEN = {3: 'person', 4: 'betonung', 5: 'pause', 6: 'gedanken', 7: 'spannung', 8: 'ig'}	# Aufgabenübersicht mit Aktivierungsstatus und Parametern
 AUFGABEN_ANNOTATIONEN = {3: [{'name': None, 'bild': None, 'HartKodiert': 'farbeJePerson', 'VerwendeHartKodiert': True}], 4: [{'name': 'Hauptbetonung', 'bild': None, 'HartKodiert': 'fett', 'VerwendeHartKodiert': True}, {'name': 'Nebenbetonung', 'bild': None, 'HartKodiert': 'kursiv', 'VerwendeHartKodiert': True}], 5: [{'name': 'Atempause', 'bild': None, 'HartKodiert': 'Linie', 'VerwendeHartKodiert': True}, {'name': 'Staupause', 'bild': None, 'HartKodiert': 'Rechteck', 'VerwendeHartKodiert': True}], 6: [{'name': 'gedanken_weiter', 'bild': None, 'HartKodiert': 'Kreis', 'VerwendeHartKodiert': True}, {'name': 'gedanken_ende', 'bild': None, 'HartKodiert': 'Linie', 'VerwendeHartKodiert': True}, {'name': 'pause_gedanken', 'bild': None, 'HartKodiert': 'Punkte', 'VerwendeHartKodiert': True}], 7: [{'name': 'Starten', 'bild': None, 'HartKodiert': 'ansteigende Linie', 'VerwendeHartKodiert': True}, {'name': 'Halten', 'bild': None, 'HartKodiert': 'waagrechte Linie', 'VerwendeHartKodiert': True}, {'name': 'Stoppen', 'bild': None, 'HartKodiert': 'abfallende Linie', 'VerwendeHartKodiert': True}], 8: [{'name': 'ik', 'HartKodiert': 'unterpunktet', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'ich', 'HartKodiert': 'unterstrichen', 'bild': None, 'VerwendeHartKodiert': True}]}	# Mögliche Annotationen für jede Aufgabe
 
 FehlerAnzeigen = True
-
 MAX_NEW_TOKENS = 500
 MAX_PROMPT_TOKENS = 1000
 MAX_TOTAL_TOKENS = 2048
@@ -49,15 +54,15 @@ SPANNUNG_NEIGUNG = 3
 # Farben
 
 # Schriftarten
-SCHRIFTART_STANDARD = 'Cascadia Code'	# Schriftart für normalen Text
-SCHRIFTART_BETONUNG_HAUPT = 'Monotype Corsiva'	# Schriftart für Hauptbetonung
-SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Mono SemiBold'	# Schriftart für Nebenbetonung
+SCHRIFTART_STANDARD = 'Cascadia Code Light'	# Schriftart für normalen Text
+SCHRIFTART_BETONUNG_HAUPT = 'Cascadia Mono SemiBold'	# Schriftart für Hauptbetonung
+SCHRIFTART_BETONUNG_NEBEN = 'Cascadia Code'	# Schriftart für Nebenbetonung
 SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'	# Schriftart für Überschrift
 SCHRIFTART_UEBERSCHRIFT_HAUPT = 'Source Code Pro Black'	# Schriftart für Hauptüberschrift
 SCHRIFTART_UEBERSCHRIFT_NEBEN = 'Source Code Pro Medium'	# Schriftart für Nebenüberschrift
-SCHRIFTART_LEGENDE = 'Cascadia Code'	# Schriftart für Überschrift
-SCHRIFTART_LEGENDE_HAUPT = 'Source Code Pro ExtraLight'	# Schriftart für Hauptüberschrift
-SCHRIFTART_LEGENDE_NEBEN = 'Cascadia Mono SemiBold'	# Schriftart für Nebenüberschrift
+SCHRIFTART_LEGENDE = 'Cascadia Code Light'	# Schriftart für Überschrift
+SCHRIFTART_LEGENDE_HAUPT = 'Cascadia Mono SemiBold'	# Schriftart für Hauptüberschrift
+SCHRIFTART_LEGENDE_NEBEN =  'Cascadia Code'	# Schriftart für Nebenüberschrift
 
 # Zeichenabstände für Marker
 MARKER_BREITE_KURZ = 4
