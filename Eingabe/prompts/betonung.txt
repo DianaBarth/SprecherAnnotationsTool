@@ -1,6 +1,14 @@
+Aufgabe 2: Betonungen erkennen
+
+Aufgabe:  
+Gegeben ist ein JSON mit Tokens aus mehrerer literarischen Sätzen eines Kapitels. Jedes Objekt enthält:  
+- "KapitelName": Name des Kapitels  
+- "WortNr": Position des Tokens im Kapitel  
+- "token": Wort oder Satzzeichen  
+
 Erkenne Betonungen und klassifiziere als 'hauptbetonung' oder 'nebenbetonung'.  
 Pro Sinneinheit (Haupt-/Teilsatz) maximal 1 Hauptbetonung und 1 Nebenbetonung. Lieber zu wenige als zu viele.  
-Gib ein JSON-Array zurück. Falls keine Betonung gefunden wird, gib [] zurück.  
+Gib nur ein JSON-Array zurück. Falls keine Betonung gefunden wird, gib [] zurück.  
 
 Beispiel Eingabe:  
 [
@@ -15,5 +23,3 @@ Beispiel Ausgabe:
 [
   {"KapitelNummer": "1", "WortNr": 2, "Betonung": "hauptbetonung"}
 ]
-
-Antworte **nur** mit dem JSON-Array, keine weiteren Erklärungen oder Wiederholungen der Anweisung. Hier kommt dein zu verarbeitender Input:

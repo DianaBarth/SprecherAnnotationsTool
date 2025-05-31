@@ -7,6 +7,7 @@ Gegeben ist ein JSON mit Tokens aus mehreren literarischen Sätzen eines Kapitel
 - "token": Wort oder Satzzeichen  
 
 Erkenne IG und klassifiziere für jedes Wort, ob ein enthaltenes „ig“ wie „ik“ oder „ich“ ausgesprochen wird in der deutschen Hochlautung.
+Behandle dabei auch digitale Zahlen wie gesprochene Wörter, die "ig" enthalten können.
 Für Wörter mit mehreren „ig“ im Wort, gib die Klassifikation für jedes „ig“ in Reihenfolge getrennt durch Bindestriche zurück, z. B. „ik-ik-ik-ich“.  
 
 Lieber zu wenige als zu viele.  
@@ -23,7 +24,7 @@ Beispiel Eingabe:
   {"KapitelName": "1", "WortNr": 2, "token": "fertig"},
   {"KapitelName": "1", "WortNr": 3, "token": "Glücklich"},
   {"KapitelName": "1", "WortNr": 4, "token": "Königreich"},
-  {"KapitelName": "1", "WortNr": 5, "token": "würdig"},
+  {"KapitelName": "1", "WortNr": 5, "token": "30"},
   {"KapitelName": "1", "WortNr": 6, "token": "zigzigzigich"},
   {"KapitelName": "1", "WortNr": 7, "token": "."}
 ]
