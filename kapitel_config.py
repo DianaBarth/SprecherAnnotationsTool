@@ -25,6 +25,8 @@ class KapitelConfig(ttk.Frame):
         self.kapitel_daten = {}    # Dict: Kapitelname -> Zusatzinfos (dict mit Keys "ZusatzInfo_2", "nicht_notwendige_unterschritte", ...)
         self.index = 0             # Aktuelles Kapitel-Index
 
+        self.kapitel_trenner ="* * *"
+
         self.aufgaben =  config.KI_AUFGABEN
         self._build_widgets()
 
@@ -34,7 +36,7 @@ class KapitelConfig(ttk.Frame):
         
     def kapitel_manuell_bearbeiten(self):     
         
-        self.kapitel_trenner = simpledialog.askstring("Kapitel-Trenner", "Welcher Trenner ist zwischen den Kapiteln?", initialvalue="***")   
+        self.kapitel_trenner = simpledialog.askstring("Kapitel-Trenner", "Welcher Trenner ist zwischen den Kapiteln?", initialvalue="* * *")   
       
         self._load_current_kapitel()
         self._update_current_label()
@@ -74,7 +76,7 @@ class KapitelConfig(ttk.Frame):
             messagebox.showerror("Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
 
 
-    def _create_from_word(self, stilname, pfad, nummerierung="nein", praefix=None, aufsteigend=False, kapitel_trenner="***"):
+    def _create_from_word(self, stilname, pfad, nummerierung="nein", praefix=None, aufsteigend=False, kapitel_trenner="* * *"):
         print(f"Starte Kapitel-Erkennung aus Word-Datei: {pfad}")
         print(f"Stilname: {stilname}, Numerierung: {nummerierung}, Präfix: {praefix}, Aufsteigend: {aufsteigend}")
 
@@ -204,7 +206,7 @@ class KapitelConfig(ttk.Frame):
         if not anzahl:
             return
 
-        trenner = simpledialog.askstring("Kapitel-Trenner", "Welcher Trenner ist zwischen den Kapiteln?", initialvalue="***")
+        trenner = simpledialog.askstring("Kapitel-Trenner", "Welcher Trenner ist zwischen den Kapiteln?", initialvalue="* * *")
         if trenner is None:
             # Abbruch beim Trenner-Dialog
             return
@@ -483,7 +485,7 @@ class KapitelConfig(ttk.Frame):
             daten_kapitel_daten_neu[kapitel] = neue_daten
 
         daten = {
-            "Kapitel_trenner": getattr(self, "kapitel_trenner", "***"),
+            "Kapitel_trenner": getattr(self, "kapitel_trenner", "* * *"),
             "kapitel_liste": self.kapitel_liste,
             "kapitel_daten": daten_kapitel_daten_neu,    
         }

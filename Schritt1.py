@@ -1,22 +1,20 @@
 import os
 from docx import Document
 from pathlib import Path
-import Eingabe.config as config # Importiere das komplette config-Modul
+import Eingabe.config as config  # Importiere das komplette config-Modul
 
-def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
+def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
 
-    ausgabe_ordner =Path(ausgabe_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
 
     print(f"[DEBUG] Starte Kapitel-Extraktion mit Datei: {docx_datei}")
     print(f"[DEBUG] Zielordner: {ausgabe_ordner}")
-    print(f"[DEBUG] kapitel_namen: {kapitel_namen}") 
+    print(f"[DEBUG] kapitel_namen: {kapitel_namen}")
     print(f"[DEBUG -------------------------STARTE Schritt 1 für {ausgewaehlte_kapitel}]")
 
     if not os.path.isfile(docx_datei):
         print(f"[FEHLER] Docx-Datei existiert nicht: {docx_datei}")
         return
-
-  
 
     if not os.path.exists(ausgabe_ordner):
         os.makedirs(ausgabe_ordner, exist_ok=True)
@@ -34,10 +32,6 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, aus
         return text.strip().lower().startswith(kapitel.strip().lower())
 
     if kapitel_namen:
-# '        if ausgewaehlte_kapitel is not None:
-#             kapitel_namen = [k for k in kapitel_namen if k in ausgewaehlte_kapitel]
-#             print(f"[DEBUG] Extrahiere nur ausgewählte Kapitel: {kapitel_namen}")'
-
         for i, kapitel_name in enumerate(kapitel_namen):
             print(f"[DEBUG] Verarbeite Kapitel {i+1}/{len(kapitel_namen)}: '{kapitel_name}'")
 
@@ -69,13 +63,20 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, ausgabe_ordner, aus
             print(f"[DEBUG] Extrahierter Text für '{kapitel_name}', Länge: {len(kapitel_text)} Absätze")
             melde_fortschritt(2)
 
+            if ausgewaehlte_kapitel is None or kapitel_name in ausgewaehlte_kapitel:
+                # Kompakte Logik für Unterteilung nach kapitel_trenner
+                if kapitel_trenner:
+                    text_gesamt = "\n".join(kapitel_text)
+                    teile = text_gesamt.split(kapitel_trenner) if kapitel_trenner in text_gesamt else [text_gesamt]
+                else:
+                    teile = ["\n".join(kapitel_text)]
 
-            if ausgewaehlte_kapitel is None or kapitel_name in ausgewaehlte_kapitel:                    
-                # Schritt 3: Datei schreiben
-                dateipfad = os.path.join(ausgabe_ordner, f"{kapitel_name}.txt")
-                print(f"[DEBUG] Speichere Kapitel '{kapitel_name}' in Datei: {dateipfad}")
-                with open(dateipfad, "w", encoding="utf-8") as f:
-                    f.write("\n".join(kapitel_text))
+                for idx, teil in enumerate(teile, start=1):
+                    dateipfad = os.path.join(ausgabe_ordner, f"{kapitel_name}_{idx}.txt")
+                    print(f"[DEBUG] Speichere Teil {idx} von Kapitel '{kapitel_name}' in Datei: {dateipfad}")
+                    with open(dateipfad, "w", encoding="utf-8") as f:
+                        f.write(teil)
+
                 melde_fortschritt(3)
                 print("[INFO] Kapitel wurden anhand der Konfiguration extrahiert.")
 

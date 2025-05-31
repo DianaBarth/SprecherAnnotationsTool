@@ -717,7 +717,7 @@ class DashBoard(ttk.Frame):
 
          # Neu: Eingabe für Kapitel_trenner
         ttk.Label(dialog, text="Kapitel-Trenner:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
-        kapitel_trenner_var = tk.StringVar(value="***")  
+        kapitel_trenner_var = tk.StringVar(value="* * *")  
         ttk.Entry(dialog, textvariable=kapitel_trenner_var).grid(row=4, column=1, sticky="ew", padx=10, pady=5)
 
 
@@ -1174,6 +1174,7 @@ class DashBoard(ttk.Frame):
         model_selection_boxes = getattr(self, "model_selection_boxes", None)
         kapitel_liste = list(self.kapitel_config.kapitel_liste)
         kapitel_daten = copy.deepcopy(self.kapitel_config.kapitel_daten)
+        kapitel_trenner = copy.deepcopy(self.kapitel_config.kapitel_trenner)
         ordner_nur_str = {k: str(v) for k, v in self.ordner.items()}
         max_workers = self.max_workers
         abort_flag = self.abort_flag
@@ -1207,6 +1208,7 @@ class DashBoard(ttk.Frame):
                         self._thread_worker,
                         selected_file_path,
                         kapitel_liste,
+                        kapitel_trenner,
                         ordner_nur_str,
                         task_flags,
                         progress_queue,
@@ -1237,6 +1239,7 @@ class DashBoard(ttk.Frame):
     def _thread_worker(self,
                     selected_file_path,
                     kapitel_liste,
+                    kapitel_trenner,
                     ordner_nur_str,
                     task_flags,
                     progress_queue,
@@ -1257,8 +1260,9 @@ class DashBoard(ttk.Frame):
 
             self.verarbeite_kapitel(
                 kapitel,
-                selected_file_path,
+                selected_file_path,         
                 kapitel_liste,
+                kapitel_trenner,
                 ordner_nur_str,
                 task_flags,
                 progress_queue,
@@ -1273,7 +1277,8 @@ class DashBoard(ttk.Frame):
 
     def verarbeite_kapitel(self, kapitel_name,
                         selected_file_path,
-                        kapitel_liste,                        
+                        kapitel_liste,       
+                        kapitel_trenner,                 
                         ordner_nur_str,
                         task_flags,
                         progress_queue,
@@ -1303,6 +1308,7 @@ class DashBoard(ttk.Frame):
                 extrahiere_kapitel_mit_config(
                     selected_file_path,
                     kapitel_liste,
+                    kapitel_trenner,
                     ordner_nur_str["txt"],
                     [kapitel_name],
                     lambda k, w: progress_queue.put((k, "1", w))
