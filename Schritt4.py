@@ -47,7 +47,7 @@ def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
 
 
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = False ):
-    print(f"[DEBUG] schritt4.daten_verarbeiten gestgartet für {dateipfad} und {aufgabe}")
+    print(f"[DEBUG] schritt4.daten_verarbeiten gestartet für {dateipfad} und {aufgabe}")
     ki_ordner = Path(ki_ordner)
 
     try:
@@ -69,7 +69,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force = Fal
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": json.dumps(satz_daten)}
             ]
-            messages_Flat = f"Anweisung: \n {prompt} \n Input: \n {json.dumps(satz_daten, ensure_ascii=False)}"
+            messages_Flat = f"Anweisung: \n {prompt} \n {json.dumps(satz_daten, ensure_ascii=False)}"
 
            # Daten an Modell übergeben
             if client.check_chat_model():

@@ -4,8 +4,8 @@ import time
 import json
 
 
-prompt_datei = "Eingabe/prompts/betonung.txt"
-json_datei = r"G:\Dokumente\DianaBuch_FinisPostPortam\Buch\VersionBuch2025\testdaten annotationstool\Annotationstoolergebnisse\die Organisation_FinisPostPortam_mod\satz\Prolog – Finis post portam_annotierungen_001.json"
+prompt_datei = "Eingabe/prompts/test.txt"
+beispiel_datei = r"G:\Dokumente\DianaBuch_FinisPostPortam\Buch\VersionBuch2025\testdaten annotationstool\Annotationstoolergebnisse\die Organisation_FinisPostPortam_mod\absatz\Prolog – Finis post portam_001.txt"
 modell_name = "leoLM/leo-mistral-hessianai-7b"
 max_new_tokens = 200
 
@@ -30,10 +30,10 @@ def main():
     with open(prompt_datei, "r", encoding="utf-8") as f:
         prompt_text = f.read()
 
-    with open(json_datei, "r", encoding="utf-8") as f:
-        beispiel_text = json.load(f)
+    with open(beispiel_datei, "r", encoding="utf-8") as f:
+        beispiel_text = f.read()
 
-    kompletter_prompt = f"{prompt_text.strip()}\nEingabe:\n{json.dumps(beispiel_text, indent=2, ensure_ascii=False)}"
+    kompletter_prompt = f"{prompt_text.strip()}\n Eingabe:\n{beispiel_text.strip()}"
 
     print("[INFO] Tokenisiere Prompt ...")
     inputs = tokenizer(kompletter_prompt, return_tensors="pt", padding=True, truncation=True)
@@ -45,7 +45,7 @@ def main():
         outputs = model.generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
-            max_new_tokens=20,
+            max_new_tokens=200,
             pad_token_id=tokenizer.pad_token_id,
             do_sample=False  # deterministisch für Debug-Zwecke
         )

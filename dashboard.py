@@ -1062,6 +1062,8 @@ class DashBoard(ttk.Frame):
             "ki":     ergebnisse_ordner / "ki",
             "merge":  ergebnisse_ordner / "merge",
             "pdf":    ergebnisse_ordner / "pdf",
+            "manuell": ergebnisse_ordner / "pdf",
+            "pdf2" : ergebnisse_ordner / "pdf",
         }
         
         for pfad in self.ordner.values():

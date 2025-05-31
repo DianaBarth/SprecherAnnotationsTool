@@ -2,7 +2,7 @@ import os
 import re
 import json
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
@@ -30,6 +30,14 @@ class AnnotationenEditor(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0, minsize=250)
         self.rowconfigure(0, weight=1)
+
+        # Oben: Button-Leiste
+        top_frame = ttk.Frame(self)
+        top_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
+        top_frame.columnconfigure(0, weight=1)
+
+        speichern_button = ttk.Button(top_frame, text="JSON speichern", command=self._json_speichern)
+        speichern_button.pack(side='left', padx=5)
 
         # Linker Bereich: Canvas + Scrollbar
         linker_frame = tk.Frame(self)
@@ -128,3 +136,12 @@ class AnnotationenEditor(ttk.Frame):
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
 
             row_index += 1
+
+    def _json_speichern(self):
+        try:
+            zielpfad = os.path.join(config.GLOBALORDNER["manuell"], os.path.basename(self.dateipfad_json))
+            with open(zielpfad, 'w', encoding='utf-8') as f:
+                json.dump(self.json_dicts, f, ensure_ascii=False, indent=2)
+            messagebox.showinfo("Erfolg", f"JSON erfolgreich gespeichert nach:\n{zielpfad}")
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Fehler beim Speichern:\n{str(e)}")
