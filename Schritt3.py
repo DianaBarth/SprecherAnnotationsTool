@@ -12,7 +12,7 @@ def daten_aufteilen(kapitelname, txt_ordner, json_ordner, ausgabe_ordner, progre
       
     txt_dateien_aufteilen(kapitelname,txt_ordner, ausgabe_ordner, progress_callback)
 
-    extrahiere_ig_tokens(kapitelname,json_ordner, ausgabe_ordner, progress_callback)
+    extrahiere_ig_tokens(kapitelname,json_ordner, ausgabe_ordner, progress_callback,True)
  
     print(f"[INFO] Daten aufteilen abgeschlossen für Kapitel '{kapitelname}'")
 
@@ -92,15 +92,12 @@ def txt_dateien_aufteilen(kapitelname, txt_ordner, ausgabe_ordner, progress_call
 
     print(f"[DEBUG ------------------------- TXT-Aufteilung abgeschlossen für Kapitel: {kapitelname}]")
 
-def extrahiere_ig_tokens(kapitelname,json_ordner,ausgabe_ordner,progress_callback=None):
+def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_callback=None, semikolon_format=True):
     json_ordner = Path(json_ordner)
     ausgabe_ordner = Path(ausgabe_ordner)
     ausgabe_ordner.mkdir(parents=True, exist_ok=True)
 
-    # Regex für Kapitelnamen mit optionalem _{idx} am Ende, z.B. Kapitel_1_2
     pattern = re.compile(re.escape(kapitelname) + r"(_\d+)_annotierungen\.json$")
-
-    # Finde alle passende JSON-Dateien im json_ordner
     gefundene_dateien = [f for f in json_ordner.iterdir() if pattern.match(f.name)]
 
     if not gefundene_dateien:
@@ -121,14 +118,26 @@ def extrahiere_ig_tokens(kapitelname,json_ordner,ausgabe_ordner,progress_callbac
 
     print(f"[INFO] Gefundene eindeutige Tokens mit 'ig' insgesamt: {len(tokens_mit_ig)}")
 
-    # Speichere alle gefundenen Tokens in eine Datei mit Kapitelname ohne Index (nur Originalname)
-    ausgabe_datei = ausgabe_ordner / f"{kapitelname}_ig.txt"
-    with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
-        for token in sorted(tokens_mit_ig):
-              f_out.write(";".join(sorted(tokens_mit_ig)))
+    tokens_sortiert = sorted(tokens_mit_ig, key=lambda x: x.lower())
+    max_tokens = config.MAX_PROMPT_TOKENS
 
+    if semikolon_format:
+        abschnittsnummer = 1
+        for i in range(0, len(tokens_sortiert), max_tokens):
+            teil_tokens = tokens_sortiert[i:i + max_tokens]
+            ausgabe_datei = ausgabe_ordner / f"{kapitelname}_ig_abschnitt_{abschnittsnummer:03}.txt"
+            with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
+                f_out.write(";".join(teil_tokens))
+            print(f"[DEBUG] Gespeichert IG-Abschnitt {abschnittsnummer} mit {len(teil_tokens)} Tokens in {ausgabe_datei}")
+            abschnittsnummer += 1
+    else:
+        ausgabe_datei = ausgabe_ordner / f"{kapitelname}_ig.txt"
+        with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
+            for token in tokens_sortiert:
+                f_out.write(token + "\n")
+        print(f"[DEBUG] Gespeichert IG-Tokens zeilenweise in: {ausgabe_datei}")
 
     if progress_callback:
         progress_callback(kapitelname, 100)
 
-    print(f"[INFO] Tokens mit 'ig' gespeichert in: {ausgabe_datei}")
+    print(f"[INFO] IG-Token Extraktion abgeschlossen für: {kapitelname}")

@@ -125,7 +125,7 @@ if __name__ == "__main__":
                 return False
             with open(logdatei, "r", encoding="utf-8") as f:
                 for zeile in f:
-                    if "Error" in zeile:
+                    if "ERROR" in zeile.upper() or "FEHLER" in zeile.upper():
                         return True
             return False
 

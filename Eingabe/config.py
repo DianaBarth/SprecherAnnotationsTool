@@ -1,16 +1,8 @@
 # ---------------------------------------------
+# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T13:33:50.615486
+# ---------------------------------------------
 
-
-
-
-
-
-
-# Konfigurationsdatei (config.py), Automatisch generiert am 2025-05-31T09:08:11.520510
-
-
-
-GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/json', 'satz': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/satz', 'absatz': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/absatz', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
+GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/die Organisation_FinisPostPortam_mod/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
 
 NUTZE_KI = True	# Schaltet alle KI-Funktionen zentral ein/aus
 KI_AUFGABEN = {3: 'person', 4: 'betonung', 5: 'pause', 6: 'gedanken', 7: 'spannung', 8: 'ig'}	# Aufgabenübersicht mit Aktivierungsstatus und Parametern
@@ -54,9 +46,9 @@ ZEILENABSTAND = 5
 SPANNUNG_NEIGUNG = 3
 
 # Schriftarten
-SCHRIFTART_STANDARD = 'Cascadia Code'
-SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'
-SCHRIFTART_LEGENDE = 'Cascadia Code'
+SCHRIFTART_STANDARD = 'Cascadia Code'	# Schriftart für normalen Text
+SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'	# Schriftart für Überschrift
+SCHRIFTART_LEGENDE = 'Cascadia Code'	# Schriftart für Überschrift
 
 # Zeichenabstände für Marker
 MARKER_BREITE_KURZ = 4

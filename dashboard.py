@@ -75,7 +75,7 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_p
             print(f"[DEBUG] Modell prüfen/setzen: {modell_name}")
             client.check_and_set_model(modell_name)
 
-            satz_ordner = Path(ordner["satz"])
+            satz_ordner = Path(ordner["saetze"])
             if not satz_ordner.exists() or not satz_ordner.is_dir():
                 raise FileNotFoundError(f"Ordner für Satzdateien nicht gefunden: {satz_ordner}")
 
@@ -1341,7 +1341,7 @@ class DashBoard(ttk.Frame):
                     kapitel_name,
                     txt_ordner=ordner_nur_str["txt"],  
                     json_ordner=ordner_nur_str["json"],
-                    ausgabe_ordner=ordner_nur_str["satz"],                  
+                    ausgabe_ordner=ordner_nur_str["saetze"],                  
                     progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.2", fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
@@ -1392,7 +1392,7 @@ class DashBoard(ttk.Frame):
                                     aufgaben_id,
                                     prompt,
                                     modell_name,
-                                    {"satz": ordner_nur_str["satz"], "ki": ordner_nur_str["ki"]},
+                                    {"saetze": ordner_nur_str["saetze"], "ki": ordner_nur_str["ki"]},
                                     mp_progress_queue 
                                 )
                                 futures.append(future)
@@ -1494,7 +1494,7 @@ class DashBoard(ttk.Frame):
 #     import Eingabe.config as config
 
 #     ordner_nur_str = {
-#         "satz": config.GLOBALORDNER["satz"],
+#         "saetze": config.GLOBALORDNER["saetze"],
 #         "ki": config.GLOBALORDNER["ki"],
 #     }
 
