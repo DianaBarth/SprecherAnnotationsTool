@@ -110,8 +110,7 @@ if __name__ == "__main__":
     print("-------------------------------------------------------------------------------------------")
     print("NEUSTART Sprecher-Annotationen-Tool")
     print("-------------------------------------------------------------------------------------------")
-
-
+    
     try:
         multiprocessing.set_start_method("spawn", force=True)
         app = SprecherAnnotationsTool(logger)

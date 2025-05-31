@@ -1361,62 +1361,67 @@ class DashBoard(ttk.Frame):
             next_key = None
 
             if getattr(config, "NUTZE_KI", True):
-                    if abort_flag.is_set():
-                        print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
-                        return
+                if abort_flag.is_set():
+                    print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
+                    return
+                
+                # Ursprünglich aktive Aufgaben basierend auf task_flags
+                alle_task_ids = [aid for aid in config.KI_AUFGABEN if task_flags.get(aid, False)]
 
-                    aktive_tasks = [aid for aid in config.KI_AUFGABEN if task_flags.get(aid, False)]
-                    print(f"[DEBUG] Aktive KI-Tasks für Kapitel {kapitel_name}: {aktive_tasks}", flush=True)
+                # Hole Liste der nicht notwendigen Unterschritte für das Kapitel
+                nicht_nötige = kapitel_daten.get(kapitel_name, {}).get("nicht_notwendige_unterschritte", [])
 
-                    if not aktive_tasks:
-                        print(f"[INFO] Keine aktiven KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
-                    else:
-                        print(f"[INFO] Starte parallele KI-Aufgaben für Kapitel {kapitel_name}", flush=True)
+                # Filtere direkt heraus
+                aktive_tasks = [aid for aid in alle_task_ids if aid not in nicht_nötige]
 
-                        max_workers = min(len(aktive_tasks), os.cpu_count() or 1)
-                        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-                            futures = []
+                if not aktive_tasks:
+                    print(f"[INFO] Keine aktiven und notwendigen KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
+                else:
+                  
+                    max_workers = min(len(aktive_tasks), os.cpu_count() or 1)
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                        futures = []
 
-                            for aufgaben_id in aktive_tasks:
-                                aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
-                                task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
-                                print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}", flush=True)
+                        for aufgaben_id in aktive_tasks:
+                            aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
+                            task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
+                            print(f"[DEBUG] Plane {task_name} für Kapitel {kapitel_name}", flush=True)
 
-                                try:
-                                    prompt_datei_text = lade_prompt_datei(aufgaben_id)
-                                except Exception as e:
-                                    print(f"[FEHLER] Laden der Prompt-Datei für Aufgabe {aufgaben_id} fehlgeschlagen: {e}", flush=True)
-                                    traceback.print_exc()
-                                    continue
+                            try:
+                                prompt_datei_text = lade_prompt_datei(aufgaben_id)
+                            except Exception as e:
+                                print(f"[FEHLER] Laden der Prompt-Datei für Aufgabe {aufgaben_id} fehlgeschlagen: {e}", flush=True)
+                                traceback.print_exc()
+                                continue
 
-                                zusatz_info = kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
-                                prompt = prompt_datei_text + "\n" + zusatz_info
-                                print(f"[DEBUG] Prompt-Text für {task_name}: {prompt[:200]}...", flush=True)
+                            zusatz_info = kapitel_daten.get(kapitel_name, {}).get(f"ZusatzInfo_{aufgaben_id}", "")
+                            prompt = prompt_datei_text + "\n" + zusatz_info
+                            print(f"[DEBUG] Prompt-Text für {task_name}: {prompt[:200]}...", flush=True)
 
-                                modell_name = modelle_für_tasks.get(aufgaben_id, None)
+                            modell_name = modelle_für_tasks.get(aufgaben_id, None)
 
-                                warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
+                            warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
 
-                                future = executor.submit(
-                                    ki_task_process,
-                                    kapitel_name,
-                                    aufgaben_id,
-                                    prompt,
-                                    modell_name,
-                                    {"saetze": ordner_nur_str["saetze"], "ki": ordner_nur_str["ki"]},
-                                    mp_progress_queue 
-                                )
-                                futures.append(future)
+                            future = executor.submit(
+                                ki_task_process,
+                                kapitel_name,
+                                aufgaben_id,
+                                prompt,
+                                modell_name,
+                                {"saetze": ordner_nur_str["saetze"], "ki": ordner_nur_str["ki"]},
+                                mp_progress_queue 
+                            )
+                            futures.append(future)
 
-                            for future in concurrent.futures.as_completed(futures):
-                                try:
-                                    future.result()
-                                    print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
-                                except Exception as e:
-                                    print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
-                                    traceback.print_exc()
+                        for future in concurrent.futures.as_completed(futures):
+                            try:
+                                future.result()
+                                print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                            except Exception as e:
+                                print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
+                                traceback.print_exc()
 
-                        print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                    print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
             else:
                 next_key = 3 # falls keine KI-Aufgaben genutzt werden , defaultwert
 
@@ -1500,21 +1505,21 @@ class DashBoard(ttk.Frame):
                 print("[WARNUNG] Kein config_editor verfügbar – Änderungen nicht automatisch gespeichert.")
                 
 
-# if __name__ == "__main__":
-#     from pathlib import Path
-#     import Eingabe.config as config
+if __name__ == "__main__":
+    from pathlib import Path
+    import Eingabe.config as config
 
-#     ordner_nur_str = {
-#         "saetze": config.GLOBALORDNER["saetze"],
-#         "ki": config.GLOBALORDNER["ki"],
-#     }
+    ordner_nur_str = {
+        "saetze": config.GLOBALORDNER["saetze"],
+        "ki": config.GLOBALORDNER["ki"],
+    }
 
-#     kapitel_name = "Prolog – Finis post portam"
-#     aufgaben_id =4
-#     prompt = lade_prompt_datei(4)
-#     modell_name = "leoLM/leo-mistral-hessianai-7b"
+    kapitel_name = "Prolog – Finis post portam"
+    aufgaben_id =4
+    prompt = lade_prompt_datei(4)
+    modell_name = "leoLM/leo-mistral-hessianai-7b"
 
-#     ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
+    ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
 
 
 

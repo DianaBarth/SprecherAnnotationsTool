@@ -3,7 +3,7 @@ from tkinter import ttk
 import queue
 from multiprocessing import Manager
 import multiprocessing
-
+import importlib
 from huggingface_client import HuggingFaceClient
 from log_manager import LogManager
 from kapitel_config import KapitelConfig
@@ -45,7 +45,10 @@ class SprecherAnnotationsTool(tk.Tk):
         self.config_editor = ConfigEditor(self, self.notebook, self.dashboard)        
 
         # Anfangs den Dashboard-Tab auswählen (Achtung: Attributname ist klein)
-        self.notebook.select(self.dashboard)
+        
+        importlib.reload(config)
+        print(config.__file__)
+        print(f"MAX_PROMPT_TOKENS: {config.MAX_PROMPT_TOKENS}")
 
     
     def starte_progress_pruefung(self):

@@ -1,96 +1,107 @@
 import re
-import os
-import json
 import regex
+import json
+import os
 from pathlib import Path
-import Eingabe.config as config  # Importiere das komplette config-Modul
+import tiktoken
+import Eingabe.config as config
 
+tokenizer = tiktoken.get_encoding("cl100k_base")  # GPT-4/3.5 Tokenizer
 satzzeichen = {".", "!", "?"}
-zeilenumbruch_marker = "_BREAK__BREAKY"  # Wie in deinem bisherigen Code für Zeilenumbruch-Annotation
+satzzeichen_pattern = re.compile(r'([.!?])')  # Satzzeichen als Trenner
+zeilenumbruch_marker = "_BREAK__BREAKY"
+
+
+def zähle_gpt_tokens(text: str) -> int:
+    return len(tokenizer.encode(text))
+
+def ist_satzende(token):
+    return token in satzzeichen or token == zeilenumbruch_marker
 
 def daten_aufteilen(kapitelname, txt_ordner, json_ordner, ausgabe_ordner, progress_callback=None):
-      
+    
+    print(f"config.MAX_PROMPT_TOKENS: {config.MAX_PROMPT_TOKENS}")
     txt_dateien_aufteilen(kapitelname,txt_ordner, ausgabe_ordner, progress_callback)
 
     extrahiere_ig_tokens(kapitelname,json_ordner, ausgabe_ordner, progress_callback,True)
  
     print(f"[INFO] Daten aufteilen abgeschlossen für Kapitel '{kapitelname}'")
 
-def txt_dateien_aufteilen(kapitelname, txt_ordner, ausgabe_ordner, progress_callback=None):
-    print(f"[DEBUG ------------------------- STARTE TXT-Aufteilung für Kapitel: {kapitelname}]")
-    txt_ordner = Path(txt_ordner)
-    ausgabe_ordner = Path(ausgabe_ordner)
-    ausgabe_ordner.mkdir(parents=True, exist_ok=True)
+def split_text_in_saetze(text):
+    # Splitte Text so, dass Satzzeichen am Ende erhalten bleiben
+    parts = satzzeichen_pattern.split(text)
+    saetze = []
+    for i in range(0, len(parts)-1, 2):
+        satz = parts[i].strip() + parts[i+1].strip()
+        saetze.append(satz)
+    if len(parts) % 2 != 0:
+        letzter_satz = parts[-1].strip()
+        if letzter_satz:
+            saetze.append(letzter_satz)
+    return saetze
 
-    # Filtere alle passenden txt-Dateien: kapitelname + _{idx}.txt
-    dateien = [f for f in txt_ordner.glob(f"{kapitelname}_*.txt")]
+def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_callback=None):
+    print(f"[DEBUG -------------------------STARTE Schritt 3 für {kapitelname}")
+    eingabe_ordner = Path(eingabe_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
+    os.makedirs(ausgabe_ordner, exist_ok=True)
+
+    dateien = sorted([f for f in eingabe_ordner.glob(f"{kapitelname}_*.txt")])
     if not dateien:
-        print(f"[WARNUNG] Keine passenden TXT-Dateien gefunden für Kapitel: {kapitelname}")
+        print(f"[WARNUNG] Keine TXT-Dateien für Kapitel '{kapitelname}' gefunden.")
         return
 
-    for datei in sorted(dateien):
+    for datei in dateien:
         print(f"[DEBUG] Verarbeite Datei: {datei.name}")
-
         with open(datei, "r", encoding="utf-8") as f:
             text = f.read()
 
-        # Tokenisiere text grob nach Leerzeichen, behalte Satzzeichen etc.
-        tokens = regex.findall(r"\S+|\n", text)
-
-        saetze = []
-        aktueller_satz = []
+        saetze = split_text_in_saetze(text)
+        abschnitt = ""
         token_counter = 0
+        abschnitt_counter = 1
 
-        def ist_satzende(token):
-            # Satzende, wenn token ein Satzzeichen ist oder Zeilenumbruch Marker
-            if token in satzzeichen:
-                return True
-            if token == zeilenumbruch_marker:
-                return True
-            return False
-
-        abschnittsnummer = 1
-        abschnitt_tokens = []
-        abschnitt_token_count = 0
-
-        for token in tokens:
-            aktueller_satz.append(token)
-            token_counter += 1
-
-            if ist_satzende(token):
-                # Satz abgeschlossen, prüfe, ob Abschnitt zu groß wird
-                satz_laenge = len(aktueller_satz)
-
-                if abschnitt_token_count + satz_laenge > config.MAX_PROMPT_TOKENS:
-                    # Speichere aktuellen Abschnitt als Datei
-                    dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnittsnummer:03}.txt"
+        for i, satz in enumerate(saetze, 1):
+            satz_tokens = len(tokenizer.encode(satz))
+            # Wenn wir mit aktuellem Satz die Grenze überschreiten, abschnitt speichern und neu starten
+            if token_counter + satz_tokens > config.MAX_PROMPT_TOKENS:
+                if abschnitt:
+                    # Speichern
+                    token_anzahl = len(tokenizer.encode(abschnitt))
+                    dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnitt_counter:03}.txt"
                     with open(dateiname, "w", encoding="utf-8") as out_f:
-                        out_f.write(" ".join(abschnitt_tokens).replace(zeilenumbruch_marker, "\n"))
-                    print(f"[DEBUG] Gespeichert Abschnitt {abschnittsnummer} mit {abschnitt_token_count} Tokens in {dateiname}")
-                    abschnittsnummer += 1
-                    abschnitt_tokens = aktueller_satz.copy()
-                    abschnitt_token_count = satz_laenge
-                else:
-                    abschnitt_tokens.extend(aktueller_satz)
-                    abschnitt_token_count += satz_laenge
+                        out_f.write(abschnitt.strip())
+                    print(f"[DEBUG] Gespeichert Abschnitt {abschnitt_counter} mit {token_anzahl} Tokens in {dateiname}")
+                    abschnitt_counter += 1
+                # Neuen Abschnitt mit aktuellem Satz starten
+                abschnitt = satz
+                token_counter = satz_tokens
+            else:
+                # Satz an aktuellen Abschnitt anhängen
+                abschnitt = abschnitt + " " + satz if abschnitt else satz
+                token_counter += satz_tokens
 
-                aktueller_satz = []
+            if progress_callback:
+                fortschritt = int((i / len(saetze)) * 100)
+                progress_callback(kapitelname, fortschritt)
 
-            # Wenn Satz endet nicht, warte weiter
-
-        # Falls am Ende noch Tokens übrig sind im Satz und/oder Abschnitt, speichere
-        if aktueller_satz:
-            abschnitt_tokens.extend(aktueller_satz)
-        if abschnitt_tokens:
-            dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnittsnummer:03}.txt"
+        # Letzten Abschnitt speichern, falls vorhanden
+        if abschnitt:
+            token_anzahl = len(tokenizer.encode(abschnitt))
+            dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnitt_counter:03}.txt"
             with open(dateiname, "w", encoding="utf-8") as out_f:
-                out_f.write(" ".join(abschnitt_tokens).replace(zeilenumbruch_marker, "\n"))
-            print(f"[DEBUG] Gespeichert letzter Abschnitt {abschnittsnummer} mit {abschnitt_token_count} Tokens in {dateiname}")
+                out_f.write(abschnitt.strip())
+            print(f"[DEBUG] Gespeichert letzter Abschnitt {abschnitt_counter} mit {token_anzahl} Tokens in {dateiname}")
 
-        if progress_callback:
-            progress_callback(kapitelname, 100)
+    if progress_callback:
+        progress_callback(kapitelname, 100)
 
-    print(f"[DEBUG ------------------------- TXT-Aufteilung abgeschlossen für Kapitel: {kapitelname}]")
+    print(f"[DEBUG -------------------------Schritt 3 abgeschlossen für Kapitel {kapitelname}]")
+
+
+
+#-----------------------
+
 
 def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_callback=None, semikolon_format=True):
     json_ordner = Path(json_ordner)
@@ -121,21 +132,41 @@ def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_call
     tokens_sortiert = sorted(tokens_mit_ig, key=lambda x: x.lower())
     max_tokens = config.MAX_PROMPT_TOKENS
 
-    if semikolon_format:
-        abschnittsnummer = 1
-        for i in range(0, len(tokens_sortiert), max_tokens):
-            teil_tokens = tokens_sortiert[i:i + max_tokens]
-            ausgabe_datei = ausgabe_ordner / f"{kapitelname}_ig_abschnitt_{abschnittsnummer:03}.txt"
-            with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
-                f_out.write(";".join(teil_tokens))
-            print(f"[DEBUG] Gespeichert IG-Abschnitt {abschnittsnummer} mit {len(teil_tokens)} Tokens in {ausgabe_datei}")
-            abschnittsnummer += 1
-    else:
-        ausgabe_datei = ausgabe_ordner / f"{kapitelname}_ig.txt"
+    abschnittsnummer = 1
+    aktueller_abschnitt = []
+    aktueller_token_text = ""
+
+    def speichere_abschnitt(abschnitt_tokens, abschnitt_nr):
+        abschnitt_text = ";".join(abschnitt_tokens) if semikolon_format else "\n".join(abschnitt_tokens)
+        token_count = zähle_gpt_tokens(abschnitt_text)
+        dateiname = f"{kapitelname}_ig_abschnitt_{abschnitt_nr:03}.txt"
+        ausgabe_datei = ausgabe_ordner / dateiname
         with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
-            for token in tokens_sortiert:
-                f_out.write(token + "\n")
-        print(f"[DEBUG] Gespeichert IG-Tokens zeilenweise in: {ausgabe_datei}")
+            f_out.write(abschnitt_text)
+        print(f"[DEBUG] Gespeichert IG-Abschnitt {abschnitt_nr} mit {token_count} GPT-Tokens in {ausgabe_datei}")
+
+    for token in tokens_sortiert:
+        # Baue Teststring für Token-Zähler
+        test_abschnitt = aktueller_abschnitt + [token]
+        if semikolon_format:
+            test_text = ";".join(test_abschnitt)
+        else:
+            test_text = "\n".join(test_abschnitt)
+
+        token_anzahl = zähle_gpt_tokens(test_text)
+
+        if token_anzahl > max_tokens:
+            # Aktuellen Abschnitt speichern und neuen starten
+            if aktueller_abschnitt:
+                speichere_abschnitt(aktueller_abschnitt, abschnittsnummer)
+                abschnittsnummer += 1
+            aktueller_abschnitt = [token]
+        else:
+            aktueller_abschnitt.append(token)
+
+    # Letzten Abschnitt speichern
+    if aktueller_abschnitt:
+        speichere_abschnitt(aktueller_abschnitt, abschnittsnummer)
 
     if progress_callback:
         progress_callback(kapitelname, 100)
