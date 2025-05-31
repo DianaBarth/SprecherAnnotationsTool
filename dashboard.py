@@ -22,7 +22,7 @@ import Eingabe.config as config
 from annotationen_editor import AnnotationenEditor
 from Schritt1 import extrahiere_kapitel_mit_config
 from Schritt2 import verarbeite_kapitel_und_speichere_json
-from Schritt3 import dateien_aufteilen
+from Schritt3 import daten_aufteilen
 from Schritt4 import daten_verarbeiten
 from Schritt5 import Merge_annotationen
 from Schritt6 import visualisiere_annotationen
@@ -1042,8 +1042,7 @@ class DashBoard(ttk.Frame):
             "Eingabe":  ergebnisse_ordner / "Eingabe",
             "txt":    ergebnisse_ordner / "txt",
             "json":   ergebnisse_ordner / "json",
-            "satz":   ergebnisse_ordner / "satz",
-            "absatz" : ergebnisse_ordner / "absatz",
+            "saetze":   ergebnisse_ordner / "saetze",        
             "ki":     ergebnisse_ordner / "ki",
             "merge":  ergebnisse_ordner / "merge",
             "pdf":    ergebnisse_ordner / "pdf",
@@ -1338,11 +1337,12 @@ class DashBoard(ttk.Frame):
                 print(f"[DEBUG] Starte Aufgabe 2: Satzaufteilung für Kapitel: {kapitel_name}", flush=True)
                 progress_queue.put((kapitel_name, "Satzbildung", 0.1))
 
-                dateien_aufteilen(
+                daten_aufteilen(
                     kapitel_name,
-                    ordner_nur_str["json"],
-                    ordner_nur_str["satz"],
-                    lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.2", fortschritt))
+                    txt_ordner=ordner_nur_str["txt"],  
+                    json_ordner=ordner_nur_str["json"],
+                    ausgabe_ordner=ordner_nur_str["satz"],                  
+                    progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.2", fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
              

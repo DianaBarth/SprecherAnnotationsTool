@@ -77,7 +77,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         erweiterte_kapitel = set()
         for kapitel in ausgewaehlte_kapitel:
             erweiterte_kapitel.add(kapitel)
-            for idx in range(1, 100):
+            for idx in range(1, 1000):
                 erweiterte_kapitel.add(f"{kapitel}_{idx}")
 
         print(f"[DEBUG] Ausgewählte Kapitel inklusive Indizes: {erweiterte_kapitel}")

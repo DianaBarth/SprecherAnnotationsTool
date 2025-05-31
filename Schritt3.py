@@ -1,149 +1,134 @@
+import re
 import os
 import json
+import regex
 from pathlib import Path
-import Eingabe.config as config # Importiere das komplette config-Modul
+import Eingabe.config as config  # Importiere das komplette config-Modul
 
 satzzeichen = {".", "!", "?"}
-annotation_trenner = "zeilenumbruch"
+zeilenumbruch_marker = "_BREAK__BREAKY"  # Wie in deinem bisherigen Code für Zeilenumbruch-Annotation
 
+def daten_aufteilen(kapitelname, txt_ordner, json_ordner, ausgabe_ordner, progress_callback=None):
+      
+    txt_dateien_aufteilen(kapitelname,txt_ordner, ausgabe_ordner, progress_callback)
 
-def bereinige_eintrag(eintrag):
-    """Entfernt 'annotation' sowie alle Felder, deren Key in KI_AUFGABEN.values() vorkommt."""
-    zu_entfernende_keys = set(config.KI_AUFGABEN.values())
-    return {k: v for k, v in eintrag.items() if k != "annotation" and k not in zu_entfernende_keys}
+    extrahiere_ig_tokens(kapitelname,json_ordner, ausgabe_ordner, progress_callback)
+ 
+    print(f"[INFO] Daten aufteilen abgeschlossen für Kapitel '{kapitelname}'")
 
-def zaehle_woerter_in_eintrag(eintrag):
-    zu_entfernende_keys = set(config.KI_AUFGABEN.values())
-    wort_anzahl = 0
-    for key, value in eintrag.items():
-        if key == "annotation" or key in zu_entfernende_keys:
-            continue
-        wort_anzahl += len(str(key).split())
-        wort_anzahl += len(str(value).split())
-    return wort_anzahl
-
-
-
-def dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_callback=None):
-    print(f"[DEBUG -------------------------STARTE Schritt 3 für {kapitelname}")
-    print(f"[DEBUG] Durchsuche Ordner: {eingabe_ordner}")
-    
-    eingabe_ordner = Path(eingabe_ordner)
+def txt_dateien_aufteilen(kapitelname, txt_ordner, ausgabe_ordner, progress_callback=None):
+    print(f"[DEBUG ------------------------- STARTE TXT-Aufteilung für Kapitel: {kapitelname}]")
+    txt_ordner = Path(txt_ordner)
     ausgabe_ordner = Path(ausgabe_ordner)
+    ausgabe_ordner.mkdir(parents=True, exist_ok=True)
 
-    for root, _, files in os.walk(eingabe_ordner):
-        for datei in files:
-            if not datei.endswith(".json"):
-                print(f"[DEBUG] Überspringe Datei (kein JSON): {datei}")
-                continue
+    # Filtere alle passenden txt-Dateien: kapitelname + _{idx}.txt
+    dateien = [f for f in txt_ordner.glob(f"{kapitelname}_*.txt")]
+    if not dateien:
+        print(f"[WARNUNG] Keine passenden TXT-Dateien gefunden für Kapitel: {kapitelname}")
+        return
 
-            datei_name_ohne_endung = os.path.splitext(datei)[0]
-            if kapitelname and not datei_name_ohne_endung.startswith(f"{kapitelname}_"):
-                continue
+    for datei in sorted(dateien):
+        print(f"[DEBUG] Verarbeite Datei: {datei.name}")
 
-            dateipfad = os.path.join(root, datei)
-            print(f"[DEBUG] Verarbeite Datei: {dateipfad} mit Kapitelname: {kapitelname}")
+        with open(datei, "r", encoding="utf-8") as f:
+            text = f.read()
 
-            try:
-                with open(dateipfad, "r", encoding="utf-8") as f:
-                    daten = json.load(f)
-                print(f"[DEBUG] JSON geladen, Anzahl Einträge: {len(daten)}")
-            except Exception as e:
-                print(f"[FEHLER] Laden der Datei {dateipfad} fehlgeschlagen: {e}")
-                continue
+        # Tokenisiere text grob nach Leerzeichen, behalte Satzzeichen etc.
+        tokens = regex.findall(r"\S+|\n", text)
 
-            saetze = []
-            aktueller_satz = []
-            gesamt_saetze = sum(
-                1 for eintrag in daten if eintrag.get("token") in satzzeichen or annotation_trenner in eintrag.get("annotation", "")
-            )
-            gesamt_saetze = max(gesamt_saetze, 1)
-            print(f"[DEBUG] Gesamtanzahl Sätze geschätzt: {gesamt_saetze}")
-            satz_zaehler = 0
+        saetze = []
+        aktueller_satz = []
+        token_counter = 0
 
-            zielverzeichnis = os.path.join(ausgabe_ordner, os.path.relpath(root, eingabe_ordner))
-            os.makedirs(zielverzeichnis, exist_ok=True)
-            print(f"[DEBUG] Zielverzeichnis erstellt: {zielverzeichnis}")
-            basisname = os.path.splitext(datei)[0]
+        def ist_satzende(token):
+            # Satzende, wenn token ein Satzzeichen ist oder Zeilenumbruch Marker
+            if token in satzzeichen:
+                return True
+            if token == zeilenumbruch_marker:
+                return True
+            return False
 
-            for eintrag in daten:
-                if eintrag.get("annotation") == "Überschrift":
-                    ueberschrift_pfad = os.path.join(zielverzeichnis, f"{basisname}_{satz_zaehler + 1:03}.json")
-                    print(f"[DEBUG] Schreibe Überschrift in Datei: {ueberschrift_pfad}")
-                    try:
-                        with open(ueberschrift_pfad, "w", encoding="utf-8") as f:
-                            bereinigt = [bereinige_eintrag(eintrag)]
-                            json.dump(bereinigt, f, indent=2, ensure_ascii=False)
-                    except Exception as e:
-                        print(f"[FEHLER] Speichern der Überschriftdatei {ueberschrift_pfad} fehlgeschlagen: {e}")
-                    continue
+        abschnittsnummer = 1
+        abschnitt_tokens = []
+        abschnitt_token_count = 0
 
-                token = eintrag.get("token")
-                if token is None:
-                    print(f"[WARNUNG] Kein 'token' in Eintrag: {eintrag}. Überspringe diesen Eintrag.")
-                    continue
+        for token in tokens:
+            aktueller_satz.append(token)
+            token_counter += 1
 
-                aktueller_satz.append(eintrag)
-                annotation = eintrag.get("annotation", "")
-                if token in satzzeichen or annotation_trenner in annotation:
-                    saetze.append(aktueller_satz)
-                    print(f"[DEBUG] Satz abgeschlossen mit {len(aktueller_satz)} Einträgen, Satznummer: {satz_zaehler + 1}")
-                    aktueller_satz = []
-                    satz_zaehler += 1
-                    if progress_callback:
-                        fortschritt = int((satz_zaehler / gesamt_saetze) * 50)
-                        print(f"[DEBUG] Fortschritt Satzaufteilung: {fortschritt}%")
-                        progress_callback(kapitelname, fortschritt)
+            if ist_satzende(token):
+                # Satz abgeschlossen, prüfe, ob Abschnitt zu groß wird
+                satz_laenge = len(aktueller_satz)
 
-            if aktueller_satz:
-                saetze.append(aktueller_satz)
-                print(f"[DEBUG] Letzter Satz hinzugefügt mit {len(aktueller_satz)} Einträgen")
-                if progress_callback:
-                    progress_callback(kapitelname, 50)
-
-            abschnitt = []
-            abschnitt_counter = 1
-            wort_counter = 0
-            anzahl_saetze = len(saetze)
-            print(f"[DEBUG] Anzahl Sätze zum Verarbeiten in Abschnitten: {anzahl_saetze}")
-
-            for i, satz in enumerate(saetze, 1):
-                satz_woerter = sum(zaehle_woerter_in_eintrag(eintrag) for eintrag in satz)
-                print(f"[DEBUG] Satz {i}: Wörter = {satz_woerter}, aktueller Wortzähler = {wort_counter}")
-                if wort_counter + satz_woerter > config.MAX_PROMPT_TOKENS:
-                    if abschnitt:
-                        abschnitt_pfad = os.path.join(zielverzeichnis, f"{basisname}_{abschnitt_counter:03}.json")
-                        print(f"[DEBUG] Speichere Abschnitt {abschnitt_counter} mit {len(abschnitt)} Einträgen in {abschnitt_pfad}")
-                        try:
-                            with open(abschnitt_pfad, "w", encoding="utf-8") as f:
-                                bereinigt = [bereinige_eintrag(e) for e in abschnitt]
-                                json.dump(bereinigt, f, indent=2, ensure_ascii=False)
-                        except Exception as e:
-                            print(f"[FEHLER] Speichern von Abschnitt {abschnitt_pfad} fehlgeschlagen: {e}")
-                        abschnitt_counter += 1
-                    abschnitt = satz.copy()
-                    wort_counter = satz_woerter
+                if abschnitt_token_count + satz_laenge > config.MAX_PROMPT_TOKENS:
+                    # Speichere aktuellen Abschnitt als Datei
+                    dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnittsnummer:03}.txt"
+                    with open(dateiname, "w", encoding="utf-8") as out_f:
+                        out_f.write(" ".join(abschnitt_tokens).replace(zeilenumbruch_marker, "\n"))
+                    print(f"[DEBUG] Gespeichert Abschnitt {abschnittsnummer} mit {abschnitt_token_count} Tokens in {dateiname}")
+                    abschnittsnummer += 1
+                    abschnitt_tokens = aktueller_satz.copy()
+                    abschnitt_token_count = satz_laenge
                 else:
-                    abschnitt.extend(satz)
-                    wort_counter += satz_woerter
+                    abschnitt_tokens.extend(aktueller_satz)
+                    abschnitt_token_count += satz_laenge
 
-                if progress_callback:
-                    fortschritt = 50 + int((i / anzahl_saetze) * 50)
-                    print(f"[DEBUG] Fortschritt Abschnitt speichern: {fortschritt}%")
-                    progress_callback(kapitelname, fortschritt)
+                aktueller_satz = []
 
-            if abschnitt:
-                abschnitt_pfad = os.path.join(zielverzeichnis, f"{basisname}_{abschnitt_counter:03}.json")
-                print(f"[DEBUG] Speichere letzten Abschnitt {abschnitt_counter} mit {len(abschnitt)} Einträgen in {abschnitt_pfad}")
-                try:
-                    with open(abschnitt_pfad, "w", encoding="utf-8") as f:
-                        bereinigt = [bereinige_eintrag(e) for e in abschnitt]
-                        json.dump(bereinigt, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    print(f"[FEHLER] Speichern von letztem Abschnitt {abschnitt_pfad} fehlgeschlagen: {e}")
+            # Wenn Satz endet nicht, warte weiter
 
-            if progress_callback:
-                print(f"[DEBUG] Fortschritt 100% für Kapitel {kapitelname}")
-                progress_callback(kapitelname, 100)
+        # Falls am Ende noch Tokens übrig sind im Satz und/oder Abschnitt, speichere
+        if aktueller_satz:
+            abschnitt_tokens.extend(aktueller_satz)
+        if abschnitt_tokens:
+            dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnittsnummer:03}.txt"
+            with open(dateiname, "w", encoding="utf-8") as out_f:
+                out_f.write(" ".join(abschnitt_tokens).replace(zeilenumbruch_marker, "\n"))
+            print(f"[DEBUG] Gespeichert letzter Abschnitt {abschnittsnummer} mit {abschnitt_token_count} Tokens in {dateiname}")
 
-            print(f"[DEBUG -------------------------Schritt 3 abgeschlossen für {datei}]")
+        if progress_callback:
+            progress_callback(kapitelname, 100)
+
+    print(f"[DEBUG ------------------------- TXT-Aufteilung abgeschlossen für Kapitel: {kapitelname}]")
+
+def extrahiere_ig_tokens(kapitelname,json_ordner,ausgabe_ordner,progress_callback=None):
+    json_ordner = Path(json_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
+    ausgabe_ordner.mkdir(parents=True, exist_ok=True)
+
+    # Regex für Kapitelnamen mit optionalem _{idx} am Ende, z.B. Kapitel_1_2
+    pattern = re.compile(re.escape(kapitelname) + r"(_\d+)_annotierungen\.json$")
+
+    # Finde alle passende JSON-Dateien im json_ordner
+    gefundene_dateien = [f for f in json_ordner.iterdir() if pattern.match(f.name)]
+
+    if not gefundene_dateien:
+        print(f"[FEHLER] Keine passenden JSON-Dateien für '{kapitelname}' gefunden im Ordner: {json_ordner}")
+        return
+
+    tokens_mit_ig = set()
+
+    for json_datei in gefundene_dateien:
+        print(f"[INFO] Lese JSON-Datei: {json_datei}")
+        with open(json_datei, "r", encoding="utf-8") as f:
+            daten = json.load(f)
+
+        for eintrag in daten:
+            token = eintrag.get("tokenInklZahlwoerter", "")
+            if "ig" in token:
+                tokens_mit_ig.add(token)
+
+    print(f"[INFO] Gefundene eindeutige Tokens mit 'ig' insgesamt: {len(tokens_mit_ig)}")
+
+    # Speichere alle gefundenen Tokens in eine Datei mit Kapitelname ohne Index (nur Originalname)
+    ausgabe_datei = ausgabe_ordner / f"{kapitelname}_ig.txt"
+    with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
+        for token in sorted(tokens_mit_ig):
+              f_out.write(";".join(sorted(tokens_mit_ig)))
+
+
+    if progress_callback:
+        progress_callback(kapitelname, 100)
+
+    print(f"[INFO] Tokens mit 'ig' gespeichert in: {ausgabe_datei}")
