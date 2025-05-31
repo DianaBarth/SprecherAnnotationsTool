@@ -77,18 +77,25 @@ class AnnotationenEditor(ttk.Frame):
             "<Configure>",
             lambda e: self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
         )
+   
+        self.default_annotation_label = ttk.Label(
+            self.annotation_frame,
+            text="Bitte Wort auswählen, um dessen Annotationen zu sehen und zu ändern!",
+            foreground="gray",
+            font=('Arial', 12, 'italic'),
+            wraplength=200,
+            justify='left'
+        )
+        self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='nw')
 
         self._zeichne_alle_tokens()
         self.canvas.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
-
-
+        
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
-        self.renderer.positionen_zuruecksetzen()
-        for child in self.annotation_frame.winfo_children():
-            child.destroy()
-
+        self.renderer.positionen_zuruecksetzen()    
+        # nur Tokens zeichnen:
         for idx, json_dict in enumerate(self.json_dicts):
             naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
             self.renderer.rendern(index=idx, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=json_dict)
@@ -96,19 +103,26 @@ class AnnotationenEditor(ttk.Frame):
             self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
 
     def _on_token_click(self, idx):
+        print(f"Token {idx} wurde angeklickt.")
+        self.default_annotation_label.grid_forget()
+
         json_dict = self.json_dicts[idx]
         self.renderer.markiere_token_mit_rahmen(self.canvas, idx)
 
         basename = os.path.basename(self.dateipfad_json)
         self.kapitel_name = basename.replace("_gesamt.json", "") 
 
-
-
         self.kapitel_konfig = self.lade_kapitel_konfig("Eingabe/kapitel_config.json")
 
+        print(f"Vor dem Löschen Widgets im annotation_frame: {[type(c) for c in self.annotation_frame.winfo_children()]}")
+        # Alle Widgets außer default_label löschen
         for child in self.annotation_frame.winfo_children():
-            child.destroy()
+            if child != self.default_annotation_label:
+                child.destroy()
+        self.annotation_frame.update_idletasks()
+        print(f"Nach dem Löschen Widgets: {[type(c) for c in self.annotation_frame.winfo_children()]}")
 
+        # Neue Annotationen bauen
         tk.Label(self.annotation_frame, text=f"Token {idx}: '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
 
         row_index = 1
@@ -123,8 +137,8 @@ class AnnotationenEditor(ttk.Frame):
                 werte = [e["name"] for e in config.AUFGABEN_ANNOTATIONEN.get(aufgabennr, []) if e["name"]]
 
             if werte and werte[-1] != "":
-                 werte.append("")
-                 
+                werte.append("")
+
             werte = werte or ['']
             aktueller_wert = json_dict.get(aufgabenname, "")
 
@@ -145,6 +159,10 @@ class AnnotationenEditor(ttk.Frame):
 
             row_index += 1
 
+        self.annotation_canvas.update_idletasks()
+        self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
+
+
     def _json_speichern(self):
         try:
             zielpfad = os.path.join(config.GLOBALORDNER["manuell"], os.path.basename(self.dateipfad_json))
@@ -160,3 +178,18 @@ class AnnotationenEditor(ttk.Frame):
         print(f"Canvas wurde resized, neue Breite: {neue_breite}")
         self.renderer.max_breite = neue_breite
         self._zeichne_alle_tokens()
+
+    def zeige_default_annotation_label(self):
+        for child in self.annotation_frame.winfo_children():
+            if child != self.default_annotation_label:
+                child.destroy()
+        self.default_annotation_label.grid()
+
+    def _on_tab_changed(self, event):
+        aktuelles_tab = event.widget.select()
+        aktuelles_widget = event.widget.nametowidget(aktuelles_tab)
+
+        # Alle Kinder des Tabs durchsuchen, um einen AnnotationenEditor zu finden
+        for child in aktuelles_widget.winfo_children():
+            if isinstance(child, AnnotationenEditor):
+                child.zeige_default_annotation_label()
