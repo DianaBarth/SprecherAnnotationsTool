@@ -73,7 +73,10 @@ class AnnotationRenderer:
             self.ist_PDF = True
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
-    def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):
+    def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):  
+        
+        print(f"auf_canvas_rendern aufgerufen: index={index}, token={element_kopie.get('token', '')}, ist_PDF={self.ist_PDF}")
+
         # Kopie des Elements, damit wir das Original nicht verändern
         element_kopie = dict(element)
 
@@ -84,8 +87,7 @@ class AnnotationRenderer:
                 print(f"Token '{element_kopie.get('token', '')}' Annotation '{key}' wird ignoriert - Zeichne normal")
                 element_kopie[key] = None  # Annotation "deaktivieren"
 
-        print(f"auf_canvas_rendern aufgerufen: index={index}, token={element_kopie.get('token', '')}, ist_PDF={self.ist_PDF}")
-
+      
         token = element_kopie.get('token', '')
         annotation = element_kopie.get("annotation", [])
 

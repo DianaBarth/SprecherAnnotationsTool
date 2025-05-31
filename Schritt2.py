@@ -4,6 +4,9 @@ import regex as re
 import json
 import pandas as pd
 from pathlib import Path
+from num2words import num2words
+import re
+
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 def roemisch_zu_int(roemisch):
@@ -19,6 +22,21 @@ def roemisch_zu_int(roemisch):
             ergebnis += wert
         vorher = wert
     return ergebnis
+
+def ersetze_zahl_in_token(token):
+    zahlen = re.findall(r'\d+', token)
+    if not zahlen:
+        return token  # Keine Zahl gefunden
+    
+    # Wenn Token komplett Zahl, ersetze einfach komplett
+    if token.isdigit():
+        return num2words(int(token), lang='de')
+    
+    # Sonst ersetze jede Zahl durch _ + Wort
+    for zahl_str in zahlen:
+        wort = num2words(int(zahl_str), lang='de')
+        token = token.replace(zahl_str, "_" + wort)
+    return token
 
 def extrahiere_kapitelname(kapitelname):
     # Suche nach führender arabischer Zahl (z.B. 12)
@@ -122,6 +140,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             "KapitelNummer": kapitelname,
             "WortNr": range(1, len(woerter_und_satzzeichen) + 1),
             "token": woerter_und_satzzeichen,
+            "tokenInklZahlwoerter": ersetze_zahl_in_token(woerter_und_satzzeichen),
             "annotation": annotationen,
         })
 
