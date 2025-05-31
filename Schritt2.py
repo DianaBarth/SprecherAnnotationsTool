@@ -1,5 +1,3 @@
-
-import os
 import regex
 import re
 import json
@@ -29,19 +27,17 @@ def ist_roemisch(token):
     return re.fullmatch(r'M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})', token.upper()) is not None
 
 def ersetze_zahl_in_token(token):
-    # Falls am Ende ein Punkt (oder anderes Satzzeichen) steht, für die Prüfung und Umwandlung ignorieren
     token_clean = token.rstrip('.:,;!?')
 
     if ist_roemisch(token_clean):
         zahl = roemisch_zu_int(token_clean)
         if zahl > 0:
             wort = num2words(zahl, lang='de')
-            # Original token: Ersetze nur den römischen Teil durch das Wort, rest (z.B. Punkt) bleibt
             return token.replace(token_clean, wort)
 
     zahlen = re.findall(r'\d+', token)
     if not zahlen:
-        return token  # Keine Zahl gefunden
+        return token
     
     if token.isdigit():
         return num2words(int(token), lang='de')
@@ -52,18 +48,14 @@ def ersetze_zahl_in_token(token):
     return token
 
 def extrahiere_kapitelname(kapitelname):
-    # Suche nach führender arabischer Zahl (z.B. 12)
     match_arabisch = regex.match(r"^(\d+)", kapitelname)
     if match_arabisch:
         return match_arabisch.group(1)
 
-    # Suche nach führender römischer Zahl (z.B. XII)
     match_roemisch = regex.match(r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))", kapitelname, flags=re.IGNORECASE)
     if match_roemisch and match_roemisch.group(1):
         return str(roemisch_zu_int(match_roemisch.group(1)))
 
-    # Falls nichts gefunden, gib original zurück
-    
     if "Prolog" in kapitelname:
         return 0
     
@@ -71,27 +63,34 @@ def extrahiere_kapitelname(kapitelname):
 
 def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewaehlte_kapitel=None, progress_callback=None):
 
-    print(f"[DEBUG -------------------------STARTE Schritt 2 für {ausgewaehlte_kapitel}]")
+    print(f"[DEBUG ------------------------- STARTE Schritt 2 für {ausgewaehlte_kapitel}]")
 
     eingabeordner = Path(eingabeordner)
     ausgabeordner = Path(ausgabeordner)
     
     ausgabeordner.mkdir(parents=True, exist_ok=True)
 
-    if ausgewaehlte_kapitel is not None:
-        ausgewaehlte_kapitel = set(ausgewaehlte_kapitel)
-
     textdateien = list(eingabeordner.glob("*.txt"))
+    print(f"[DEBUG] Gefundene Textdateien: {[datei.name for datei in textdateien]}")
 
     if ausgewaehlte_kapitel is not None:
-        textdateien = [datei for datei in textdateien if datei.stem in ausgewaehlte_kapitel]
+        erweiterte_kapitel = set()
+        for kapitel in ausgewaehlte_kapitel:
+            erweiterte_kapitel.add(kapitel)
+            for idx in range(1, 100):
+                erweiterte_kapitel.add(f"{kapitel}_{idx}")
+
+        print(f"[DEBUG] Ausgewählte Kapitel inklusive Indizes: {erweiterte_kapitel}")
+
+        textdateien = [datei for datei in textdateien if datei.stem in erweiterte_kapitel]
+        print(f"[DEBUG] Gefilterte Textdateien nach Auswahl: {[datei.name for datei in textdateien]}")
 
     anzahl_ueberschriften = config.ANZAHL_ÜBERSCHRIFTENZEILEN
 
     for i, datei in enumerate(textdateien):
         kapitelname_original = datei.stem
         kapitelname = extrahiere_kapitelname(kapitelname_original)
-        step_count = 6  # Anzahl der logischen Verarbeitungsschritte
+        step_count = 6  # Anzahl der Verarbeitungsschritte
         current_step = 0
 
         def report_step():
@@ -99,7 +98,9 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                 progress = round((current_step + 1) / step_count, 3)
                 progress_callback(kapitelname_original, progress)
 
-        # Schritt 1: Einlesen der Datei
+        print(f"[DEBUG] Verarbeite Datei {i+1}/{len(textdateien)}: {datei.name} (Kapitelname extrahiert: {kapitelname})")
+
+        # Schritt 1: Datei einlesen
         with open(datei, "r", encoding="utf-8") as f:
             text = f.read()
         current_step += 1
@@ -150,7 +151,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
 
         tokenInklZahlwoerter = [ersetze_zahl_in_token(t) for t in woerter_und_satzzeichen]
 
-        # Schritt 5: DataFrame und Speichern als JSON
+        # Schritt 5: DataFrame erstellen und als JSON speichern
         df = pd.DataFrame({
             "KapitelNummer": kapitelname,
             "WortNr": range(1, len(woerter_und_satzzeichen) + 1),
@@ -160,7 +161,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         })
 
         for typ_name in config.KI_AUFGABEN.values():
-            df[typ_name] = ""  # oder z.B. None, je nach Bedarf
+            df[typ_name] = ""
 
         json_filename = ausgabeordner / f"{kapitelname_original}_annotierungen.json"
         with open(json_filename, "w", encoding="utf-8") as out_f:
@@ -169,4 +170,4 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         current_step += 1
         report_step()
 
-        print(f"[DEBUG -------------------------Schritt 2 abgeschlossen un datei erzeugt: {json_filename }")
+        print(f"[DEBUG] Schritt 2 abgeschlossen und Datei erzeugt: {json_filename}")
