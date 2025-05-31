@@ -57,12 +57,12 @@ def lade_prompt_datei(ki_id):
         
 
 def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_progress_queue=None):
-    print(f"[DEBUG] KI-Task für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush = True)
+    print(f"[DEBUG] KI-Task für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush=True)
 
     max_retries = 3
     for versuch in range(1, max_retries + 1):
         try:
-            print(f"[DEBUG] KI-Task start Versuch {versuch} für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush = True)
+            print(f"[DEBUG] KI-Task start Versuch {versuch} für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush=True)
 
             try:
                 print(f"[DEBUG] Initialisiere HuggingFaceClient() für {kapitel_name}/{aufgaben_id}")
@@ -79,18 +79,28 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_p
             if not satz_ordner.exists() or not satz_ordner.is_dir():
                 raise FileNotFoundError(f"Ordner für Satzdateien nicht gefunden: {satz_ordner}")
 
-            satzdateien = [f for f in satz_ordner.iterdir() if kapitel_name in f.name]
+            if aufgaben_id == "ig":
+                satzdateien = sorted([
+                    f for f in satz_ordner.iterdir()
+                    if f.is_file() and f.name.startswith(f"{kapitel_name}_ig_abschnitt") and f.suffix == ".txt"
+                ])
+            else:
+                satzdateien = sorted([
+                    f for f in satz_ordner.iterdir()
+                    if f.is_file() and f.name.startswith(f"{kapitel_name}_") and "_abschnitt" in f.name and "_ig_abschnitt" not in f.name and f.suffix == ".txt"
+                ])
+
             anzahl = len(satzdateien)
             print(f"[DEBUG] Gefundene Satzdateien: {anzahl} für Kapitel {kapitel_name}")
 
             if anzahl == 0:
                 if mp_progress_queue:
                     mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                return f"Keine Satzdateien für Kapitel {kapitel_name} gefunden."
+                return f"Keine passenden Satzdateien für Kapitel {kapitel_name} gefunden."
 
             for i, datei in enumerate(satzdateien, start=1):
                 print(f"[DEBUG] Verarbeite Satzdatei {i}/{anzahl}: {datei}")
-                pfad_satz = datei  # Path-Objekt
+                pfad_satz = datei
 
                 daten_verarbeiten(
                     client,
@@ -116,6 +126,7 @@ def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_p
                 return None
             else:
                 print(f"[INFO] Starte Task {aufgaben_id} für Kapitel {kapitel_name} erneut...")
+
 
 def warte_auf_freien_cpukern_und_ram(
     max_auslastung_cpu: float = 50.0,
