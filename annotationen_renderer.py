@@ -73,17 +73,21 @@ class AnnotationRenderer:
             self.ist_PDF = True
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
-    def auf_canvas_rendern(self, canvas, index, element,naechstes_element=None):
-       
-        for key in self.ignorierte_annotationen:
-            if key in element and element[key]:
-                print(f"Token '{element.get('token', '')}' wird ausgeblendet wegen gesetzter Annotation '{key}'")
-                return
-                          
-        print(f"auf_canvas_rendern aufgerufen: index={index}, token={element.get('token', '')}, ist_PDF={self.ist_PDF}")
+    def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):
+        # Kopie des Elements, damit wir das Original nicht verändern
+        element_kopie = dict(element)
 
-        token = element.get('token', '')
-        annotation = element.get("annotation", [])
+        # Ignorierte Annotationen aus element_kopie entfernen,
+        # damit sie nicht für die Schriftwahl berücksichtigt werden
+        for key in self.ignorierte_annotationen:
+            if key in element_kopie and element_kopie[key]:
+                print(f"Token '{element_kopie.get('token', '')}' Annotation '{key}' wird ignoriert - Zeichne normal")
+                element_kopie[key] = None  # Annotation "deaktivieren"
+
+        print(f"auf_canvas_rendern aufgerufen: index={index}, token={element_kopie.get('token', '')}, ist_PDF={self.ist_PDF}")
+
+        token = element_kopie.get('token', '')
+        annotation = element_kopie.get("annotation", [])
 
         # harter Zeilenumbruch
         if token == '' or 'zeilenumbruch' in annotation:
@@ -93,7 +97,7 @@ class AnnotationRenderer:
             self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
             return
 
-        schrift = self.schrift_holen(element)
+        schrift = self.schrift_holen(element_kopie)
 
         # Berechne Breite des Tokens
         if not self.ist_PDF:

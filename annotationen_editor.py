@@ -142,7 +142,7 @@ class AnnotationenEditor(ttk.Frame):
         print(f"Nach dem Löschen Widgets: {[type(c) for c in self.annotation_frame.winfo_children()]}")
 
         # Neue Annotationen bauen
-        tk.Label(self.annotation_frame, text=f"Annotatationen für Token {idx}: '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
+        tk.Label(self.annotation_frame, text=f"Annotatationen für Token {idx}: \n '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
 
         row_index = 1
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
