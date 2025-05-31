@@ -16,6 +16,7 @@ class AnnotationenEditor(ttk.Frame):
         self.renderer = AnnotationRenderer(max_breite=680)
         self.json_dicts = []
         self.filter_vars = {}  # <== Zustand der Filterbuttons
+        self.use_number_words_var = tk.BooleanVar(value=True)
         self._lade_json_daten()
         self._erstelle_widgets()
      
@@ -39,6 +40,15 @@ class AnnotationenEditor(ttk.Frame):
         top_frame = ttk.Frame(self)
         top_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
         top_frame.columnconfigure(0, weight=1)
+
+        zahlwoerter_checkbox = ttk.Checkbutton(
+            top_frame,
+            text="Verwende Zahlwörter",
+            variable=self.use_number_words_var,
+            command=self._zeichne_alle_tokens  # Bei Umschalten neu zeichnen
+        )
+        zahlwoerter_checkbox.pack(side='left', padx=5)
+
 
         speichern_button = ttk.Button(top_frame, text="JSON speichern", command=self._json_speichern)
         speichern_button.pack(side='left', padx=5)
@@ -114,7 +124,8 @@ class AnnotationenEditor(ttk.Frame):
         # 🧠 Filter-Status an Renderer übergeben
         aktive_filter = [name for name, var in self.filter_vars.items() if var.get()]
         self.renderer.ignorierte_annotationen = set(a.lower() for a in aktive_filter)
-
+        self.renderer.use_number_words = self.use_number_words_var.get()
+        
         for idx, json_dict in enumerate(self.json_dicts):
             naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
             self.renderer.rendern(index=idx, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=json_dict)

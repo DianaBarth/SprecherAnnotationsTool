@@ -66,7 +66,7 @@ class KapitelConfig(ttk.Frame):
         except Exception as e:
             messagebox.showerror("Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
 
-    def _create_from_word(self, stilname, pfad, nummerierung="nein", praefix=None, aufsteigend=False):
+    def _create_from_word(self, stilname, pfad, nummerierung="nein", praefix=None, aufsteigend=False, kapitel_trenner="***"):
         print(f"Starte Kapitel-Erkennung aus Word-Datei: {pfad}")
         print(f"Stilname: {stilname}, Numerierung: {nummerierung}, Präfix: {praefix}, Aufsteigend: {aufsteigend}")
 
@@ -174,6 +174,7 @@ class KapitelConfig(ttk.Frame):
             print(f"Erkannte Kapitelanzahl: {len(gefundene_kapitel)}")
             self.kapitel_liste = gefundene_kapitel
             self.kapitel_daten = {k: {} for k in gefundene_kapitel}
+            self.kapitel_trenner = kapitel_trenner 
             self.index = 0
 
             self._load_current_kapitel()
@@ -464,6 +465,7 @@ class KapitelConfig(ttk.Frame):
         daten = {
             "kapitel_liste": self.kapitel_liste,
             "kapitel_daten": daten_kapitel_daten_neu,
+            "Kapitel_trenner": self.kapitel_trenner
         }
 
         erfolg = False

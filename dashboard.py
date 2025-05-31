@@ -715,11 +715,18 @@ class DashBoard(ttk.Frame):
         ttk.Checkbutton(praefix_frame, text="nur Präfix berücksichtigen", variable=nur_pref_var)\
             .grid(row=0, column=2, sticky="w", padx=(5, 0))
 
+         # Neu: Eingabe für Kapitel_trenner
+        ttk.Label(dialog, text="Kapitel-Trenner:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
+        kapitel_trenner_var = tk.StringVar(value="***")  # Beispiel als Standard: Gedankenstrich
+        ttk.Entry(dialog, textvariable=kapitel_trenner_var).grid(row=4, column=1, sticky="ew", padx=10, pady=5)
+
+
         def auswahl_bestaetigen():
             stil = style_var.get()
             nummer = nummer_var.get()
             praefix = praefix_var.get().strip() if nur_pref_var.get() else None
             aufsteigend = aufst_var.get()
+            kapitel_trenner = kapitel_trenner_var.get()
 
             if not stil:
                 messagebox.showwarning("Auswahl erforderlich", "Bitte einen Stil auswählen.")
@@ -731,13 +738,14 @@ class DashBoard(ttk.Frame):
 
             dialog.destroy()
 
-            try:
-                self.kapitel_config._create_from_word(stil, self.selected_file.get(), nummer, praefix, aufsteigend)
+            try:                
+                self.kapitel_config._create_from_word(stil, self.selected_file.get(), nummer, praefix, aufsteigend, kapitel_trenner)
             except Exception as e:
                 messagebox.showerror("Fehler", f"Fehler beim Laden der Kapitel:\n{e}")
+       
 
         btn_ok = ttk.Button(dialog, text="Kapitel übernehmen", command=auswahl_bestaetigen)
-        btn_ok.grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 15))
+        btn_ok.grid(row=5, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 15))
         btn_ok.focus_set()
         dialog.bind("<Return>", lambda e: auswahl_bestaetigen())
 

@@ -7,7 +7,9 @@ import tkinter.font as tkFont
 import hashlib
 from collections import defaultdict
 import importlib
+
 import Eingabe.config as config  # Importiere das komplette config-Modul
+from config_editor import ToolTip
 
 def zu_Hex_farbe(rgb):
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
@@ -25,8 +27,7 @@ class AnnotationRenderer:
         self.y_pos = 10
         self.letzte_zeile_y_pos = 10
         self.zeilen_hoehe = 30  # Höhe pro Textzeile (kann dynamisch bestimmt werden)
-        self.canvas_elemente_pro_token = {}
-     
+        self.canvas_elemente_pro_token = {}    
 
     def _pdf_y_position(self, pdf_canvas, y_gui_pos, text_hoehe):
         """Konvertiert GUI-y-Koordinate in PDF-y-Koordinate (invertiert)"""
@@ -75,10 +76,18 @@ class AnnotationRenderer:
 
     def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):  
         
+     
+        # Entscheide, ob Zahlwörter genutzt werden sollen (hier als Flag der Klasse)
+        if getattr(self, 'use_number_words', False) and 'tokenInklZahlwoerter' in element:
+            # Ersetze token temporär im element, damit element_kopie es übernimmt
+            element_kopie = dict(element)  # Kopie, damit Original nicht verändert wird
+            element_kopie["original_token"] = element.get("token", "")
+            element_kopie['token'] = element['tokenInklZahlwoerter']
+                # Kopie des Elements, damit wir das Original nicht verändern
+        else:
+            element_kopie = dict(element)
+        
         print(f"auf_canvas_rendern aufgerufen: index={index}, token={element_kopie.get('token', '')}, ist_PDF={self.ist_PDF}")
-
-        # Kopie des Elements, damit wir das Original nicht verändern
-        element_kopie = dict(element)
 
         # Ignorierte Annotationen aus element_kopie entfernen,
         # damit sie nicht für die Schriftwahl berücksichtigt werden
@@ -130,7 +139,7 @@ class AnnotationRenderer:
             self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
 
         print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
-        self._zeichne_token(canvas, index, element, self.x_pos, self.y_pos, schrift)
+        self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
 
           # Position speichern für späteres Annotation-Update
         self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos}
@@ -183,8 +192,6 @@ class AnnotationRenderer:
       
     def schrift_holen(self, element=None):
         importlib.reload(config)
-
-        print(f"verfügbare Schriften: {tkFont.families()}")
 
         betonung = element.get("betonung", None) if element else None    
         person = element.get("person", None) if element else None
@@ -606,10 +613,10 @@ class AnnotationRenderer:
         tag = f'token_{index}'
 
         if not self.ist_PDF:
-            # schrift ist ein Tuple: (tkFont.Font, (r, g, b))
             schriftobjekt, schriftfarbe = schrift
 
-            canvas.create_text(
+            # Text zeichnen
+            text_id = canvas.create_text(
                 x, y_pos,
                 anchor='nw',
                 text=token,
@@ -617,6 +624,7 @@ class AnnotationRenderer:
                 fill=schriftfarbe,
                 tags=(tag,)
             )
+
             self.Durchschnittsbreite = schriftobjekt.measure("M")
             w = schriftobjekt.measure(token)
             h = schriftobjekt.metrics("linespace")
