@@ -94,7 +94,7 @@ MARKER_BREITE_LANG = 5       # Breite für lange Marker
 MARKER_OFFSET_Y = 7          # Vertikale Verschiebung für Marker
 MARKER_OFFSET_Y_SPANNUNG = 5 # Y-Versatz bei Spannung
 GEDANKEN_STRICHMUSTER = (8, 4)   # Muster für Gedankenlinien (Strich, Lücke)
-LINIENBREITE_STANDARD = 1        # Standardbreite für Linien
+LINIENBREITE_STANDARD = 3       # Standardbreite für Linien
 
 # Farben für Annotationen
 FARBE_STANDARD = (25, 25, 25)             # Standardfarbe (Text)
