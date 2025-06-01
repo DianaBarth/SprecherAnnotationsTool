@@ -282,7 +282,20 @@ class AnnotationenEditor(ttk.Frame):
                     json_dict[aufgabenname] = neuer_wert
                 elif aufgabenname in json_dict:
                     del json_dict[aufgabenname]
-                self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
+
+                if aufgabenname.lower() == "position":
+                    print(f"Position geändert bei Token {idx}, komplettes Neu-Rendern wird ausgeführt.")
+                    # Kompletten Text neu rendern:
+                    self.canvas.delete("all")
+                    self.renderer.x_pos = config.LINKER_SEITENRAND
+                    self.renderer.y_pos = config.LINKER_SEITENRAND
+                    self.renderer.einrueckung_aktiv = False  
+                    for i, elem in enumerate(self.json_dicts):
+                        naechstes_element = self.json_dicts[i + 1] if i + 1 < len(self.json_dicts) else None
+                        self.renderer.rendern(index=i, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=elem)
+                else:
+                    self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
+            
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
@@ -342,9 +355,7 @@ class AnnotationenEditor(ttk.Frame):
         self._lade_json_daten()
 
     def _exportiere_pdf(self):
-        import os
-        from reportlab.pdfgen import canvas as pdfcanvas
-
+      
         hauptkapitel = self.kapitel_liste[self.current_hauptkapitel_index]
         abschnitt = self.abschnitt_combo.get() or f"abschnitt_{self.current_abschnitt_index}"
         dateiname = f"{hauptkapitel}_{abschnitt}.pdf".replace(" ", "_").replace("/", "_")

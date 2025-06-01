@@ -83,9 +83,9 @@ ZEILENABSTAND = 5                  # Abstand zwischen logischen Zeilen
 SPANNUNG_NEIGUNG = 3               # Neigungswert für Spannungsverlauf
 
 # Schriftarten
-SCHRIFTART_STANDARD = 'Cascadia Code'	# Schriftart für normalen Text
-SCHRIFTART_UEBERSCHRIFT = 'Source Code Pro'	# Schriftart für Überschrift
-SCHRIFTART_LEGENDE = 'Cascadia Code'	# Schriftart für Überschrift
+SCHRIFTART_STANDARD = 'Calibri'
+SCHRIFTART_UEBERSCHRIFT ='Arial' 
+SCHRIFTART_LEGENDE = 'Calibri'	
 
 
 # Marker-Einstellungen

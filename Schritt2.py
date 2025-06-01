@@ -156,8 +156,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             "KapitelNummer": kapitelname,
             "WortNr": range(1, len(woerter_und_satzzeichen) + 1),
             "token": woerter_und_satzzeichen,
-            "tokenInklZahlwoerter": tokenInklZahlwoerter,
-            "Position": "Normal",
+            "tokenInklZahlwoerter": tokenInklZahlwoerter,            
             "annotation": annotationen, 
             })
 

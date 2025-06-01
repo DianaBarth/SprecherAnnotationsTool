@@ -29,10 +29,9 @@ class AnnotationRenderer:
         self.letzte_zeile_y_pos =config.LINKER_SEITENRAND
         self.canvas_elemente_pro_token = {}    
         self.zeilen_hoehe = config.ZEILENHOEHE
-        
-        # Liste von (start_index, ende_index) tuples
-        self.einrueckungsbereiche = []
-
+        self.einrueckung_aktiv = False
+        self.einrueckung_start_x = config.LINKER_SEITENRAND + 50  # z.B. 50 Punkte eingerückt
+   
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
         """
         Berechnet die korrekte Y-Position für PDF, da PDF-Seiten bei (0,0) unten beginnen.
@@ -47,18 +46,6 @@ class AnnotationRenderer:
         y_pdf = seiten_hoehe - y_rel - text_hoehe
         return y_pdf
         
-    def add_einrueckungsbereich(self, start_index, ende_index):
-        self.einrueckungsbereiche.append((start_index, ende_index))
-        print(f"Einrückungsbereich hinzugefügt: {start_index} bis {ende_index}")
-
-    def clear_einrueckungsbereiche(self):
-        self.einrueckungsbereiche = []
-        print("Alle Einrückungsbereiche entfernt")
-
-    def _ist_eingerueckt(self, index):
-        # Prüfe, ob index in irgendeinem Bereich liegt
-        return any(start <= index < ende for (start, ende) in self.einrueckungsbereiche)
-
     def _berechne_zeichenoffsets(self, canvas, token, schrift, ist_pdf):
         if ist_pdf:
             schriftname, schriftgroesse, _ = schrift
@@ -72,7 +59,6 @@ class AnnotationRenderer:
         for b in zeichenbreiten[:-1]:
             offsets.append(offsets[-1] + b)
         return zeichenbreiten, offsets
-
 
     def positionen_zuruecksetzen(self):
         self.x_pos =config.LINKER_SEITENRAND 
@@ -115,46 +101,49 @@ class AnnotationRenderer:
             self.max_pdf_hoehe = pdf_canvas._pagesize[1] - 50        
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
-
     def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):
-        # Entscheide, ob Zahlwörter genutzt werden sollen (hier als Flag der Klasse)
+        # Zahlwörter ersetzen falls aktiviert
         if getattr(self, 'use_number_words', False) and 'tokenInklZahlwoerter' in element:
-            element_kopie = dict(element)  # Kopie, damit Original nicht verändert wird
+            element_kopie = dict(element)
             element_kopie["original_token"] = element.get("token", "")
             element_kopie['token'] = element['tokenInklZahlwoerter']
         else:
             element_kopie = dict(element)
 
-        print(f"auf_canvas_rendern aufgerufen: index={index}, token={element_kopie.get('token', '')}, ist_PDF={self.ist_PDF}")
+        token = element_kopie.get('token', '')
+        annotation = element_kopie.get("annotation", {})
 
-        # Ignorierte Annotationen aus element_kopie entfernen,
-        # damit sie nicht für die Schriftwahl berücksichtigt werden
+        print(f"auf_canvas_rendern aufgerufen: index={index}, token='{token}', ist_PDF={self.ist_PDF}")
+
+        # Ignorierte Annotationen entfernen
         for key in self.ignorierte_annotationen:
             if key in element_kopie and element_kopie[key]:
-                print(f"Token '{element_kopie.get('token', '')}' Annotation '{key}' wird ignoriert - Zeichne normal")
+                print(f"Token '{token}' Annotation '{key}' wird ignoriert - Zeichne normal")
                 element_kopie[key] = None
 
-        token = element_kopie.get('token', '')
-        annotation = element_kopie.get("annotation", [])
+        # Prüfe, ob Einrückung startet oder endet
+        positions_annot = element_kopie.get("position", {})
+        if positions_annot == "EinrückungsStart":
+            print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
+            self.einrueckung_aktiv = True
+        elif positions_annot == "EinrückungsEnde":
+            print(f"Einrückung beendet bei Token '{token}' (Index {index})")
+            self.einrueckung_aktiv = False
 
-        # Entscheide, ob eingerückt wird
-        if self._ist_eingerueckt(index):
-            linker_rand_aktuell = self.eingezogener_rand
+        # Setze aktuelle x-Position je nach Einrückungsstatus
+        if self.einrueckung_aktiv:
+            aktuelle_x = self.einrueckung_start_x
         else:
-            linker_rand_aktuell = self.standard_linker_rand
+            aktuelle_x = config.LINKER_SEITENRAND
 
-
-        # harter Zeilenumbruch
+        # Harter Zeilenumbruch: Token leer oder Annotation "zeilenumbruch"
         if token == '' or 'zeilenumbruch' in annotation:
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
-            self.x_pos = linker_rand_aktuell
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
+            # x_pos am Zeilenanfang neu setzen
+            self.x_pos = aktuelle_x
             return
-
-        # Sicherstellen, dass x_pos nicht links vom Rand ist
-        if self.x_pos < linker_rand_aktuell:
-            self.x_pos = linker_rand_aktuell
 
         schrift = self.schrift_holen(element_kopie)
 
@@ -170,54 +159,57 @@ class AnnotationRenderer:
             text_hoehe = schriftgroesse
             print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
 
-        # Prüfen, ob das nächste Token ein Satzzeichen ohne Space ist
+        # Prüfen, ob nächstes Token Satzzeichen ohne Space ist
         if not self.ist_PDF:
-            extra_space = 10  # GUI: kleiner Abstand, z.B. 1 Pixel
+            extra_space = 10
         else:
-            extra_space = 2  # PDF: ebenfalls klein, z.B. 1 Punkt
+            extra_space = 2
 
         try:
-            naechste_annotation = naechstes_element.get("annotation", [])
+            naechste_annotation = naechstes_element.get("annotation", {})
             if "satzzeichenOhneSpace" in naechste_annotation:
                 extra_space = 0
         except (IndexError, AttributeError):
             pass
 
-        # Seitenumbruch (nur bei PDF)
+        # Zeilenumbruch prüfen und ggf. ausführen (PDF)
         if self.ist_PDF:
-            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={config.MAX_ZEILENBREITE}") 
-            # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
+            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={config.MAX_ZEILENBREITE}")
             if self.x_pos + text_breite + extra_space > config.MAX_ZEILENBREITE:
-                print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) max_breite ({config.MAX_ZEILENBREITE})")
-                self.x_pos = config.LINKER_SEITENRAND
+                print(f"Zeilenumbruch erzwungen, da {self.x_pos}+{text_breite}+{extra_space} > {config.MAX_ZEILENBREITE}")
                 self.y_pos += self.zeilen_hoehe
                 self.letzte_zeile_y_pos = self.y_pos
+                # x_pos neu setzen je nach Einrückung
+                self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
-            seitenhoehe = 792  # z.B. DIN A4 Hochformat in Punkten, ggf. anpassen
+            seitenhoehe = 792
             rand_unten = 40
             if self.y_pos + self.zeilen_hoehe > seitenhoehe - rand_unten:
                 print(f"Seitenumbruch erzwungen bei y_pos={self.y_pos}")
                 canvas.showPage()
-                self.x_pos =  config.LINKER_SEITENRAND
-                self.y_pos = 40  # Startposition unter Rand
+                self.x_pos = config.LINKER_SEITENRAND
+                self.y_pos = 40
                 self.letzte_zeile_y_pos = self.y_pos
         else:
-            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={self.max_breite}") 
-            # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
+            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={self.max_breite}")
             if self.x_pos + text_breite + extra_space > self.max_breite:
-                print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) max_breite ({self.max_breite})")
-                self.x_pos = config.LINKER_SEITENRAND
+                print(f"Zeilenumbruch erzwungen, da {self.x_pos}+{text_breite}+{extra_space} > {self.max_breite}")
                 self.y_pos += self.zeilen_hoehe
                 self.letzte_zeile_y_pos = self.y_pos
+                # x_pos neu setzen je nach Einrückung
+                self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
+        # Setze aktuelle x_pos wenn noch am Anfang der Zeile
+        if self.x_pos < aktuelle_x:
+            self.x_pos = aktuelle_x
 
         print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
         self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
 
-        # Position speichern für späteres Annotation-Update
+        # Position speichern
         self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos}
 
-        # Position für nächstes Token aktualisieren
+        # x_pos für nächstes Token aktualisieren
         self.x_pos += text_breite + extra_space
         print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
 
