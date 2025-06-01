@@ -497,36 +497,45 @@ class AnnotationRenderer:
                 canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius, punkt_x + punkt_radius, punkt_y + punkt_radius, fill=zu_Hex_farbe(farbe), outline="", tags=tag)
 
     def _zeichne_ich(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=None):
-        # ähnlich _zeichne_ik aber mit anderer Farbe
-        farbe = config.FARBE_ICH
-        punkt_radius = 0.8
+        farbe = config.FARBE_UNTERSTREICHUNG
+        unterstrich_y_pos = y_pos + oy + h + config.ZEILENABSTAND * 0.1
+
         if numerisch:
-            zeichenbreite = self.Durchschnittsbreite
-            for i in range(len(token)):
-                punkt_x = x + i * zeichenbreite
-                punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
-                if self.ist_PDF:
-                    canvas.setFillColor(zu_PDF_farbe(farbe))
-                    canvas.circle(punkt_x, punkt_y, punkt_radius, fill=1, stroke=0)
-                else:
-                    canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius, punkt_x + punkt_radius, punkt_y + punkt_radius, fill=zu_Hex_farbe(farbe), outline="", tags=tag)
+            if self.ist_PDF:
+                canvas.setStrokeColor(zu_PDF_farbe(farbe))
+                canvas.setLineWidth(linien_breite)
+                canvas.line(x, unterstrich_y_pos, x + len(token) * self.Durchschnittsbreite, unterstrich_y_pos)
+            else:
+                canvas.create_line(
+                    x, unterstrich_y_pos,
+                    x + len(token) * self.Durchschnittsbreite, unterstrich_y_pos,
+                    fill=zu_Hex_farbe(farbe),
+                    width=linien_breite,
+                    tags=tag
+                )
             return
 
-        ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ich"]
+        ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
         if igNr >= len(ig_indices):
             return
 
         i = ig_indices[igNr]
-        zeichenbreite = self.Durchschnittsbreite
-        for j in range(3):
-            punkt_x = x + (i + j) * zeichenbreite + zeichenbreite / 2
-            punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
-            if self.ist_PDF:
-                canvas.setFillColor(zu_PDF_farbe(farbe))
-                canvas.circle(punkt_x, punkt_y, punkt_radius, fill=1, stroke=0)
-            else:
-                canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius, punkt_x + punkt_radius, punkt_y + punkt_radius, fill=zu_Hex_farbe(farbe), outline="", tags=tag)
-        
+        start_x = x + i * self.Durchschnittsbreite
+        end_x = start_x + 2 * self.Durchschnittsbreite
+
+        if self.ist_PDF:
+            canvas.setStrokeColor(zu_PDF_farbe(farbe))
+            canvas.setLineWidth(linien_breite)
+            canvas.line(start_x, unterstrich_y_pos, end_x, unterstrich_y_pos)
+        else:
+            canvas.create_line(
+                start_x, unterstrich_y_pos,
+                end_x, unterstrich_y_pos,
+                fill=zu_Hex_farbe(farbe),
+                width=linien_breite,
+                tags=tag
+            )
+
 
     def _zeichne_hartkodiert(self, canvas, aufgabenname, token, wert, x, y_pos, w, h, oy, linien_breite, tag=""):
         if aufgabenname == "pause":
@@ -653,12 +662,20 @@ class AnnotationRenderer:
 
     def annotation_aendern(self, canvas, wortnr, aufgabenname, element):
         tag = f'token_{wortnr}'
-        canvas.delete(tag)  # Nur diese eine Aufgabe löschen
+        canvas.delete(tag)
         tag_aufgabe = f'token_{wortnr}_{aufgabenname}'
-        canvas.delete(tag_aufgabe)  # Nur diese eine Aufgabe löschen
+        canvas.delete(tag_aufgabe)
 
         x = self.canvas_elemente_pro_token[wortnr]["x"]
         y = self.canvas_elemente_pro_token[wortnr]["y"]
 
-        schrift = self.schrift_holen(element)
-        self._zeichne_token(canvas, wortnr, element, x, y, schrift)
+        # Element kopieren, damit Original unverändert bleibt
+        element_kopie = dict(element)
+
+        # Wenn use_number_words aktiv und tokenInklZahlwoerter vorhanden, dann token überschreiben
+        if getattr(self, "use_number_words", False) and 'tokenInklZahlwoerter' in element_kopie:
+            element_kopie['original_token'] = element_kopie.get('token', '')
+            element_kopie['token'] = element_kopie['tokenInklZahlwoerter']
+
+        schrift = self.schrift_holen(element_kopie)
+        self._zeichne_token(canvas, wortnr, element_kopie, x, y, schrift)

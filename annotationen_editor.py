@@ -40,18 +40,29 @@ class AnnotationenEditor(ttk.Frame):
      
     def _lade_alle_kapiteldateien(self, kapitel):
         merge_ordner = config.GLOBALORDNER["merge"]
+        manuell_ordner = config.GLOBALORDNER["manuell"]
         pattern = re.compile(rf"^{kapitel}_(\d+)_annotierungen\.json$")
-        dateien = []
+        
+        dateien_dict = {}
 
+        # Zuerst alle manuell-Dateien einsammeln
+        for dateiname in os.listdir(manuell_ordner):
+            match = pattern.match(dateiname)
+            if match:
+                idx = int(match.group(1))
+                dateien_dict[idx] = os.path.join(manuell_ordner, dateiname)
+
+        # Dann merge-Dateien nur ergänzen, wenn Index noch nicht drin ist
         for dateiname in os.listdir(merge_ordner):
             match = pattern.match(dateiname)
             if match:
                 idx = int(match.group(1))
-                dateien.append((idx, os.path.join(merge_ordner, dateiname)))
+                if idx not in dateien_dict:
+                    dateien_dict[idx] = os.path.join(merge_ordner, dateiname)
 
-        dateien.sort()  # nach Index sortieren
-        return [pfad for _, pfad in dateien]
-    
+        # Nach Index sortieren und Pfade zurückgeben
+        return [dateien_dict[idx] for idx in sorted(dateien_dict.keys())]
+
 
     def _lade_json_daten(self):
         aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
