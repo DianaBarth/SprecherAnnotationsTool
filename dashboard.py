@@ -380,32 +380,15 @@ class DashBoard(ttk.Frame):
             messagebox.showwarning("Hinweis", "Keine Kapitel ausgewählt!")
             return
 
-        fehlende_kapitel = []
-
         for kapitel in ausgewaehlte_kapitel:
-            dateipfad = os.path.join(config.GLOBALORDNER["merge"], f"{kapitel}_gesamt.json")
-
-            # Prüfung: existiert die Datei?
-            if not os.path.exists(dateipfad):
-                fehlende_kapitel.append(kapitel)
-                continue
-
             tab_frame = ttk.Frame(self.notebook)
-            editor = AnnotationenEditor(tab_frame, self.notebook, dateipfad, self.master.config_editor)
+            editor = AnnotationenEditor(tab_frame, self.notebook, kapitel, self.master.config_editor)
             editor.pack(expand=True, fill="both")
             self.notebook.add(tab_frame, text=kapitel)
-
-            # Falls Kapitel fehlen, Hinweis anzeigen
-        if fehlende_kapitel:
-            messagebox.showwarning(
-                "Fehlende Dateien",
-                "Für folgende Kapitel wurden keine JSON-Dateien gefunden:\n\n" +
-                "\n".join(fehlende_kapitel)
-            )
-        else:
             # Optional: ersten neuen Tab aktivieren
-            if ausgewaehlte_kapitel:
-                self.notebook.select(len(self.notebook.tabs()) - len(ausgewaehlte_kapitel))
+            
+        if ausgewaehlte_kapitel:
+            self.notebook.select(len(self.notebook.tabs()) - len(ausgewaehlte_kapitel))
 
     def _build_widgets(self):
         # Haupt-Grid: 2 Spalten (Buttons rechts, Hauptinhalt links)

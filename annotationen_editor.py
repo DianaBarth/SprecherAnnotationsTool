@@ -8,66 +8,113 @@ import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 
 class AnnotationenEditor(ttk.Frame):
-    def __init__(self, parent, notebook, dateipfad_json,config_editor ):
+    def __init__(self, parent, notebook, kapitel ,config_editor ):
         super().__init__(parent)
-        self.notebook = notebook
-        self.dateipfad_json = dateipfad_json
-        self.config_editor = config_editor 
+        self.kapitel = kapitel
+        self.kapitel_pfade = self._lade_alle_kapiteldateien(kapitel)
+
+        if not self.kapitel_pfade:
+            messagebox.showerror("Fehler", f"Keine Annotationsdateien für Kapitel '{kapitel}' gefunden.")
+            return
+        else:
+            print("Pfadliste:", self.kapitel_pfade)
+
+        self.current_index = 0  # Starte mit erster Datei
+        self.config_editor = config_editor
         self.renderer = AnnotationRenderer(max_breite=680)
         self.json_dicts = []
-        self.filter_vars = {}  # <== Zustand der Filterbuttons
+        self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)
+
         self._lade_json_daten()
         self._erstelle_widgets()
      
 
-    def _lade_json_daten(self):
-        with open(self.dateipfad_json, 'r', encoding='utf-8') as f:
-            self.json_dicts = json.load(f)
+    def _lade_alle_kapiteldateien(self, kapitel):
+        merge_ordner = config.GLOBALORDNER["merge"]
+        pattern = re.compile(rf"^{kapitel}_(\d+)_annotierungen\.json$")
+        dateien = []
 
-    def lade_kapitel_konfig(self, pfad):
-        with open(pfad, "r", encoding="utf-8") as f:
-            return json.load(f)
+        for dateiname in os.listdir(merge_ordner):
+            match = pattern.match(dateiname)
+            if match:
+                idx = int(match.group(1))
+                dateien.append((idx, os.path.join(merge_ordner, dateiname)))
+
+        dateien.sort()  # nach Index sortieren
+        return [pfad for _, pfad in dateien]
+
+    def _lade_json_daten(self):
+        aktueller_pfad = self.kapitel_pfade[self.current_index]
+        with open(aktueller_pfad, 'r', encoding='utf-8') as f:
+            self.json_dicts = json.load(f)
+        self.dateipfad_json = aktueller_pfad
 
     def _erstelle_widgets(self):
         self.grid(row=0, column=0, sticky="nsew")
         self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=0, minsize=250)
-        self.rowconfigure(0, weight=0)  # Button-Leiste
-        self.rowconfigure(1, weight=1)  # Hauptinhalt
+        self.rowconfigure(4, weight=1)  # Canvas-Bereich bekommt den meisten Platz
 
-        # Oben: Button-Leiste
-        top_frame = ttk.Frame(self)
-        top_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
-        top_frame.columnconfigure(0, weight=1)
+        # 1. Zeile: dateiauswahl + speichern button
+        top_frame_1 = ttk.Frame(self)
+        top_frame_1.grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
+        top_frame_1.columnconfigure(0, weight=0)
+        top_frame_1.columnconfigure(1, weight=0)
+
+        self.dateiauswahl = ttk.Combobox(
+            top_frame_1,
+            values=[f"{self.kapitel}_{i+1}" for i in range(len(self.kapitel_pfade))],
+            state="readonly"
+        )
+        self.dateiauswahl.current(self.current_index)
+        self.dateiauswahl.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        self.dateiauswahl.bind("<<ComboboxSelected>>", self._wechsel_datei)
+
+        speichern_button = ttk.Button(top_frame_1, text="JSON speichern", command=self._json_speichern)
+        speichern_button.grid(row=0, column=1, sticky="w")
+
+        # 2. Zeile: zahlwoerter_checkbox
+        top_frame_2 = ttk.Frame(self)
+        top_frame_2.grid(row=1, column=0, sticky="w", padx=5, pady=(5, 0))
 
         zahlwoerter_checkbox = ttk.Checkbutton(
-            top_frame,
+            top_frame_2,
             text="Verwende Zahlwörter",
             variable=self.use_number_words_var,
-            command=self._zeichne_alle_tokens  # Bei Umschalten neu zeichnen
+            command=self._zeichne_alle_tokens
         )
-        zahlwoerter_checkbox.pack(side='left', padx=5)
+        zahlwoerter_checkbox.grid(row=0, column=0, sticky="w")
 
+        # 3. Zeile: Annotationen ausblenden für
+        top_frame_3 = ttk.Frame(self)
+        top_frame_3.grid(row=2, column=0, sticky="w", padx=5, pady=(10, 0))
 
-        speichern_button = ttk.Button(top_frame, text="JSON speichern", command=self._json_speichern)
-        speichern_button.pack(side='left', padx=5)
+        filter_label = ttk.Label(top_frame_3, text="Annotationen ausblenden für:")
+        filter_label.grid(row=0, column=0, sticky="w", padx=(0, 10))
 
-        # 🔽 Filter-Leiste
-        filter_label = ttk.Label(top_frame, text="Annotationen ausblenden für:")
-        filter_label.pack(side='left', padx=10)
-
+        col = 1
         for aufgabenname in config.KI_AUFGABEN.values():
             var = tk.BooleanVar(value=False)
             self.filter_vars[aufgabenname] = var
             btn = ttk.Checkbutton(
-                top_frame, text=aufgabenname, variable=var, command=self._zeichne_alle_tokens
+                top_frame_3, text=aufgabenname, variable=var, command=self._zeichne_alle_tokens
             )
-            btn.pack(side='left', padx=2)
+            btn.grid(row=0, column=col, sticky="w", padx=2)
+            col += 1
+
+        # 4. Zeile: frei (leer)
+        # Einfach eine leere Zeile als Abstand (kann ggf. auch mit padding gemacht werden)
+
+        # 5. Zeile: Canvas + Annotationen (links + rechts)
+        canvas_frame = ttk.Frame(self)
+        canvas_frame.grid(row=4, column=0, sticky="nsew", padx=5, pady=5)
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.columnconfigure(1, weight=1)
+        canvas_frame.rowconfigure(0, weight=1)
 
         # Linker Bereich: Canvas + Scrollbar
-        linker_frame = tk.Frame(self)
-        linker_frame.grid(row=1, column=0, sticky='nsew')
+        linker_frame = ttk.Frame(canvas_frame)
+        linker_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
         linker_frame.columnconfigure(0, weight=1)
         linker_frame.rowconfigure(0, weight=1)
 
@@ -80,8 +127,8 @@ class AnnotationenEditor(ttk.Frame):
         self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         # Rechter Bereich: Annotationen
-        rechts_frame = tk.Frame(self)
-        rechts_frame.grid(row=1, column=1, sticky='nsew')
+        rechts_frame = ttk.Frame(canvas_frame)
+        rechts_frame.grid(row=0, column=1, sticky='nsew', padx=(5, 0))
         rechts_frame.columnconfigure(0, weight=1)
         rechts_frame.rowconfigure(0, weight=1)
 
@@ -231,3 +278,10 @@ class AnnotationenEditor(ttk.Frame):
         else:
             self.renderer.ignorierte_annotationen.add(name)
         self._zeichne_alle_tokens()
+
+    def _wechsel_datei(self, event=None):
+        neue_index = self.dateiauswahl.current()
+        if neue_index != self.current_index:
+            self.current_index = neue_index
+            self._lade_json_daten()
+            self._zeichne_alle_tokens()
