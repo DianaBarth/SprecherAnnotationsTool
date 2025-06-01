@@ -126,9 +126,13 @@ class AnnotationRenderer:
         if positions_annot == "EinrückungsStart":
             print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
             self.einrueckung_aktiv = True
+            self.y_pos += self.zeilen_hoehe  # ← hier der automatische Zeilenumbruch
+            self.x_pos = self.einrueckung_start_x
         elif positions_annot == "EinrückungsEnde":
             print(f"Einrückung beendet bei Token '{token}' (Index {index})")
             self.einrueckung_aktiv = False
+            self.y_pos += self.zeilen_hoehe  # optional, wenn du danach auch in neue Zeile willst
+            self.x_pos = config.LINKER_SEITENRAND
 
         # Setze aktuelle x-Position je nach Einrückungsstatus
         if self.einrueckung_aktiv:
