@@ -8,28 +8,36 @@ import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 
 class AnnotationenEditor(ttk.Frame):
-    def __init__(self, parent, notebook, kapitel ,config_editor ):
+    def __init__(self, parent, notebook, kapitel_config):
         super().__init__(parent)
-        self.kapitel = kapitel
-        self.kapitel_pfade = self._lade_alle_kapiteldateien(kapitel)
+        self.notebook = notebook
+        self.kapitel_config = kapitel_config
 
-        if not self.kapitel_pfade:
-            messagebox.showerror("Fehler", f"Keine Annotationsdateien für Kapitel '{kapitel}' gefunden.")
-            return
+        # Kapitel-Liste aus config_editor holen
+        if not kapitel_config.kapitel_liste and kapitel_config.kapitel_daten:
+            self.kapitel_liste = list(kapitel_config.kapitel_daten.keys())
         else:
-            print("Pfadliste:", self.kapitel_pfade)
+             self.kapitel_liste = kapitel_config.kapitel_liste 
+        
+        # Start mit erstem Hauptkapitel und erstem Abschnitt
+        self.current_hauptkapitel_index = 0
+        self.current_abschnitt_index = 0
 
-        self.current_index = 0  # Starte mit erster Datei
-        self.config_editor = config_editor
+        # Initiale Kapitelpfade noch leer, werden beim Laden gesetzt
+        self.kapitel_pfade = []
+
+        # Initialisiere weitere Variablen
         self.renderer = AnnotationRenderer(max_breite=680)
         self.json_dicts = []
         self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)
 
-        self._lade_json_daten()
+        # Widgets bauen
         self._erstelle_widgets()
-     
 
+        # Lade Pfade und JSON-Daten für das erste Hauptkapitel und ersten Abschnitt
+        self._lade_kapitel_abschnitte()
+     
     def _lade_alle_kapiteldateien(self, kapitel):
         merge_ordner = config.GLOBALORDNER["merge"]
         pattern = re.compile(rf"^{kapitel}_(\d+)_annotierungen\.json$")
@@ -43,36 +51,63 @@ class AnnotationenEditor(ttk.Frame):
 
         dateien.sort()  # nach Index sortieren
         return [pfad for _, pfad in dateien]
+    
 
     def _lade_json_daten(self):
-        aktueller_pfad = self.kapitel_pfade[self.current_index]
+        aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
+        print(f"Lade Daten für: {aktueller_pfad}")
         with open(aktueller_pfad, 'r', encoding='utf-8') as f:
             self.json_dicts = json.load(f)
         self.dateipfad_json = aktueller_pfad
 
+    def _lade_kapitel_abschnitte(self):
+        kapitelname = self.kapitel_liste[self.current_hauptkapitel_index]
+
+        self.kapitel_pfade = self._lade_alle_kapiteldateien(kapitelname)
+
+        abschnittswerte = [f"Abschnitt {i+1}" for i in range(len(self.kapitel_pfade))]
+        self.abschnitt_combo['values'] = abschnittswerte
+
+        if abschnittswerte:
+            self.abschnitt_combo.current(0)
+            self.current_abschnitt_index = 0
+            self._lade_json_daten()
+        else:
+            # Kein Abschnitt vorhanden: Auswahl zurücksetzen, ggf. Daten leeren
+            self.abschnitt_combo.set('')
+            self.json_dicts = []
+            self.canvas.delete('all')
+            self.default_annotation_label.grid()
+
     def _erstelle_widgets(self):
         self.grid(row=0, column=0, sticky="nsew")
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(4, weight=1)  # Canvas-Bereich bekommt den meisten Platz
 
-        # 1. Zeile: dateiauswahl + speichern button
-        top_frame_1 = ttk.Frame(self)
-        top_frame_1.grid(row=0, column=0, sticky="w", padx=5, pady=(5, 0))
-        top_frame_1.columnconfigure(0, weight=0)
-        top_frame_1.columnconfigure(1, weight=0)
+        # 1. Zeile: Hauptkapitel Auswahl + Speichern-Button
+        top_frame = ttk.Frame(self)
+        top_frame.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        top_frame.columnconfigure(0, weight=0)
+        top_frame.columnconfigure(1, weight=0)
 
-        self.dateiauswahl = ttk.Combobox(
-            top_frame_1,
-            values=[f"{self.kapitel}_{i+1}" for i in range(len(self.kapitel_pfade))],
-            state="readonly"
-        )
-        self.dateiauswahl.current(self.current_index)
-        self.dateiauswahl.grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.dateiauswahl.bind("<<ComboboxSelected>>", self._wechsel_datei)
+        # Combobox Hauptkapitel
+        self.hauptkapitel_combo = ttk.Combobox(top_frame, values=self.kapitel_liste, state="readonly")
+        self.hauptkapitel_combo.current(self.current_hauptkapitel_index)
+        self.hauptkapitel_combo.grid(row=0, column=0, padx=(0,10))
+        self.hauptkapitel_combo.bind("<<ComboboxSelected>>", self._hauptkapitel_gewechselt)
 
-        speichern_button = ttk.Button(top_frame_1, text="JSON speichern", command=self._json_speichern)
-        speichern_button.grid(row=0, column=1, sticky="w")
 
+        self.abschnitt_combo = ttk.Combobox(top_frame, values=[], state="readonly")
+        if self.abschnitt_combo['values']:
+            self.abschnitt_combo.current(self.current_abschnitt_index)
+        else:
+            self.abschnitt_combo.set('')
+        self.abschnitt_combo.grid(row=0, column=1)
+        self.abschnitt_combo.bind("<<ComboboxSelected>>", self._abschnitt_gewechselt)
+
+
+        speichern_button = ttk.Button(top_frame, text="JSON speichern", command=self._json_speichern)
+        speichern_button.grid(row=0, column=3)
+          
         # 2. Zeile: zahlwoerter_checkbox
         top_frame_2 = ttk.Frame(self)
         top_frame_2.grid(row=1, column=0, sticky="w", padx=5, pady=(5, 0))
@@ -279,9 +314,11 @@ class AnnotationenEditor(ttk.Frame):
             self.renderer.ignorierte_annotationen.add(name)
         self._zeichne_alle_tokens()
 
-    def _wechsel_datei(self, event=None):
-        neue_index = self.dateiauswahl.current()
-        if neue_index != self.current_index:
-            self.current_index = neue_index
-            self._lade_json_daten()
-            self._zeichne_alle_tokens()
+    def _hauptkapitel_gewechselt(self, event):
+        self.current_hauptkapitel_index = self.hauptkapitel_combo.current()
+        self.current_abschnitt_index = 0
+        self._lade_kapitel_abschnitte()
+
+    def _abschnitt_gewechselt(self, event):
+        self.current_abschnitt_index = self.abschnitt_combo.current()
+        self._lade_json_daten()

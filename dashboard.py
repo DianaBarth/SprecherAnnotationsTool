@@ -375,20 +375,11 @@ class DashBoard(ttk.Frame):
 
 
     def kapitel_annotation_editor_starten(self):
-        ausgewaehlte_kapitel = [k for k, v in self.chapter_vars.items() if v.get()]
-        if not ausgewaehlte_kapitel:
-            messagebox.showwarning("Hinweis", "Keine Kapitel ausgewählt!")
-            return
-
-        for kapitel in ausgewaehlte_kapitel:
-            tab_frame = ttk.Frame(self.notebook)
-            editor = AnnotationenEditor(tab_frame, self.notebook, kapitel, self.master.config_editor)
-            editor.pack(expand=True, fill="both")
-            self.notebook.add(tab_frame, text=kapitel)
-            # Optional: ersten neuen Tab aktivieren
-            
-        if ausgewaehlte_kapitel:
-            self.notebook.select(len(self.notebook.tabs()) - len(ausgewaehlte_kapitel))
+        tab_frame = ttk.Frame(self.notebook)
+        editor = AnnotationenEditor(tab_frame, self.notebook, self.kapitel_config)
+        editor.pack(expand=True, fill="both")
+        self.notebook.add(tab_frame, text="Annotationen-Editor")
+        self.notebook.select(len(self.notebook.tabs()) -1)
 
     def _build_widgets(self):
         # Haupt-Grid: 2 Spalten (Buttons rechts, Hauptinhalt links)
