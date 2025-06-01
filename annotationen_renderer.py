@@ -10,6 +10,7 @@ import importlib
 
 import Eingabe.config as config  # Importiere das komplette config-Modul
 from config_editor import ToolTip
+from config_editor import register_custom_font
 
 def zu_Hex_farbe(rgb):
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
@@ -19,20 +20,21 @@ def zu_PDF_farbe(rgb):
 
 
 class AnnotationRenderer:
-    def __init__(self,ignorierte_annotationen=None, ignorier_ig=False, max_breite=680):
+    def __init__(self,ignorierte_annotationen=None, ignorier_ig=False, max_breite=500):
         self.ignorierte_annotationen = set(a.lower() for a in (ignorierte_annotationen or []))
         self.ignorier_ig = ignorier_ig
         self.max_breite = max_breite
         self.x_pos = 10
         self.y_pos = 10
         self.letzte_zeile_y_pos = 10
-        self.zeilen_hoehe = 30  # Höhe pro Textzeile (kann dynamisch bestimmt werden)
         self.canvas_elemente_pro_token = {}    
+        self.zeilen_hoehe = config.ZEILENHOEHE
 
     def _pdf_y_position(self, pdf_canvas, y_gui_pos, text_hoehe):
-        """Konvertiert GUI-y-Koordinate in PDF-y-Koordinate (invertiert)"""
         seiten_hoehe = pdf_canvas._pagesize[1]
-        return seiten_hoehe - y_gui_pos - text_hoehe
+        # Beispiel: y_gui_pos relativ zur aktuellen Seite begrenzen, z.B. modulo Seitenhöhe
+        y_rel = y_gui_pos % seiten_hoehe
+        return seiten_hoehe - y_rel - text_hoehe
 
     def positionen_zuruecksetzen(self):
         self.x_pos = 10
@@ -72,21 +74,19 @@ class AnnotationRenderer:
             return self.auf_canvas_rendern(gui_canvas, index, dict_element,naechstes_dict_element)
         else:
             self.ist_PDF = True
+            self.max_pdf_hoehe = pdf_canvas._pagesize[1] - 50
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
-    def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):  
-        
-     
+
+    def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):
         # Entscheide, ob Zahlwörter genutzt werden sollen (hier als Flag der Klasse)
         if getattr(self, 'use_number_words', False) and 'tokenInklZahlwoerter' in element:
-            # Ersetze token temporär im element, damit element_kopie es übernimmt
             element_kopie = dict(element)  # Kopie, damit Original nicht verändert wird
             element_kopie["original_token"] = element.get("token", "")
             element_kopie['token'] = element['tokenInklZahlwoerter']
-                # Kopie des Elements, damit wir das Original nicht verändern
         else:
             element_kopie = dict(element)
-        
+
         print(f"auf_canvas_rendern aufgerufen: index={index}, token={element_kopie.get('token', '')}, ist_PDF={self.ist_PDF}")
 
         # Ignorierte Annotationen aus element_kopie entfernen,
@@ -94,9 +94,8 @@ class AnnotationRenderer:
         for key in self.ignorierte_annotationen:
             if key in element_kopie and element_kopie[key]:
                 print(f"Token '{element_kopie.get('token', '')}' Annotation '{key}' wird ignoriert - Zeichne normal")
-                element_kopie[key] = None  # Annotation "deaktivieren"
+                element_kopie[key] = None
 
-      
         token = element_kopie.get('token', '')
         annotation = element_kopie.get("annotation", [])
 
@@ -104,8 +103,8 @@ class AnnotationRenderer:
         if token == '' or 'zeilenumbruch' in annotation:
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
             self.x_pos = 10
-            self.y_pos += 2 * self.zeilen_hoehe
-            self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
+            self.y_pos += self.zeilen_hoehe
+            self.letzte_zeile_y_pos = self.y_pos
             return
 
         schrift = self.schrift_holen(element_kopie)
@@ -117,36 +116,53 @@ class AnnotationRenderer:
             text_hoehe = schriftobjekt.metrics("linespace")
             print(f"Textbreite (GUI): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
         else:
-            schriftname, schriftgroesse, schriftfarbe = schrift          
+            schriftname, schriftgroesse, schriftfarbe = schrift
             text_breite = canvas.stringWidth(token, schriftname, schriftgroesse)
             text_hoehe = schriftgroesse
             print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
 
         # Prüfen, ob das nächste Token ein Satzzeichen ohne Space ist
-        extra_space = 2  # z.B. 2 Pixel Abstand nach Token
-        try:            
+        if not self.ist_PDF:
+            extra_space = 1  # GUI: kleiner Abstand, z.B. 1 Pixel
+        else:
+            extra_space = 1  # PDF: ebenfalls klein, z.B. 1 Punkt
+
+        try:
             naechste_annotation = naechstes_element.get("annotation", [])
             if "satzzeichenOhneSpace" in naechste_annotation:
                 extra_space = 0
-        except IndexError:
+        except (IndexError, AttributeError):
             pass
 
         # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
         if self.x_pos + text_breite + extra_space > self.max_breite:
             print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) > max_breite ({self.max_breite})")
             self.x_pos = 10
-            self.y_pos += 2 * self.zeilen_hoehe
-            self.letzte_zeile_y_pos = self.y_pos  # neue Zeile merken
+            self.y_pos += self.zeilen_hoehe
+            self.letzte_zeile_y_pos = self.y_pos
+
+        # Seitenumbruch (nur bei PDF)
+        if self.ist_PDF:
+            seitenhoehe = 792  # z.B. DIN A4 Hochformat in Punkten, ggf. anpassen
+            rand_unten = 40
+            if self.y_pos + self.zeilen_hoehe > seitenhoehe - rand_unten:
+                print(f"Seitenumbruch erzwungen bei y_pos={self.y_pos}")
+                canvas.showPage()
+                self.x_pos = 10
+                self.y_pos = 40  # Startposition unter Rand
+                self.letzte_zeile_y_pos = self.y_pos
 
         print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
         self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
 
-          # Position speichern für späteres Annotation-Update
+        # Position speichern für späteres Annotation-Update
         self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos}
 
-
-        self.x_pos += text_breite + extra_space  # x-Position für das nächste Token aktualisieren
+        # Position für nächstes Token aktualisieren
+        self.x_pos += text_breite + extra_space
         print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
+
+
 
     def get_person_color(self, person):
         print(f"get_person_color aufgerufen mit person={person}")
@@ -243,6 +259,12 @@ class AnnotationRenderer:
                 farbe = zu_Hex_farbe(config.FARBE_STANDARD)
 
         if self.ist_PDF:
+                 # 💡 Font-Dateipfad konstruieren – hier als Beispiel (ggf. dynamisch machen)
+            success = register_custom_font("", familie)
+
+            if not success:
+                print(f"[schrift_holen] ⚠️ Schrift '{familie}' konnte nicht registriert werden – PDF-Fallback wahrscheinlich.")
+           
             print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Farbe: {farbe}")
             return familie, groesse, farbe
         else:
@@ -337,12 +359,11 @@ class AnnotationRenderer:
         farbe = config.FARBE_ATEMPAUSE
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
-            canvas.setLineWidth(config.LINIENBREITE_STANDARD)
-            length = config.MARKER_BREITE_LANG * 2
-            canvas.line(x, y_pos + oy + h + 2, x + length, y_pos + oy + h + 2)
+            canvas.setLineWidth(config.LINIENBREITE_STANDARD)          
+            canvas.line(x, y_pos + oy + h/2, x + w, y_pos + oy+ h/2)
         else:
             farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite, tags=tag)
+            canvas.create_line(x, y_pos + oy +h/2, x + w, y_pos + oy + h/2, fill=farbe_hex, width=linien_breite, tags=tag)
 
     def _zeichne_pause_stau(self, canvas, x, y_pos, w, h, oy, linien_breite, tag=None):
         farbe = config.FARBE_STAUPAUSE
@@ -373,12 +394,11 @@ class AnnotationRenderer:
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
             canvas.setLineWidth(linien_breite)
-            off = w / 2
+            off = w / 10
             canvas.line(x + off, y_pos + oy, x + off + w, y_pos + oy)
             canvas.line(x + off, y_pos + oy + h, x + off + w, y_pos + oy + h)
         else:
-            farbe_hex = zu_Hex_farbe(farbe)
-            canvas.create_line(x, y_pos + oy, x + w, y_pos + oy, fill=farbe_hex, width=linien_breite, tags=tag)
+            farbe_hex = zu_Hex_farbe(farbe)          
             canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite, tags=tag)
 
     def _zeichne_gedanken_pause(self, canvas, x, y_pos, w, h, oy, linien_breite, tag=None):
@@ -581,24 +601,20 @@ class AnnotationRenderer:
                 elif art == "ich":
                     self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag)
 
-   
     def _zeichne_token(self, canvas, index, element, x, y_pos, schrift):
         token = element.get('token', '')
-        base_tag = f'token_{index}'  # Genereller Token-Tag, z.B. für den Text
+        base_tag = f'token_{index}'
 
         betonung = element.get('betonung', None)
         tags = [base_tag]
 
-        # Eindeutiges Tag für diese Annotation (Betonung)
         if betonung:
             annot_tag = f'{base_tag}_betonung_{betonung.lower()}'
             tags.append(annot_tag)
 
         if not self.ist_PDF:
             schriftobjekt, schriftfarbe = schrift
-
-            # Text zeichnen (einmal pro Token, mit Tags in richtiger Reihenfolge)
-            text_id = canvas.create_text(
+            canvas.create_text(
                 x, y_pos,
                 anchor='nw',
                 text=token,
@@ -606,13 +622,11 @@ class AnnotationRenderer:
                 fill=schriftfarbe,
                 tags=tuple(tags)
             )
-
             self.Durchschnittsbreite = schriftobjekt.measure("M")
             w = schriftobjekt.measure(token)
             h = schriftobjekt.metrics("linespace")
             marker_y = y_pos
         else:
-            # PDF-Fall (unverändert)
             pdf_schriftname, pdf_schriftgroesse, schriftfarbe = schrift
             y_pdf = self._pdf_y_position(canvas, y_pos, pdf_schriftgroesse)
             canvas.setFont(pdf_schriftname, pdf_schriftgroesse)
@@ -625,12 +639,13 @@ class AnnotationRenderer:
             h = pdf_schriftgroesse
             marker_y = y_pdf
 
+            print(f"[PDF] Token #{index} '{token}' bei Position ({x:.1f}, {y_pdf:.1f}), Größe: ({w:.1f}x{h})")
+
         linien_breite = config.LINIENBREITE_STANDARD
 
         if not isinstance(element, dict):
             return
 
-        # Für jede Aufgabe (Annotation) eine eigene Zeichnung mit eigenem Tag
         for aufgabenname in config.KI_AUFGABEN.values():
             marker_wert = element.get(aufgabenname)
             if marker_wert is None:
@@ -639,7 +654,6 @@ class AnnotationRenderer:
             aufgaben_id = self._get_aufgaben_id_by_name(aufgabenname)
             annot_liste = config.AUFGABEN_ANNOTATIONEN.get(aufgaben_id, [])
 
-            # Eindeutiges Tag für diese Annotation
             annot_tag = f'{base_tag}_{aufgabenname}'
 
             for annot in annot_liste:
@@ -647,7 +661,10 @@ class AnnotationRenderer:
                 if name is not None and name != marker_wert:
                     continue
 
-                oy = (h * 0.2) if aufgabenname == "ig" else (-h * 0.8)
+                if self.ist_PDF:
+                    oy = -h * 0.2 if aufgabenname == "ig" else h * 0.8
+                else:
+                    oy = h * 0.2 if aufgabenname == "ig" else -h * 0.8
 
                 if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
                     self._zeichne_hartkodiert(canvas, aufgabenname, token, marker_wert, x, marker_y, w, h, oy, linien_breite, tag=(annot_tag,))
@@ -655,9 +672,6 @@ class AnnotationRenderer:
                     self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h, tag=(annot_tag,))
                 elif marker_wert:
                     self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert, tag=(annot_tag,))
-                else:
-                    # Keine Darstellung, evtl. canvas.delete(annot_tag) wenn nötig
-                    pass
 
 
     def annotation_aendern(self, canvas, wortnr, aufgabenname, element):

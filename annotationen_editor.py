@@ -3,9 +3,12 @@ import re
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox
+from reportlab.pdfgen import canvas as pdfcanvas
+
 
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
+from config_editor import register_custom_font
 
 class AnnotationenEditor(ttk.Frame):
     def __init__(self, parent, notebook, kapitel_config):
@@ -27,7 +30,7 @@ class AnnotationenEditor(ttk.Frame):
         self.kapitel_pfade = []
 
         # Initialisiere weitere Variablen
-        self.renderer = AnnotationRenderer(max_breite=680)
+        self.renderer = AnnotationRenderer(max_breite=config.MAX_ZEILENBREITE)
         self.json_dicts = []
         self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)
@@ -121,6 +124,9 @@ class AnnotationenEditor(ttk.Frame):
 
         speichern_button = ttk.Button(top_frame, text="JSON speichern", command=self._json_speichern)
         speichern_button.grid(row=0, column=3)
+
+        export_button = ttk.Button(top_frame, text="Exportiere als PDF", command=self._exportiere_pdf)
+        export_button.grid(row=0, column=4, padx=(10, 0))
 
         # 2. Zeile: zahlwoerter_checkbox
         top_frame_2 = ttk.Frame(self)
@@ -334,3 +340,32 @@ class AnnotationenEditor(ttk.Frame):
     def _abschnitt_gewechselt(self, event):
         self.current_abschnitt_index = self.abschnitt_combo.current()
         self._lade_json_daten()
+
+    def _exportiere_pdf(self):
+        import os
+        from reportlab.pdfgen import canvas as pdfcanvas
+
+        hauptkapitel = self.kapitel_liste[self.current_hauptkapitel_index]
+        abschnitt = self.abschnitt_combo.get() or f"abschnitt_{self.current_abschnitt_index}"
+        dateiname = f"{hauptkapitel}_{abschnitt}.pdf".replace(" ", "_").replace("/", "_")
+        pfad = os.path.join(config.GLOBALORDNER["pdf2"], dateiname)
+
+        c = pdfcanvas.Canvas(pfad)
+
+        # Einstellungen übernehmen
+        aktive_filter = [name for name, var in self.filter_vars.items() if var.get()]
+        self.renderer.ignorierte_annotationen = set(a.lower() for a in aktive_filter)
+        self.renderer.use_number_words = self.use_number_words_var.get()
+
+        # Entferne Seitenumbruch: alle Elemente werden auf EINER Seite gezeichnet
+        for idx, json_dict in enumerate(self.json_dicts):
+            naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
+            self.renderer.rendern(
+                index=idx,
+                dict_element=json_dict,
+                naechstes_dict_element=naechstes_element,
+                gui_canvas=None,
+                pdf_canvas=c
+            )
+        c.save()
+        print(f"[PDF Export] gespeichert unter: {pfad}")

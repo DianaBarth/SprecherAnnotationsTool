@@ -468,6 +468,11 @@ def tkfont_to_reportlab_font(tkfont_tuple):
         font_rl = fontname
     return font_rl, fontsize
 
+import os
+import platform
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
 def register_custom_font(font_path: str, font_name: str) -> bool:
     """
     Registriert eine TrueType-Fontdatei in ReportLab.
@@ -476,8 +481,42 @@ def register_custom_font(font_path: str, font_name: str) -> bool:
     """
     if font_name in pdfmetrics.getRegisteredFontNames():
         return True
+
     if not os.path.isfile(font_path):
-        return False
+        # Wenn Pfad ungültig, versuche in Systempfaden nach font_name.ttf zu suchen
+        system_font_dirs = []
+
+        system = platform.system()
+        if system == "Windows":
+            system_font_dirs = [r"C:\Windows\Fonts"]
+        elif system == "Darwin":  # macOS
+            system_font_dirs = [
+                "/System/Library/Fonts",
+                "/Library/Fonts",
+                os.path.expanduser("~/Library/Fonts")
+            ]
+        elif system == "Linux":
+            system_font_dirs = [
+                "/usr/share/fonts",
+                "/usr/local/share/fonts",
+                os.path.expanduser("~/.fonts"),
+                os.path.expanduser("~/.local/share/fonts")
+            ]
+
+        # Versuche font_name.ttf (bzw. .otf) in diesen Verzeichnissen zu finden
+        for dir_path in system_font_dirs:
+            ttf_path = os.path.join(dir_path, font_name + ".ttf")
+            otf_path = os.path.join(dir_path, font_name + ".otf")
+            if os.path.isfile(ttf_path):
+                font_path = ttf_path
+                break
+            elif os.path.isfile(otf_path):
+                font_path = otf_path
+                break
+        else:
+            print(f"[FontDropdown] Fontdatei für '{font_name}' nicht gefunden.")
+            return False
+
     try:
         pdfmetrics.registerFont(TTFont(font_name, font_path))
         return True

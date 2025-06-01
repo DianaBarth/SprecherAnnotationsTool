@@ -29,7 +29,7 @@ from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
 from system_ressourcen import Systemressourcen
-from config_editor import ConfigEditor
+import config_editor
 
 def lade_prompt_datei(ki_id):
         print(f"[INFO] Lade Prompt für KI-ID: {ki_id}")
