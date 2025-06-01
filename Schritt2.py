@@ -157,8 +157,9 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             "WortNr": range(1, len(woerter_und_satzzeichen) + 1),
             "token": woerter_und_satzzeichen,
             "tokenInklZahlwoerter": tokenInklZahlwoerter,
-            "annotation": annotationen,
-        })
+            "Position": "Normal",
+            "annotation": annotationen, 
+            })
 
         for typ_name in config.KI_AUFGABEN.values():
             df[typ_name] = ""

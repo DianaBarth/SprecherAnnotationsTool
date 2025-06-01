@@ -29,6 +29,9 @@ class AnnotationRenderer:
         self.letzte_zeile_y_pos =config.LINKER_SEITENRAND
         self.canvas_elemente_pro_token = {}    
         self.zeilen_hoehe = config.ZEILENHOEHE
+        
+        # Liste von (start_index, ende_index) tuples
+        self.einrueckungsbereiche = []
 
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
         """
@@ -44,6 +47,18 @@ class AnnotationRenderer:
         y_pdf = seiten_hoehe - y_rel - text_hoehe
         return y_pdf
         
+    def add_einrueckungsbereich(self, start_index, ende_index):
+        self.einrueckungsbereiche.append((start_index, ende_index))
+        print(f"Einrückungsbereich hinzugefügt: {start_index} bis {ende_index}")
+
+    def clear_einrueckungsbereiche(self):
+        self.einrueckungsbereiche = []
+        print("Alle Einrückungsbereiche entfernt")
+
+    def _ist_eingerueckt(self, index):
+        # Prüfe, ob index in irgendeinem Bereich liegt
+        return any(start <= index < ende for (start, ende) in self.einrueckungsbereiche)
+
     def _berechne_zeichenoffsets(self, canvas, token, schrift, ist_pdf):
         if ist_pdf:
             schriftname, schriftgroesse, _ = schrift
@@ -97,7 +112,7 @@ class AnnotationRenderer:
             return self.auf_canvas_rendern(gui_canvas, index, dict_element,naechstes_dict_element)
         else:
             self.ist_PDF = True
-            self.max_pdf_hoehe = pdf_canvas._pagesize[1] - 50
+            self.max_pdf_hoehe = pdf_canvas._pagesize[1] - 50        
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
 
@@ -122,13 +137,24 @@ class AnnotationRenderer:
         token = element_kopie.get('token', '')
         annotation = element_kopie.get("annotation", [])
 
+        # Entscheide, ob eingerückt wird
+        if self._ist_eingerueckt(index):
+            linker_rand_aktuell = self.eingezogener_rand
+        else:
+            linker_rand_aktuell = self.standard_linker_rand
+
+
         # harter Zeilenumbruch
         if token == '' or 'zeilenumbruch' in annotation:
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
-            self.x_pos = config.LINKER_SEITENRAND
+            self.x_pos = linker_rand_aktuell
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
             return
+
+        # Sicherstellen, dass x_pos nicht links vom Rand ist
+        if self.x_pos < linker_rand_aktuell:
+            self.x_pos = linker_rand_aktuell
 
         schrift = self.schrift_holen(element_kopie)
 
@@ -156,8 +182,6 @@ class AnnotationRenderer:
                 extra_space = 0
         except (IndexError, AttributeError):
             pass
-
-
 
         # Seitenumbruch (nur bei PDF)
         if self.ist_PDF:
