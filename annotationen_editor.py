@@ -30,7 +30,7 @@ class AnnotationenEditor(ttk.Frame):
         self.kapitel_pfade = []
 
         # Initialisiere weitere Variablen
-        self.renderer = AnnotationRenderer(max_breite=config.MAX_ZEILENBREITE)
+        self.renderer = AnnotationRenderer(max_breite=450)
         self.json_dicts = []
         self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)

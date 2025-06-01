@@ -20,13 +20,13 @@ def zu_PDF_farbe(rgb):
 
 
 class AnnotationRenderer:
-    def __init__(self,ignorierte_annotationen=None, ignorier_ig=False, max_breite=500):
+    def __init__(self,ignorierte_annotationen=None, ignorier_ig=False, max_breite=300):
         self.ignorierte_annotationen = set(a.lower() for a in (ignorierte_annotationen or []))
         self.ignorier_ig = ignorier_ig
         self.max_breite = max_breite
-        self.x_pos = 10
-        self.y_pos = 10
-        self.letzte_zeile_y_pos = 10
+        self.x_pos = config.LINKER_SEITENRAND
+        self.y_pos = config.LINKER_SEITENRAND
+        self.letzte_zeile_y_pos =config.LINKER_SEITENRAND
         self.canvas_elemente_pro_token = {}    
         self.zeilen_hoehe = config.ZEILENHOEHE
 
@@ -60,8 +60,8 @@ class AnnotationRenderer:
 
 
     def positionen_zuruecksetzen(self):
-        self.x_pos = 10
-        self.y_pos = 10
+        self.x_pos =config.LINKER_SEITENRAND 
+        self.y_pos = config.LINKER_SEITENRAND
 
     def markiere_token_mit_rahmen(self, canvas, wortNr):
         """
@@ -125,7 +125,7 @@ class AnnotationRenderer:
         # harter Zeilenumbruch
         if token == '' or 'zeilenumbruch' in annotation:
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
-            self.x_pos = 10
+            self.x_pos = config.LINKER_SEITENRAND
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
             return
@@ -157,10 +157,11 @@ class AnnotationRenderer:
         except (IndexError, AttributeError):
             pass
 
+        print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={self.max_breite}") 
         # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
         if self.x_pos + text_breite + extra_space > self.max_breite:
-            print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) > max_breite ({self.max_breite})")
-            self.x_pos = 10
+            print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) max_breite ({self.max_breite})")
+            self.x_pos = config.LINKER_SEITENRAND
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
 
@@ -171,7 +172,7 @@ class AnnotationRenderer:
             if self.y_pos + self.zeilen_hoehe > seitenhoehe - rand_unten:
                 print(f"Seitenumbruch erzwungen bei y_pos={self.y_pos}")
                 canvas.showPage()
-                self.x_pos = 10
+                self.x_pos =  config.LINKER_SEITENRAND
                 self.y_pos = 40  # Startposition unter Rand
                 self.letzte_zeile_y_pos = self.y_pos
 
