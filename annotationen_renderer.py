@@ -146,9 +146,9 @@ class AnnotationRenderer:
 
         # Prüfen, ob das nächste Token ein Satzzeichen ohne Space ist
         if not self.ist_PDF:
-            extra_space = 1  # GUI: kleiner Abstand, z.B. 1 Pixel
+            extra_space = 10  # GUI: kleiner Abstand, z.B. 1 Pixel
         else:
-            extra_space = 1  # PDF: ebenfalls klein, z.B. 1 Punkt
+            extra_space = 2  # PDF: ebenfalls klein, z.B. 1 Punkt
 
         try:
             naechste_annotation = naechstes_element.get("annotation", [])
@@ -157,16 +157,18 @@ class AnnotationRenderer:
         except (IndexError, AttributeError):
             pass
 
-        print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={self.max_breite}") 
-        # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
-        if self.x_pos + text_breite + extra_space > self.max_breite:
-            print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) max_breite ({self.max_breite})")
-            self.x_pos = config.LINKER_SEITENRAND
-            self.y_pos += self.zeilen_hoehe
-            self.letzte_zeile_y_pos = self.y_pos
+
 
         # Seitenumbruch (nur bei PDF)
         if self.ist_PDF:
+            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={config.MAX_ZEILENBREITE}") 
+            # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
+            if self.x_pos + text_breite + extra_space > config.MAX_ZEILENBREITE:
+                print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) max_breite ({config.MAX_ZEILENBREITE})")
+                self.x_pos = config.LINKER_SEITENRAND
+                self.y_pos += self.zeilen_hoehe
+                self.letzte_zeile_y_pos = self.y_pos
+
             seitenhoehe = 792  # z.B. DIN A4 Hochformat in Punkten, ggf. anpassen
             rand_unten = 40
             if self.y_pos + self.zeilen_hoehe > seitenhoehe - rand_unten:
@@ -175,6 +177,15 @@ class AnnotationRenderer:
                 self.x_pos =  config.LINKER_SEITENRAND
                 self.y_pos = 40  # Startposition unter Rand
                 self.letzte_zeile_y_pos = self.y_pos
+        else:
+            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={self.max_breite}") 
+            # Erzwungener Zeilenumbruch bei Überschreitung max. Breite
+            if self.x_pos + text_breite + extra_space > self.max_breite:
+                print(f"Zeilenumbruch erzwungen, da x_pos+text_breite+extra_space ({self.x_pos}+{text_breite}+{extra_space}) max_breite ({self.max_breite})")
+                self.x_pos = config.LINKER_SEITENRAND
+                self.y_pos += self.zeilen_hoehe
+                self.letzte_zeile_y_pos = self.y_pos
+
 
         print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
         self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
