@@ -30,11 +30,34 @@ class AnnotationRenderer:
         self.canvas_elemente_pro_token = {}    
         self.zeilen_hoehe = config.ZEILENHOEHE
 
-    def _pdf_y_position(self, pdf_canvas, y_gui_pos, text_hoehe):
-        seiten_hoehe = pdf_canvas._pagesize[1]
-        # Beispiel: y_gui_pos relativ zur aktuellen Seite begrenzen, z.B. modulo Seitenhöhe
-        y_rel = y_gui_pos % seiten_hoehe
-        return seiten_hoehe - y_rel - text_hoehe
+    def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
+        """
+        Berechnet die korrekte Y-Position für PDF, da PDF-Seiten bei (0,0) unten beginnen.
+        Für GUI ist diese Funktion nicht erforderlich – daher Rückgabe der Originalposition.
+        """
+        if not self.ist_PDF:
+            # Absicherung: Im GUI-Kontext keine Umrechnung notwendig
+            return y_gui_pos
+
+        seiten_hoehe = canvas._pagesize[1]
+        y_rel = y_gui_pos % seiten_hoehe  # Falls mehrere Seiten
+        y_pdf = seiten_hoehe - y_rel - text_hoehe
+        return y_pdf
+        
+    def _berechne_zeichenoffsets(self, canvas, token, schrift, ist_pdf):
+        if ist_pdf:
+            schriftname, schriftgroesse, _ = schrift
+            breite_funktion = lambda c: canvas.stringWidth(c, schriftname, schriftgroesse)
+        else:
+            schriftobjekt, _  = schrift
+            breite_funktion = lambda c: schriftobjekt.measure(c)
+
+        zeichenbreiten = [breite_funktion(c) for c in token]
+        offsets = [0]
+        for b in zeichenbreiten[:-1]:
+            offsets.append(offsets[-1] + b)
+        return zeichenbreiten, offsets
+
 
     def positionen_zuruecksetzen(self):
         self.x_pos = 10
@@ -486,19 +509,25 @@ class AnnotationRenderer:
             for i in range(len(points) - 1):
                 canvas.create_line(points[i][0], points[i][1], points[i+1][0], points[i+1][1], fill=farbe_hex, width=linien_breite, tags=tag)
 
-    def _zeichne_ik(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=None):
+  
+    def _zeichne_ik(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=None, schrift=None):
         farbe = config.FARBE_UNTERSTREICHUNG
         punkt_radius = 0.8
+        zeichenbreiten, offsets = self._berechne_zeichenoffsets(canvas, token, schrift, self.ist_PDF)
+
         if numerisch:
-            zeichenbreite = self.Durchschnittsbreite
             for i in range(len(token)):
-                punkt_x = x + i * zeichenbreite
+                punkt_x = x + offsets[i] + zeichenbreiten[i] / 2
                 punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
                 if self.ist_PDF:
                     canvas.setFillColor(zu_PDF_farbe(farbe))
                     canvas.circle(punkt_x, punkt_y, punkt_radius, fill=1, stroke=0)
                 else:
-                    canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius, punkt_x + punkt_radius, punkt_y + punkt_radius, fill=zu_Hex_farbe(farbe), outline="", tags=tag)
+                    canvas.create_oval(
+                        punkt_x - punkt_radius, punkt_y - punkt_radius,
+                        punkt_x + punkt_radius, punkt_y + punkt_radius,
+                        fill=zu_Hex_farbe(farbe), outline="", tags=tag
+                    )
             return
 
         ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
@@ -506,29 +535,34 @@ class AnnotationRenderer:
             return
 
         i = ig_indices[igNr]
-        zeichenbreite = self.Durchschnittsbreite
         for j in range(2):
-            punkt_x = x + (i + j) * zeichenbreite + zeichenbreite / 2
+            punkt_x = x + offsets[i + j] + zeichenbreiten[i + j] / 2
             punkt_y = y_pos + oy + h + config.ZEILENABSTAND * 0.1
             if self.ist_PDF:
                 canvas.setFillColor(zu_PDF_farbe(farbe))
                 canvas.circle(punkt_x, punkt_y, punkt_radius, fill=1, stroke=0)
             else:
-                canvas.create_oval(punkt_x - punkt_radius, punkt_y - punkt_radius, punkt_x + punkt_radius, punkt_y + punkt_radius, fill=zu_Hex_farbe(farbe), outline="", tags=tag)
+                canvas.create_oval(
+                    punkt_x - punkt_radius, punkt_y - punkt_radius,
+                    punkt_x + punkt_radius, punkt_y + punkt_radius,
+                    fill=zu_Hex_farbe(farbe), outline="", tags=tag
+                )
 
-    def _zeichne_ich(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=None):
+
+    def _zeichne_ich(self, canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=None, schrift=None):
         farbe = config.FARBE_UNTERSTREICHUNG
         unterstrich_y_pos = y_pos + oy + h + config.ZEILENABSTAND * 0.1
+        zeichenbreiten, offsets = self._berechne_zeichenoffsets(canvas, token, schrift, self.ist_PDF)
 
         if numerisch:
             if self.ist_PDF:
                 canvas.setStrokeColor(zu_PDF_farbe(farbe))
                 canvas.setLineWidth(linien_breite)
-                canvas.line(x, unterstrich_y_pos, x + len(token) * self.Durchschnittsbreite, unterstrich_y_pos)
+                canvas.line(x, unterstrich_y_pos, x + w, unterstrich_y_pos)
             else:
                 canvas.create_line(
                     x, unterstrich_y_pos,
-                    x + len(token) * self.Durchschnittsbreite, unterstrich_y_pos,
+                    x + w, unterstrich_y_pos,
                     fill=zu_Hex_farbe(farbe),
                     width=linien_breite,
                     tags=tag
@@ -540,8 +574,8 @@ class AnnotationRenderer:
             return
 
         i = ig_indices[igNr]
-        start_x = x + i * self.Durchschnittsbreite
-        end_x = start_x + 2 * self.Durchschnittsbreite
+        start_x = x + offsets[i]
+        end_x = x + offsets[i + 2] if (i + 2 < len(offsets)) else x + w
 
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
@@ -557,7 +591,7 @@ class AnnotationRenderer:
             )
 
 
-    def _zeichne_hartkodiert(self, canvas, aufgabenname, token, wert, x, y_pos, w, h, oy, linien_breite, tag=""):
+    def _zeichne_hartkodiert(self, canvas, aufgabenname, token, wert, x, y_pos, w, h, oy, linien_breite, tag="", schrift = None):
         if aufgabenname == "pause":
             if wert == "Atempause":
                 self._zeichne_pause_atem(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
@@ -581,9 +615,9 @@ class AnnotationRenderer:
             if token.isdigit():  # Vollständig numerisches Token (z.B. "30")
                 letzter_wert = wert.split("-")[-1]
                 if letzter_wert == "ik":
-                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag)
+                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag, schrift = schrift)
                 elif letzter_wert == "ich":
-                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag)
+                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag, schrift = schrift)
                 return  # Keine weitere Bearbeitung nötig
 
             # Alle "ig"-Vorkommen im Token finden
@@ -597,9 +631,9 @@ class AnnotationRenderer:
                 if igNr >= len(ig_indices):
                     break  # Mehr Anweisungen als "ig"-Vorkommen? Ignorieren.
                 if art == "ik":
-                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag)
+                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag, schrift = schrift)
                 elif art == "ich":
-                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag)
+                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag, schrift = schrift)
 
     def _zeichne_token(self, canvas, index, element, x, y_pos, schrift):
         token = element.get('token', '')
@@ -607,11 +641,11 @@ class AnnotationRenderer:
 
         betonung = element.get('betonung', None)
         tags = [base_tag]
-
         if betonung:
             annot_tag = f'{base_tag}_betonung_{betonung.lower()}'
             tags.append(annot_tag)
 
+        # Zeichne den Token
         if not self.ist_PDF:
             schriftobjekt, schriftfarbe = schrift
             canvas.create_text(
@@ -638,11 +672,11 @@ class AnnotationRenderer:
             w = canvas.stringWidth(token, pdf_schriftname, pdf_schriftgroesse)
             h = pdf_schriftgroesse
             marker_y = y_pdf
-
             print(f"[PDF] Token #{index} '{token}' bei Position ({x:.1f}, {y_pdf:.1f}), Größe: ({w:.1f}x{h})")
 
         linien_breite = config.LINIENBREITE_STANDARD
 
+        # Sicherheit: Ignoriere Annotationen, wenn kein Dictionary
         if not isinstance(element, dict):
             return
 
@@ -661,13 +695,19 @@ class AnnotationRenderer:
                 if name is not None and name != marker_wert:
                     continue
 
+                # Positions-Offsets
                 if self.ist_PDF:
-                    oy = -h * 0.2 if aufgabenname == "ig" else h * 0.8
+                    oy = - 2 * h if aufgabenname == "ig" else h * 0.8
                 else:
                     oy = h * 0.2 if aufgabenname == "ig" else -h * 0.8
 
+                # 🧠 Schutz: Zeichne 'ig' Marker nur, wenn Token 'ig' enthält
+                if aufgabenname == "ig" and "ig" not in token:
+                    print(f"WARNUNG: 'ig'-Annotation für Token ohne 'ig': '{token}' (Index {index}) → übersprungen")
+                    continue
+
                 if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
-                    self._zeichne_hartkodiert(canvas, aufgabenname, token, marker_wert, x, marker_y, w, h, oy, linien_breite, tag=(annot_tag,))
+                    self._zeichne_hartkodiert(canvas, aufgabenname, token, marker_wert, x, marker_y, w, h, oy, linien_breite, tag=(annot_tag,), schrift = schrift)
                 elif annot.get("bild"):
                     self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h, tag=(annot_tag,))
                 elif marker_wert:
