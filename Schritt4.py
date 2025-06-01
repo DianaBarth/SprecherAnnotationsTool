@@ -18,6 +18,12 @@ def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
 
         print("[INFO] Anfrage an lokales Modell über HuggingFaceClient …")
         content = client.generate(prompt)
+
+        print("[DEBUG] Prompt an Modell:")
+        print(prompt)
+        print("[DEBUG] KI-Ergebnis vom Modell:")
+        print(content)
+
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
         if dateiname and wortnr_bereich:

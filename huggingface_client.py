@@ -60,77 +60,39 @@ class HuggingFaceClient:
         ]
         return any(keyword in name for keyword in chat_keywords)
 
-    def set_model(self, model_name: str):
-        """
-        Lädt das Modell und den Tokenizer mit einer Ladeanimation.
-        Unterstützt automatische Auswahl der Modellklasse basierend auf dem Modellnamen.
-        """
-        print(f"[Debug] set_model aufgerufen mit model_name: {model_name!r}")
+    def set_model(self, model_name: str, task: str = "generation"):
+        print(f"[Debug] set_model aufgerufen mit model_name: {model_name!r}, task: {task!r}")
         if not model_name:
             raise ValueError("Leerer oder None model_name beim Laden!")
 
-        # def spinner_func(done_flag):
-        #     spinner = itertools.cycle(['|', '/', '-', '\\'])
-        #     print(f"[HuggingFaceClient] Lade Modell '{model_name}', bitte warten... ", end="", flush=True)
-        #     while not done_flag["done"]:
-        #         sys.stdout.write(next(spinner))
-        #         sys.stdout.flush()
-        #         time.sleep(0.1)
-        #         sys.stdout.write('\b')
-        #     print("✔️")  # Lade erfolgreich
+        model_name_lower = model_name.lower()
 
-        done_flag = {"done": False}
-        # spinner_thread = threading.Thread(target=spinner_func, args=(done_flag,))
-        # spinner_thread.start()
+        if task == "generation":
+            # Lade generatives Modell
+            from transformers import AutoTokenizer, AutoModelForCausalLM
 
-        try:
-            # Dynamische Auswahl der Modell- und Tokenizerklasse
-            model_name_lower = model_name.lower()
-            print(f"[Debug] model_name_lower = {model_name_lower}")
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                                                            device_map="auto" if torch.cuda.is_available() else None)
+            # Pad-Token setzen falls nötig
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
 
-            if "roberta" in model_name_lower:
-                print("[Debug] Lade Roberta Modell")
-                from transformers import RobertaTokenizer, RobertaForTokenClassification
-                self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-                self.model = RobertaForTokenClassification.from_pretrained(model_name)
-            elif "bert" in model_name_lower:
-                print("[Debug] Lade Bert Modell")
-                from transformers import BertTokenizer, BertForTokenClassification
-                self.tokenizer = BertTokenizer.from_pretrained(model_name)
-                self.model = BertForTokenClassification.from_pretrained(model_name)
-            elif "t5" in model_name_lower:
-                print("[Debug] Lade T5 Modell")
-                from transformers import T5Tokenizer, T5ForConditionalGeneration
-                self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-                self.model = T5ForConditionalGeneration.from_pretrained(model_name)
-            elif "mistral" in model_name_lower:
-                print("[Debug] Lade Mistral Sprachmodell")
-                from transformers import MistralForCausalLM, AutoTokenizer
-                self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code = True)
-                  # Pad-Token setzen, falls nicht vorhanden
-                if self.tokenizer.pad_token is None:
-                    self.tokenizer.pad_token = self.tokenizer.eos_token
-                    print(f"Pad token auf EOS token gesetzt: {self.tokenizer.pad_token}")
-                self.model = MistralForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto",              # ✅ wichtig bei großen Modellen
-                    offload_folder="./Offload",    # ✅ Pfad für Auslagerung
-                )
+        elif task == "classification":
+            # Beispiel: Token-Classification
+            from transformers import AutoTokenizer, AutoModelForTokenClassification
 
-            else:
-                print("[Debug] Lade AutoModel")
-                from transformers import AutoTokenizer, AutoModelForTokenClassification
-                self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-                self.model = AutoModelForTokenClassification.from_pretrained(model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForTokenClassification.from_pretrained(model_name)
 
-            self.model_name = model_name
-        finally:
-            done_flag["done"] = True
-          #  spinner_thread.join()
+        else:
+            raise ValueError(f"Unbekannter task: {task}")
 
-        print(f"[HuggingFaceClient] Modell '{model_name}' erfolgreich geladen.")
-   
+        self.model_name = model_name
+        print(f"[HuggingFaceClient] Modell '{model_name}' für task '{task}' erfolgreich geladen.")
+
+
     def generate(self, prompt: str) -> str:
         if not self.model_name:
             raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
@@ -143,6 +105,12 @@ class HuggingFaceClient:
         print(f"[INFO] Generiere mit '{self.model_name}'")
         
         print("[INFO] Tokenizer-Aufruf gestartet")
+
+        # Falls tokenizer kein pad_token hat, setze pad_token auf eos_token (sicherheits-halber)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            print(f"[DEBUG] Pad token auf EOS token gesetzt: {self.tokenizer.pad_token}")
+
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
@@ -157,7 +125,6 @@ class HuggingFaceClient:
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
         print("[INFO] Inputs auf Device verschoben")
         
-        
         start = time.time()
         print("[INFO] Beginne model.generate()")
         with torch.no_grad():
@@ -170,8 +137,8 @@ class HuggingFaceClient:
             )
         print(f"[INFO] generate() fertig nach {time.time() - start:.2f} Sekunden")
 
-        
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
 
 
     def get_available_models(

@@ -17,7 +17,7 @@ from multiprocessing import Manager
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
 
-
+from log_manager import LogManager
 import Eingabe.config as config
 from annotationen_editor import AnnotationenEditor
 from Schritt1 import extrahiere_kapitel_mit_config
@@ -58,6 +58,7 @@ def lade_prompt_datei(ki_id):
 
 def ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner, mp_progress_queue=None):
     print(f"[DEBUG] KI-Task für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}", flush=True)
+    logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 
     max_retries = 3
     for versuch in range(1, max_retries + 1):
@@ -275,7 +276,7 @@ class DashBoard(ttk.Frame):
         self.tasks_running = False
         self.tasks_lock = threading.Lock()
 
-        self.max_workers = psutil.cpu_count(logical=False) or 1  # Fallback 1, falls None [erstmal nur pyhsische und nicht logische]
+        self.max_workers = 2 #psutil.cpu_count(logical=False) or 1  # Fallback 1, falls None [erstmal nur pyhsische und nicht logische]
       
         self.master = parent  # Zugriff auf die Hauptanwendung
         
@@ -1415,7 +1416,7 @@ class DashBoard(ttk.Frame):
 
                         for future in concurrent.futures.as_completed(futures):
                             try:
-                                future.result()
+                                future.result() ##FEHLER!!!
                                 print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
                             except Exception as e:
                                 print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
@@ -1506,9 +1507,11 @@ class DashBoard(ttk.Frame):
                 
 
 if __name__ == "__main__":
+    import sys
     from pathlib import Path
     import Eingabe.config as config
-
+    sys.setrecursionlimit(2000)  # Vorsichtig erhöhen, Standard ist oft 1000
+    logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
     ordner_nur_str = {
         "saetze": config.GLOBALORDNER["saetze"],
         "ki": config.GLOBALORDNER["ki"],
@@ -1517,7 +1520,7 @@ if __name__ == "__main__":
     kapitel_name = "Prolog – Finis post portam"
     aufgaben_id =4
     prompt = lade_prompt_datei(4)
-    modell_name = "leoLM/leo-mistral-hessianai-7b"
+    modell_name = "dbmdz/german-gpt2"
 
     ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
 
