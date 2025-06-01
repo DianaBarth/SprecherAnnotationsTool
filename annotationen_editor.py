@@ -147,13 +147,13 @@ class AnnotationenEditor(ttk.Frame):
         # 5. Zeile: Canvas + Annotationen (links + rechts)
         canvas_frame = ttk.Frame(self)
         canvas_frame.grid(row=4, column=0, sticky="nsew", padx=5, pady=5)
-        canvas_frame.columnconfigure(0, weight=19)  # linker Bereich (Canvas)
-        canvas_frame.columnconfigure(1, weight=1, minsize=100)  # rechter Bereich (Annotationen)
+        canvas_frame.columnconfigure(0, weight=25)  # linker Bereich (Canvas)
+        canvas_frame.columnconfigure(1, weight=1)  # rechter Bereich (Annotationen)
         canvas_frame.rowconfigure(0, weight=1)
 
         # Linker Bereich (Canvas + Scrollbar) – Kind von canvas_frame
         linker_frame = ttk.Frame(canvas_frame)
-        linker_frame.grid(row=0, column=0, sticky='nsew', padx=(0,5))
+        linker_frame.grid(row=0, column=0, sticky='nsew', padx=0)
         linker_frame.columnconfigure(0, weight=1)
         linker_frame.rowconfigure(0, weight=1)
 
@@ -192,10 +192,10 @@ class AnnotationenEditor(ttk.Frame):
             text="Bitte Wort auswählen, um dessen Annotationen zu sehen und zu ändern!",
             foreground="gray",
             font=('Arial', 12, 'italic'),
-            wraplength=100,
+            wraplength=150,
             justify='left'
         )
-        self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='nw')
+        self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='nw')
 
         self._zeichne_alle_tokens()
         self.canvas.update_idletasks()
@@ -265,7 +265,7 @@ class AnnotationenEditor(ttk.Frame):
                     json_dict[aufgabenname] = neuer_wert
                 elif aufgabenname in json_dict:
                     del json_dict[aufgabenname]
-                self.renderer.annotation_aendern(self.canvas, idx,json_dict)
+                self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
