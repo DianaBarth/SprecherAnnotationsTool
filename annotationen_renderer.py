@@ -416,10 +416,8 @@ class AnnotationRenderer:
         farbe = config.FARBE_GEDANKEN
         if self.ist_PDF:
             canvas.setStrokeColor(zu_PDF_farbe(farbe))
-            canvas.setLineWidth(linien_breite)
-            off = w / 10
-            canvas.line(x + off, y_pos + oy, x + off + w, y_pos + oy)
-            canvas.line(x + off, y_pos + oy + h, x + off + w, y_pos + oy + h)
+            canvas.setLineWidth(linien_breite)         
+            canvas.line(x, y_pos + oy + h, x + w, y_pos + oy + h)
         else:
             farbe_hex = zu_Hex_farbe(farbe)          
             canvas.create_line(x, y_pos + oy + h, x + w, y_pos + oy + h, fill=farbe_hex, width=linien_breite, tags=tag)
@@ -697,7 +695,7 @@ class AnnotationRenderer:
 
                 # Positions-Offsets
                 if self.ist_PDF:
-                    oy = - 2 * h if aufgabenname == "ig" else h * 0.8
+                    oy = - 1.5 * h if aufgabenname == "ig" else h * 0.8
                 else:
                     oy = h * 0.2 if aufgabenname == "ig" else -h * 0.8
 
@@ -715,6 +713,8 @@ class AnnotationRenderer:
 
 
     def annotation_aendern(self, canvas, wortnr, aufgabenname, element):
+        self.ist_PDF = False
+
         tag = f'token_{wortnr}'
         canvas.delete(tag)
         tag_aufgabe = f'token_{wortnr}_{aufgabenname}'
