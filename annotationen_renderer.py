@@ -31,7 +31,13 @@ class AnnotationRenderer:
         self.zeilen_hoehe = config.ZEILENHOEHE
         self.einrueckung_aktiv = False
         self.einrueckung_start_x = config.LINKER_SEITENRAND + 50  # z.B. 50 Punkte eingerückt
-   
+
+        self.grouptyp_aktiv = None  # "zentriert", "rechts" oder None
+        self.group_start_index = None
+        self.group_tokens = []
+        self.group_start_y = None
+        self.group_width = 0
+
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
         """
         Berechnet die korrekte Y-Position für PDF, da PDF-Seiten bei (0,0) unten beginnen.
@@ -101,141 +107,261 @@ class AnnotationRenderer:
             self.max_pdf_hoehe = pdf_canvas._pagesize[1] - 50        
             return self.auf_canvas_rendern(pdf_canvas, index, dict_element,naechstes_dict_element)
 
+
+    
+    def berechne_breite_des_tokens(self, element_kopie, canvas, schrift):
+        token = element_kopie.get('token', '')
+        if not self.ist_PDF:
+            schriftobjekt, _ = schrift
+            return schriftobjekt.measure(token)
+        else:
+            schriftname, schriftgroesse, _ = schrift
+            return canvas.stringWidth(token, schriftname, schriftgroesse)
+    
+    def _verschiebe_token_gruppe(self, canvas, token_liste, y_pos, gesamtbreite, index):
+        print(f"Verschiebe {len(token_liste)} Token(s) {self.ausrichtung} bei y={y_pos}")
+        zwischenraum = 5
+        breite = config.MAX_ZEILENBREITE if self.ist_PDF else self.max_breite
+        x_start = (breite - gesamtbreite) / 2 if self.ausrichtung == "zentriert" else breite - gesamtbreite
+        x_pos = x_start
+
+        for token_dict in token_liste:
+            wortNr = token_dict.get("WortNr")
+            if wortNr is None:
+                continue
+
+            eintrag = self.canvas_elemente_pro_token.get(wortNr - 1)
+            if not eintrag:
+                continue
+
+            alte_x, alte_y = eintrag["x"], eintrag["y"]
+            canvas_id = eintrag["canvas_id"]
+            delta_x = x_pos - alte_x
+            delta_y = y_pos - alte_y
+            print(f"CanvasID: {canvas_id} wird verschoben")
+
+            canvas.move(canvas_id, delta_x, delta_y)
+            canvas.update()
+
+            # Position im Dict aktualisieren
+            self.canvas_elemente_pro_token[wortNr - 1] = {"x": x_pos, "y": y_pos, "canvas_id": canvas_id}
+
+            schrift_token = self.schrift_holen(token_dict)
+            token_breite = self.berechne_breite_des_tokens(token_dict, canvas, schrift_token)
+            x_pos += token_breite + zwischenraum
+
+        # y_pos auch verschieben
+        self.y_pos = y_pos + self.zeilen_hoehe
+        self.x_pos = config.LINKER_SEITENRAND
+
+
     def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):
-        # Zahlwörter ersetzen falls aktiviert
+        element_kopie = dict(element)
+
+        # Zahlwörter ersetzen, falls aktiviert
         if getattr(self, 'use_number_words', False) and 'tokenInklZahlwoerter' in element:
-            element_kopie = dict(element)
             element_kopie["original_token"] = element.get("token", "")
             element_kopie['token'] = element['tokenInklZahlwoerter']
-        else:
-            element_kopie = dict(element)
 
         token = element_kopie.get('token', '')
         annotation = element_kopie.get("annotation", {})
+        positions_annot = element_kopie.get("position", "").lower()
 
         print(f"auf_canvas_rendern aufgerufen: index={index}, token='{token}', ist_PDF={self.ist_PDF}")
 
-        # Ignorierte Annotationen entfernen
-        for key in self.ignorierte_annotationen:
-            if key in element_kopie and element_kopie[key]:
-                print(f"Token '{token}' Annotation '{key}' wird ignoriert - Zeichne normal")
-                element_kopie[key] = None
+        self._ignoriere_annotationen(element_kopie)
 
-        # Prüfe, ob Einrückung startet oder endet
-        positions_annot = element_kopie.get("position", {})
-        if positions_annot == "EinrückungsStart":
-            print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
-            self.einrueckung_aktiv = True
-            self.y_pos += self.zeilen_hoehe  # ← hier der automatische Zeilenumbruch
-            self.x_pos = self.einrueckung_start_x
-        elif positions_annot == "EinrückungsEnde":
-            print(f"Einrückung beendet bei Token '{token}' (Index {index})")
-            self.einrueckung_aktiv = False
-            self.y_pos += self.zeilen_hoehe  # optional, wenn du danach auch in neue Zeile willst
-            self.x_pos = config.LINKER_SEITENRAND
+        if self._handle_textausrichtung(canvas, element_kopie, positions_annot, annotation, index):
+            return  # Gruppe aktiv → Token wird später gezeichnet
 
-        # Setze aktuelle x-Position je nach Einrückungsstatus
-        if self.einrueckung_aktiv:
-            aktuelle_x = self.einrueckung_start_x
-        else:
-            aktuelle_x = config.LINKER_SEITENRAND
 
-        # Harter Zeilenumbruch: Token leer oder Annotation "zeilenumbruch"
-        if token == '' or 'zeilenumbruch' in annotation:
+        self._handle_einrueckung(positions_annot, token, index)
+
+        aktuelle_x = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
+
+        if 'zeilenumbruch' in annotation:
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
-            # x_pos am Zeilenanfang neu setzen
             self.x_pos = aktuelle_x
             return
 
         schrift = self.schrift_holen(element_kopie)
+        text_breite, text_hoehe, schriftfarbe = self._berechne_textgroesse(canvas, schrift, token)
 
-        # Berechne Breite des Tokens
-        if not self.ist_PDF:
-            schriftobjekt, schriftfarbe = schrift
-            text_breite = schriftobjekt.measure(token)
-            text_hoehe = schriftobjekt.metrics("linespace")
-            print(f"Textbreite (GUI): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
-        else:
-            schriftname, schriftgroesse, schriftfarbe = schrift
-            text_breite = canvas.stringWidth(token, schriftname, schriftgroesse)
-            text_hoehe = schriftgroesse
-            print(f"Textbreite (PDF): {text_breite}, Texthöhe: {text_hoehe}, Schriftfarbe: {schriftfarbe}")
-
-        # Prüfen, ob nächstes Token Satzzeichen ohne Space ist
-        if not self.ist_PDF:
-            extra_space = 10
-        else:
-            extra_space = 2
-
-        try:
+        extra_space = 10 if not self.ist_PDF else 2
+        if isinstance(naechstes_element, dict):
             naechste_annotation = naechstes_element.get("annotation", {})
             if "satzzeichenOhneSpace" in naechste_annotation:
                 extra_space = 0
-        except (IndexError, AttributeError):
-            pass
 
-        # Zeilenumbruch prüfen und ggf. ausführen (PDF)
+        self._handle_umbruch(canvas, text_breite, extra_space)
+
+        if self.x_pos < aktuelle_x:
+            self.x_pos = aktuelle_x
+
+        print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
+        text_id = self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
+        self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos, "canvas_id": text_id}
+        self.x_pos += text_breite + extra_space
+        print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
+
+    def _ignoriere_annotationen(self, element):
+        for key in self.ignorierte_annotationen:
+            if key in element and element[key]:
+                print(f"Token '{element.get('token')}' Annotation '{key}' wird ignoriert - Zeichne normal")
+                element[key] = None
+
+    def _reset_gruppe(self):
+        self.grouptyp_aktiv = None
+        self.group_start_index = None
+        self.group_tokens = []
+        self.group_start_y = None
+        self.group_width = 0
+        self.ausrichtung = None
+
+    def _handle_textausrichtung(self, canvas, element, position, annotation, index):
+        token = element.get('token', '')
+        schrift = self.schrift_holen(element)
+
+        # 1. Start erkennen
+        if position in ("zentriertstart", "rechtsbündigstart"):
+            print(f"{position} bei Index {index}")
+            self.ausrichtung = "zentriert" if "zentriert" in position else "rechtsbündig"
+            self.grouptyp_aktiv = self.ausrichtung
+            self.group_start_index = index
+            self.group_tokens = [element] if token else []
+            self.group_start_y = self.y_pos
+            self.group_width = self.berechne_breite_des_tokens(element, canvas, schrift) if token else 0
+            return True  # Nur sammeln, nicht zeichnen
+
+        # 2. Gruppe aktiv? Tokens sammeln, Ende erkennen und verarbeiten
+        if self.grouptyp_aktiv is not None:
+            if token:
+                self.group_tokens.append(element)
+                self.group_width += self.berechne_breite_des_tokens(element, canvas, schrift)
+
+            # Ende erkannt (auch nachträglich)
+            if position in ("zentriertende", "rechtsbuendigende"):
+                print(f"Gruppenende '{position}' bei Index {index}")
+
+                # Falls das Ende direkt aufgerufen wird
+                gesamtbreite = self.group_width + 5 * (len(self.group_tokens) - 1)
+                # Verschiebe statt neu zeichnen
+                self._verschiebe_token_gruppe(canvas, self.group_tokens, self.group_start_y, gesamtbreite, index)
+
+                self._reset_gruppe()
+                return True
+
+            # Zeilenumbruch: Gruppe jetzt zeichnen/verschieben
+            if 'zeilenumbruch' in annotation:
+                print(f"Zeilenumbruch mit offener Gruppe '{self.grouptyp_aktiv}', verschiebe Gruppe jetzt")
+                gesamtbreite = self.group_width + 5 * (len(self.group_tokens) - 1)
+                self._verschiebe_token_gruppe(canvas, self.group_tokens, self.group_start_y, gesamtbreite, index)
+                self._reset_gruppe()
+                self.y_pos += self.zeilen_hoehe
+                self.x_pos = config.LINKER_SEITENRAND
+                return True
+
+            # Sonst nichts tun, weiter sammeln
+            return True
+
+        # 3. Kein aktiver Start, aber nachträgliches Ende (z.B. aus Datei geladen)
+        if position in ("zentriertende", "rechtsbuendigende") and self.group_tokens:
+            print(f"Nachträgliches Gruppenende ohne aktiven Start '{position}' bei Index {index}, verschiebe rückwirkend")
+
+            # Versuche rückwirkend Gruppe zu rekonstruieren (Start suchen)
+            self._rekonstruiere_gruppe_bis_start(index, element, position)
+
+            if self.group_tokens:
+                gesamtbreite = self.group_width + 5 * (len(self.group_tokens) - 1)
+                self._verschiebe_token_gruppe(canvas, self.group_tokens, self.group_start_y, gesamtbreite, index)
+                self._reset_gruppe()
+                return True
+            else:
+                print("Keine Gruppe zum Verschieben gefunden")
+                self._reset_gruppe()
+                return False
+
+        # 4. Kein besonderer Fall → nichts machen
+        return False
+
+
+    def _rekonstruiere_gruppe_bis_start(self, end_index, aktuelles_element, endetyp):
+        # Ermittelt die Gruppe rückwärts vom Ende bis zum Start-Token
+        starttyp = "zentriertstart" if "zentriert" in endetyp else "rechtsbündigstart"
+        self.group_tokens = []
+        self.group_width = 0
+        self.group_start_y = None
+        self.group_start_index = None
+
+        # Für y-Position evtl. von gespeicherter Position
+        if end_index in self.canvas_elemente_pro_token:
+            self.group_start_y = self.canvas_elemente_pro_token[end_index]["y"]
+        else:
+            self.group_start_y = self.y_pos
+
+        # Alle Tokens rückwärts durchsuchen, self.alle_tokens muss alle Elemente enthalten
+        for i in range(end_index - 1, -1, -1):
+            token = self.alle_tokens[i]
+            pos = token.get("position", "").lower()
+            schrift = self.schrift_holen(token)
+
+            if pos == starttyp:
+                self.group_start_index = i
+                self.group_tokens.insert(0, token)
+                self.group_width += self.berechne_breite_des_tokens(token, self.canvas, schrift)
+                self.grouptyp_aktiv = "zentriert" if "zentriert" in starttyp else "rechtsbündig"
+                break
+            elif token.get("token"):
+                self.group_tokens.insert(0, token)
+                self.group_width += self.berechne_breite_des_tokens(token, self.canvas, schrift)
+                
+    def _handle_einrueckung(self, position, token, index):
+        if position == "einrückungsstart":
+            print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
+            self.einrueckung_aktiv = True
+            self.y_pos += self.zeilen_hoehe
+            self.x_pos = self.einrueckung_start_x
+        elif position == "einrückungsende":
+            print(f"Einrückung beendet bei Token '{token}' (Index {index})")
+            self.einrueckung_aktiv = False
+            self.y_pos += self.zeilen_hoehe
+            self.x_pos = config.LINKER_SEITENRAND
+
+    def _berechne_textgroesse(self, canvas, schrift, token):
+        if not self.ist_PDF:
+            schriftobjekt, schriftfarbe = schrift
+            breite = schriftobjekt.measure(token)
+            hoehe = schriftobjekt.metrics("linespace")
+        else:
+            schriftname, schriftgroesse, schriftfarbe = schrift
+            breite = canvas.stringWidth(token, schriftname, schriftgroesse)
+            hoehe = schriftgroesse
+        return breite, hoehe, schriftfarbe
+
+    def _handle_umbruch(self, canvas, breite, extra_space):
         if self.ist_PDF:
-            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={config.MAX_ZEILENBREITE}")
-            if self.x_pos + text_breite + extra_space > config.MAX_ZEILENBREITE:
-                print(f"Zeilenumbruch erzwungen, da {self.x_pos}+{text_breite}+{extra_space} > {config.MAX_ZEILENBREITE}")
+            if self.x_pos + breite + extra_space > config.MAX_ZEILENBREITE:
+                print(f"Zeilenumbruch PDF: {self.x_pos} + {breite} + {extra_space} > {config.MAX_ZEILENBREITE}")
                 self.y_pos += self.zeilen_hoehe
                 self.letzte_zeile_y_pos = self.y_pos
-                # x_pos neu setzen je nach Einrückung
                 self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
-            seitenhoehe = 792
-            rand_unten = 40
-            if self.y_pos + self.zeilen_hoehe > seitenhoehe - rand_unten:
-                print(f"Seitenumbruch erzwungen bei y_pos={self.y_pos}")
+            if self.y_pos + self.zeilen_hoehe > 792 - 40:
+                print(f"Seitenumbruch bei y_pos={self.y_pos}")
                 canvas.showPage()
                 self.x_pos = config.LINKER_SEITENRAND
                 self.y_pos = 40
                 self.letzte_zeile_y_pos = self.y_pos
         else:
-            print(f"x_pos={self.x_pos}, text_breite={text_breite}, extra_space={extra_space}, max_breite={self.max_breite}")
-            if self.x_pos + text_breite + extra_space > self.max_breite:
-                print(f"Zeilenumbruch erzwungen, da {self.x_pos}+{text_breite}+{extra_space} > {self.max_breite}")
+            if self.x_pos + breite + extra_space > self.max_breite:
+                print(f"Zeilenumbruch GUI: {self.x_pos} + {breite} + {extra_space} > {self.max_breite}")
                 self.y_pos += self.zeilen_hoehe
                 self.letzte_zeile_y_pos = self.y_pos
-                # x_pos neu setzen je nach Einrückung
                 self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
-        # Setze aktuelle x_pos wenn noch am Anfang der Zeile
-        if self.x_pos < aktuelle_x:
-            self.x_pos = aktuelle_x
 
-        print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
-        self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
-
-        # Position speichern
-        self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos}
-
-        # x_pos für nächstes Token aktualisieren
-        self.x_pos += text_breite + extra_space
-        print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
-
-
-
-    def get_person_color(self, person):
-        print(f"get_person_color aufgerufen mit person={person}")
-        if not person:
-            print("Keine Person angegeben, Standardfarbe verwenden")
-            rgb = config.FARBE_STANDARD
-        else:
-            h = hashlib.md5(person.encode('utf-8')).hexdigest()
-            r = max(int(h[0:2], 16), 51)  # mind. ~0.2*255
-            g = max(int(h[2:4], 16), 51)
-            b = max(int(h[4:6], 16), 51)
-            rgb = (r, g, b)
-            print(f"Farbe für Person {person}: {rgb}")
-
-        if self.ist_PDF:
-            return zu_PDF_farbe(rgb)  
-        else:
-            return zu_Hex_farbe(rgb)  
 
     def verwende_hartkodiert_fuer_annotation(self, feldname, annotationswert):
         print(f"Prüfe verwende_hartkodiert_fuer_annotation: feldname={feldname}, annotationswert={annotationswert}")
@@ -330,10 +456,11 @@ class AnnotationRenderer:
             print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Gewicht: {weight}, Stil: {slant}, Farbe: {farbe}")
             return schrift, farbe
 
-    def _zeichne_bild(self, canvas, pfad, x, y, w, h, tag=None):
+    def _zeichne_bild(self, canvas, bildname, x, y, w, h,annotationsname, tag=None):
+        pfad = os.path.join(config.GLOBALORDNER["Eingabe"], "bilder",bildname)   
         if self.ist_PDF:
             try:
-                canvas.drawImage(pfad, x, y, width=w, height=h*0.8, preserveAspectRatio=True, mask='auto')
+                canvas.drawImage(pfad, x + w/2, y, height=config.BILDHOEHE_PX, preserveAspectRatio=True, mask='auto')
             except Exception as e:
                 print(f"Fehler beim Einfügen von Bild {pfad}: {e}")
         else:
@@ -343,25 +470,20 @@ class AnnotationRenderer:
 
                 # Bild mit PIL öffnen und skalieren
                 img = Image.open(pfad)
-                faktor = (h * 0.5) / img.height  # Zielhöhe: 0.5 * h
-                neue_breite = int(img.width * faktor)
-                neue_hoehe = int(img.height * faktor)
-                img = img.resize((neue_breite, neue_hoehe), Image.ANTIALIAS)
-
+           
                 tk_img = ImageTk.PhotoImage(img)
                 canvas.image = getattr(canvas, "image", [])  # Verhindert Garbage Collection
                 canvas.image.append(tk_img)
 
                 if tag is not None:
-                    canvas.create_image(x, y, anchor='nw', image=tk_img, tag=tag)
+                    canvas.create_image(x + w/2, y, anchor='nw', image=tk_img, tag=tag)
                 else:
-                    canvas.create_image(x, y, anchor='nw', image=tk_img)
+                    canvas.create_image(x + w/2, y, anchor='nw', image=tk_img)
 
             except Exception as e:
                 print(f"Fehler beim Zeichnen von Bild {pfad}: {e}")
                 # Platzhalter-Rechteck, wenn Bild fehlt
-                farbe = "#999999"
-                canvas.create_rectangle(x, y, x + w, y + h * 0.5, outline="red", fill=farbe)
+                self._zeichne_fehlendesBild(canvas,x,y,w,h,annotationsname, tag)
 
     def _zeichne_fehlendesBild(self, canvas, x, y, width, height, annotationsname, tag=None):
         farbe = self.get_person_color(annotationsname)
@@ -678,7 +800,7 @@ class AnnotationRenderer:
         # Zeichne den Token
         if not self.ist_PDF:
             schriftobjekt, schriftfarbe = schrift
-            canvas.create_text(
+            text_id =canvas.create_text(
                 x, y_pos,
                 anchor='nw',
                 text=token,
@@ -739,10 +861,11 @@ class AnnotationRenderer:
                 if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
                     self._zeichne_hartkodiert(canvas, aufgabenname, token, marker_wert, x, marker_y, w, h, oy, linien_breite, tag=(annot_tag,), schrift = schrift)
                 elif annot.get("bild"):
-                    self._zeichne_bild(canvas, annot["bild"], x, marker_y + oy, w, h, tag=(annot_tag,))
+                    self._zeichne_bild(canvas,annot["bild"], x, marker_y + oy, w, h, marker_wert, tag=(annot_tag,))
                 elif marker_wert:
                     self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert, tag=(annot_tag,))
-
+                    
+        return text_id
 
     def annotation_aendern(self, canvas, wortnr, aufgabenname, element):
         self.ist_PDF = False
