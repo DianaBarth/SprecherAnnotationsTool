@@ -4,8 +4,6 @@ import json
 import tkinter as tk
 from tkinter import ttk, messagebox
 from reportlab.pdfgen import canvas as pdfcanvas
-
-
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 from config_editor import register_custom_font
@@ -34,13 +32,21 @@ class AnnotationenEditor(ttk.Frame):
         self.json_dicts = []
         self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)
-
+    
         # Widgets bauen
         self._erstelle_widgets()
 
         # Lade Pfade und JSON-Daten für das erste Hauptkapitel und ersten Abschnitt
         self._lade_kapitel_abschnitte()
-     
+
+    def _lade_json_daten(self):
+        aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
+        print(f"Lade Daten für: {aktueller_pfad}")
+        with open(aktueller_pfad, 'r', encoding='utf-8') as f:
+            self.json_dicts = json.load(f)
+        self.dateipfad_json = aktueller_pfad
+
+
     def _lade_alle_kapiteldateien(self, kapitel):
         merge_ordner = config.GLOBALORDNER["merge"]
         manuell_ordner = config.GLOBALORDNER["manuell"]
@@ -66,14 +72,6 @@ class AnnotationenEditor(ttk.Frame):
         # Nach Index sortieren und Pfade zurückgeben
         return [dateien_dict[idx] for idx in sorted(dateien_dict.keys())]
 
-
-    def _lade_json_daten(self):
-        aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
-        print(f"Lade Daten für: {aktueller_pfad}")
-        with open(aktueller_pfad, 'r', encoding='utf-8') as f:
-            self.json_dicts = json.load(f)
-        self.dateipfad_json = aktueller_pfad
-
     def _lade_kapitel_abschnitte(self):
         kapitelname = self.kapitel_liste[self.current_hauptkapitel_index]
 
@@ -86,6 +84,8 @@ class AnnotationenEditor(ttk.Frame):
             self.abschnitt_combo.current(0)
             self.current_abschnitt_index = 0
             self._lade_json_daten()
+            self._zeichne_alle_tokens()
+            self.canvas.update_idletasks()
         else:
             # Kein Abschnitt vorhanden: Auswahl zurücksetzen, ggf. Daten leeren
             self.abschnitt_combo.set('')
@@ -109,7 +109,8 @@ class AnnotationenEditor(ttk.Frame):
         top_frame.columnconfigure(0, weight=0)
         top_frame.columnconfigure(1, weight=0)
 
-        self.hauptkapitel_combo = ttk.Combobox(top_frame, values=self.kapitel_liste, state="readonly")
+        max_len = max((len(str(k)) for k in self.kapitel_liste), default=5)
+        self.hauptkapitel_combo = ttk.Combobox(top_frame, values=self.kapitel_liste, state="readonly", width=max(max_len, 20))
         self.hauptkapitel_combo.current(self.current_hauptkapitel_index)
         self.hauptkapitel_combo.grid(row=0, column=0, padx=(0,10))
         self.hauptkapitel_combo.bind("<<ComboboxSelected>>", self._hauptkapitel_gewechselt)
@@ -213,9 +214,6 @@ class AnnotationenEditor(ttk.Frame):
             justify='left'
         )
         self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='nw')
-
-        self._zeichne_alle_tokens()
-        self.canvas.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
 
@@ -349,10 +347,12 @@ class AnnotationenEditor(ttk.Frame):
         self.current_hauptkapitel_index = self.hauptkapitel_combo.current()
         self.current_abschnitt_index = 0
         self._lade_kapitel_abschnitte()
+        self._zeichne_alle_tokens()
 
     def _abschnitt_gewechselt(self, event):
         self.current_abschnitt_index = self.abschnitt_combo.current()
         self._lade_json_daten()
+        self._zeichne_alle_tokens()
 
     def _exportiere_pdf(self):
       
