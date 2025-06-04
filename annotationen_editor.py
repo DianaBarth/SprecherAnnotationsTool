@@ -8,6 +8,24 @@ import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 from config_editor import register_custom_font
 
+def _anzeige_name(wert: str) -> str:
+    """
+    Wandelt interne ASCII-Namen (z.B. 'Rechtsbuendig') in UI-Anzeigenamen ('Rechtsbündig') um.
+    """
+    return (wert
+        .replace("Rechtsbuendig", "Rechtsbündig")
+        .replace("Einrueckung", "Einrückung")
+    )
+
+def _interner_name(wert: str) -> str:
+    """
+    Wandelt UI-Namen (z.B. 'Rechtsbündig') zurück in ASCII-kompatible interne Namen ('Rechtsbuendig').
+    """
+    return (wert
+        .replace("Rechtsbündig", "Rechtsbuendig")
+        .replace("Einrückung", "Einrueckung")
+    )
+
 class AnnotationenEditor(ttk.Frame):
     def __init__(self, parent, notebook, kapitel_config):
         super().__init__(parent)
@@ -250,9 +268,13 @@ class AnnotationenEditor(ttk.Frame):
         self.annotation_frame.update_idletasks()
         print(f"Nach dem Löschen Widgets: {[type(c) for c in self.annotation_frame.winfo_children()]}")
 
-        # Neue Annotationen bauen
-        tk.Label(self.annotation_frame, text=f"Annotationen für Token {idx}: \n '{json_dict.get('token','')}'", font=('Arial', 14, 'bold')).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
-
+        wort_nr = json_dict.get("WortNr", idx)  # Falls kein WortNr, dann idx als Fallback
+        tk.Label(
+            self.annotation_frame,
+            text=f"Annotationen für WortNr {wort_nr}: \n '{json_dict.get('token','')}'",
+            font=('Arial', 14, 'bold')
+        ).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
+        
         row_index = 1
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
             label = ttk.Label(self.annotation_frame, text=aufgabenname)
@@ -270,30 +292,49 @@ class AnnotationenEditor(ttk.Frame):
             werte = werte or ['']
             aktueller_wert = json_dict.get(aufgabenname, "")
 
-            combobox = ttk.Combobox(self.annotation_frame, values=werte, state='readonly')
-            if aktueller_wert in werte:
-                combobox.set(aktueller_wert)
+            # Anzeige-Werte in der Combobox (mit Umlauten, nur für Anzeige)
+            anzeige_werte = [_anzeige_name(w) for w in werte]
+            anzeige_aktueller_wert = _anzeige_name(aktueller_wert)
+
+            combobox = ttk.Combobox(self.annotation_frame, values=anzeige_werte, state='readonly')
+            if aktueller_wert:
+                combobox.set(anzeige_aktueller_wert)
 
             def on_combobox_change(event, aufgabennr=aufgabennr, combobox=combobox, aufgabenname=aufgabenname):
                 neuer_wert = combobox.get()
+                # Rückkonvertierung für Speicherung
+                neuer_wert = _interner_name(neuer_wert)
+                
                 if neuer_wert:
                     json_dict[aufgabenname] = neuer_wert
                 elif aufgabenname in json_dict:
                     del json_dict[aufgabenname]
 
                 if aufgabenname.lower() == "position":
-                    print(f"Position geändert bei Token {idx}, komplettes Neu-Rendern wird ausgeführt.")
-                    # Kompletten Text neu rendern:
-                    self.canvas.delete("all")
-                    self.renderer.x_pos = config.LINKER_SEITENRAND
-                    self.renderer.y_pos = config.LINKER_SEITENRAND
-                    self.renderer.einrueckung_aktiv = False  
-                    for i, elem in enumerate(self.json_dicts):
-                        naechstes_element = self.json_dicts[i + 1] if i + 1 < len(self.json_dicts) else None
-                        self.renderer.rendern(index=i, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=elem)
+                    print(f"Position geändert bei Token {idx}: '{neuer_wert}'")
+
+                    # Finde Start- und Endindex der aktuellen Gruppe (zentriert oder rechtsbuendig)
+                    start_index = None
+                    end_index = None
+                    typ = None
+
+                    for i in range(len(self.json_dicts)):
+                        pos = self.json_dicts[i].get("position", "").lower()
+                        if pos in ("zentriertstart", "rechtsbuendigstart") and start_index is None:
+                            start_index = i
+                            typ = "zentriert" if "zentriert" in pos else "rechtsbuendig"
+                        elif pos in ("zentriertende", "rechtsbuendigende") and start_index is not None:
+                            end_index = i
+                            break
+
+                    # Wenn beides vorhanden, dann nur diesen Bereich rendern
+                    if start_index is not None and end_index is not None and start_index <= end_index:
+                        self.neu_rendern_bereich(start_index, end_index)
+                    else:
+                        print("Kein vollständiges Start/Ende-Paar gefunden – kein Teilrendering möglich.")
                 else:
+                    # Alle anderen Annotationen werden einzeln neu gezeichnet
                     self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
-            
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)

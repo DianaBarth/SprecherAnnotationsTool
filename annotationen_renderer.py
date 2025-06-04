@@ -118,41 +118,60 @@ class AnnotationRenderer:
             schriftname, schriftgroesse, _ = schrift
             return canvas.stringWidth(token, schriftname, schriftgroesse)
     
-    def _verschiebe_token_gruppe(self, canvas, token_liste, y_pos, gesamtbreite, index):
+    def _verschiebe_token_gruppe(self, canvas, token_liste, y_pos, gesamtbreite):
         print(f"Verschiebe {len(token_liste)} Token(s) {self.ausrichtung} bei y={y_pos}")
+
         zwischenraum = 5
-        breite = config.MAX_ZEILENBREITE if self.ist_PDF else self.max_breite
-        x_start = (breite - gesamtbreite) / 2 if self.ausrichtung == "zentriert" else breite - gesamtbreite
+        seitenbreite = getattr(config, "MAX_ZEILENBREITE", 800) if self.ist_PDF else self.max_breite
+        rechter_rand = getattr(config, "RECHTER_SEITENRAND", 50)
+        linker_rand = getattr(config, "LINKER_SEITENRAND", 50)
+
+        if self.ausrichtung == "zentriert":
+            x_start = (seitenbreite - gesamtbreite) / 2
+        elif self.ausrichtung == "rechtsbuendig":
+            x_start = seitenbreite - rechter_rand - gesamtbreite
+        else:
+            x_start = linker_rand
+
+        print(f"{self.ausrichtung} mit x_start = {x_start}")
         x_pos = x_start
 
         for token_dict in token_liste:
             wortNr = token_dict.get("WortNr")
             if wortNr is None:
+                print("⚠️ Keine WortNr vorhanden – übersprungen")
                 continue
 
-            eintrag = self.canvas_elemente_pro_token.get(wortNr - 1)
+            eintrag = self.canvas_elemente_pro_token.get(wortNr)
             if not eintrag:
+                print(f"⚠️ Kein Canvas-Eintrag für WortNr {wortNr}")
                 continue
 
-            alte_x, alte_y = eintrag["x"], eintrag["y"]
+            alte_x = eintrag["x"]
+            alte_y = eintrag["y"]
             canvas_id = eintrag["canvas_id"]
+            if canvas_id is None:
+                print(f"⚠️ Keine CanvasID für WortNr {wortNr}")
+                continue
+
             delta_x = x_pos - alte_x
             delta_y = y_pos - alte_y
-            print(f"CanvasID: {canvas_id} wird verschoben")
 
-            canvas.move(canvas_id, delta_x, delta_y)
-            canvas.update()
+            try:
+                print(f"CanvasID: {canvas_id} → move by Δx={delta_x}, Δy={delta_y}")
+                canvas.move(canvas_id, delta_x, delta_y)
+            except Exception as e:
+                print(f"Fehler beim Verschieben von CanvasID {canvas_id}: {e}")
 
-            # Position im Dict aktualisieren
-            self.canvas_elemente_pro_token[wortNr - 1] = {"x": x_pos, "y": y_pos, "canvas_id": canvas_id}
+            self.canvas_elemente_pro_token[wortNr] = {
+                "x": x_pos,
+                "y": y_pos,
+                "canvas_id": canvas_id
+            }
 
-            schrift_token = self.schrift_holen(token_dict)
-            token_breite = self.berechne_breite_des_tokens(token_dict, canvas, schrift_token)
+            schrift = self.schrift_holen(token_dict)
+            token_breite = self.berechne_breite_des_tokens(token_dict, canvas, schrift)
             x_pos += token_breite + zwischenraum
-
-        # y_pos auch verschieben
-        self.y_pos = y_pos + self.zeilen_hoehe
-        self.x_pos = config.LINKER_SEITENRAND
 
 
     def auf_canvas_rendern(self, canvas, index, element, naechstes_element=None):
@@ -220,76 +239,76 @@ class AnnotationRenderer:
         self.group_width = 0
         self.ausrichtung = None
 
-    def _handle_textausrichtung(self, canvas, element, position, annotation, index):
+
+
+    def _handle_textausrichtung(self, canvas, element, position, annotationen, index):
         token = element.get('token', '')
         schrift = self.schrift_holen(element)
 
         # 1. Start erkennen
-        if position in ("zentriertstart", "rechtsbündigstart"):
+        if position in ("zentriertstart", "rechtsbuendigstart"):
             print(f"{position} bei Index {index}")
-            self.ausrichtung = "zentriert" if "zentriert" in position else "rechtsbündig"
+            self.ausrichtung = "zentriert" if "zentriert" in position else "rechtsbuendig"
             self.grouptyp_aktiv = self.ausrichtung
             self.group_start_index = index
             self.group_tokens = [element] if token else []
             self.group_start_y = self.y_pos
             self.group_width = self.berechne_breite_des_tokens(element, canvas, schrift) if token else 0
-            return True  # Nur sammeln, nicht zeichnen
+            return True
 
-        # 2. Gruppe aktiv? Tokens sammeln, Ende erkennen und verarbeiten
+        # 2. Gruppe aktiv
         if self.grouptyp_aktiv is not None:
+
+            self.group_tokens.append(element)
             if token:
-                self.group_tokens.append(element)
                 self.group_width += self.berechne_breite_des_tokens(element, canvas, schrift)
 
-            # Ende erkannt (auch nachträglich)
             if position in ("zentriertende", "rechtsbuendigende"):
                 print(f"Gruppenende '{position}' bei Index {index}")
 
-                # Falls das Ende direkt aufgerufen wird
-                gesamtbreite = self.group_width + 5 * (len(self.group_tokens) - 1)
-                # Verschiebe statt neu zeichnen
-                self._verschiebe_token_gruppe(canvas, self.group_tokens, self.group_start_y, gesamtbreite, index)
+                subgruppen = []
+                aktuelle_subgruppe = []
 
-                self._reset_gruppe()
-                return True
+                for elem in self.group_tokens:
+                    aktuelle_subgruppe.append(elem)
+                    annos = elem.get("annotation", "")
+                    if isinstance(annos, str) and "zeilenumbruch" in annos.lower():
+                        subgruppen.append(aktuelle_subgruppe)
+                        aktuelle_subgruppe = []
 
-            # Zeilenumbruch: Gruppe jetzt zeichnen/verschieben
-            if 'zeilenumbruch' in annotation:
-                print(f"Zeilenumbruch mit offener Gruppe '{self.grouptyp_aktiv}', verschiebe Gruppe jetzt")
-                gesamtbreite = self.group_width + 5 * (len(self.group_tokens) - 1)
-                self._verschiebe_token_gruppe(canvas, self.group_tokens, self.group_start_y, gesamtbreite, index)
-                self._reset_gruppe()
-                self.y_pos += self.zeilen_hoehe
+                if aktuelle_subgruppe:
+                    subgruppen.append(aktuelle_subgruppe)
+
+                print(f"Erkannte {len(subgruppen)} Subgruppe(n) für Ausrichtung '{self.ausrichtung}'")
+
+                aktuelle_y = self.group_start_y or self.y_pos
+                zwischenraum = 5
+
+                for i, gruppe in enumerate(subgruppen):
+                    print(f"→ Subgruppe {i+1}: {[tok.get('token') for tok in gruppe]}")
+                    gesamtbreite = 0
+                    for tok in gruppe:
+                        schrift = self.schrift_holen(tok)
+                        gesamtbreite += self.berechne_breite_des_tokens(tok, canvas, schrift) + zwischenraum
+                    gesamtbreite -= zwischenraum  # Letztes Space raus
+
+                    self._verschiebe_token_gruppe(canvas, gruppe, aktuelle_y, gesamtbreite)
+                    aktuelle_y += self.zeilen_hoehe or 20  # Fallback-Wert falls nicht gesetzt
+
+                self.y_pos = aktuelle_y
                 self.x_pos = config.LINKER_SEITENRAND
+                self._reset_gruppe()
                 return True
 
-            # Sonst nichts tun, weiter sammeln
             return True
 
-        # 3. Kein aktiver Start, aber nachträgliches Ende (z.B. aus Datei geladen)
-        if position in ("zentriertende", "rechtsbuendigende") and self.group_tokens:
-            print(f"Nachträgliches Gruppenende ohne aktiven Start '{position}' bei Index {index}, verschiebe rückwirkend")
-
-            # Versuche rückwirkend Gruppe zu rekonstruieren (Start suchen)
-            self._rekonstruiere_gruppe_bis_start(index, element, position)
-
-            if self.group_tokens:
-                gesamtbreite = self.group_width + 5 * (len(self.group_tokens) - 1)
-                self._verschiebe_token_gruppe(canvas, self.group_tokens, self.group_start_y, gesamtbreite, index)
-                self._reset_gruppe()
-                return True
-            else:
-                print("Keine Gruppe zum Verschieben gefunden")
-                self._reset_gruppe()
-                return False
-
-        # 4. Kein besonderer Fall → nichts machen
         return False
+
 
 
     def _rekonstruiere_gruppe_bis_start(self, end_index, aktuelles_element, endetyp):
         # Ermittelt die Gruppe rückwärts vom Ende bis zum Start-Token
-        starttyp = "zentriertstart" if "zentriert" in endetyp else "rechtsbündigstart"
+        starttyp = "zentriertstart" if "zentriert" in endetyp else "rechtsbuendigstart"
         self.group_tokens = []
         self.group_width = 0
         self.group_start_y = None
@@ -311,19 +330,19 @@ class AnnotationRenderer:
                 self.group_start_index = i
                 self.group_tokens.insert(0, token)
                 self.group_width += self.berechne_breite_des_tokens(token, self.canvas, schrift)
-                self.grouptyp_aktiv = "zentriert" if "zentriert" in starttyp else "rechtsbündig"
+                self.grouptyp_aktiv = "zentriert" if "zentriert" in starttyp else "rechtsbuendig"
                 break
             elif token.get("token"):
                 self.group_tokens.insert(0, token)
                 self.group_width += self.berechne_breite_des_tokens(token, self.canvas, schrift)
                 
     def _handle_einrueckung(self, position, token, index):
-        if position == "einrückungsstart":
+        if position == "einrueckungsstart":
             print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
             self.einrueckung_aktiv = True
             self.y_pos += self.zeilen_hoehe
             self.x_pos = self.einrueckung_start_x
-        elif position == "einrückungsende":
+        elif position == "einrueckungsende":
             print(f"Einrückung beendet bei Token '{token}' (Index {index})")
             self.einrueckung_aktiv = False
             self.y_pos += self.zeilen_hoehe
