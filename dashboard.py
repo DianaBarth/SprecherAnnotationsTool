@@ -24,7 +24,7 @@ from Schritt1 import extrahiere_kapitel_mit_config
 from Schritt2 import verarbeite_kapitel_und_speichere_json
 from Schritt3 import daten_aufteilen
 from Schritt4 import daten_verarbeiten
-from Schritt5 import Merge_annotationen
+from Schritt5 import Merge_annotationen, update_json_with_ig_annotations
 from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
@@ -1407,6 +1407,14 @@ class DashBoard(ttk.Frame):
 
                 print(f"[DEBUG] Starte Zusammenführung für Kapitel {kapitel_name}", flush=True)
                 progress_queue.put((kapitel_name, next_key, 0.1))
+
+                update_json_with_ig_annotations(
+                    ordner_nur_str["json"],
+                    ordner_nur_str["merge"],
+                    ordner_nur_str["saetze"],
+                    ordner_nur_str["ki"],
+                    kapitel_name,
+                )
 
                 Merge_annotationen(
                     ordner_nur_str["json"],

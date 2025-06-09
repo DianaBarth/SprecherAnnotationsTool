@@ -15,7 +15,7 @@ class LogManager:
     def cleanup_old_log_entries(self):
         if not os.path.exists(self.logfile_path):
             return
-        one_week_ago = datetime.now() - timedelta(days=7)
+        one_week_ago = datetime.now() - timedelta(days=2)
         kept_lines = []
         with open(self.logfile_path, 'r', encoding='utf-8') as f:
             for line in f:

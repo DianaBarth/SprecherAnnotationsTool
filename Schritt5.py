@@ -2,9 +2,11 @@ import os
 import json
 import glob
 import traceback
+import re
 import shutil
 from collections import defaultdict
 from pathlib import Path
+
 import Eingabe.config as config # Importiere das komplette config-Modul
 
 # Personen aus ZusatzInfo_2 der kapitel_config.json extrahieren
@@ -292,3 +294,62 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
     except Exception as e:
         print(f"[FEHLER] Schritt 8.1 fehlgeschlagen: {e}")
         traceback.print_exc()
+
+#----------------------------------------------------
+
+def lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname):
+    satz_ordner = Path(satz_ordner)
+    ig_ordner = Path(ig_ordner) 
+    
+    pattern = re.compile(re.escape(kapitelname) + r"_ig_abschnitt_\d{3}\.txt$")
+    ig_mapping = {}
+
+    # Finde alle Satzdateien
+    satz_dateien = sorted([f for f in satz_ordner.iterdir() if pattern.match(f.name)])
+
+    for satz_datei in satz_dateien:
+        # Passende ig-Datei im ig_ordner mit gleichem Namen
+        ig_datei = ig_ordner / satz_datei.name
+        if not ig_datei.exists():
+            print(f"[WARNUNG] Keine IG-Datei gefunden für {satz_datei.name}, überspringe.")
+            continue
+
+        # Tokens aus Satzdatei lesen
+        with open(satz_datei, "r", encoding="utf-8") as f:
+            tokens = [t.strip() for t in f.read().split(";") if t.strip()]
+
+        # IG-Werte aus IG-Datei lesen
+        with open(ig_datei, "r", encoding="utf-8") as f:
+            ig_werte = [i.strip() for i in f.read().split(";") if i.strip()]
+
+        if len(tokens) != len(ig_werte):
+            print(f"[WARNUNG] Ungleiche Anzahl Tokens ({len(tokens)}) und IG-Werte ({len(ig_werte)}) in Datei {satz_datei.name}")
+
+        # Mappe Token zu IG-Wert
+        for token, ig_wert in zip(tokens, ig_werte):
+            ig_mapping[token] = ig_wert
+
+    print(f"[INFO] {len(ig_mapping)} Token-IG-Paare geladen für Kapitel {kapitelname}")
+    return ig_mapping
+
+
+def update_json_with_ig_annotations(json_ordner, ausgabe_ordner, satz_ordner, ig_ordner,kapitelname):
+    json_ordner = Path(json_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
+    ausgabe_ordner.mkdir(parents=True, exist_ok=True)
+
+    ig_mapping = lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname)
+
+    for json_datei in json_ordner.glob(f"{kapitelname}_*_annotierungen.json"):
+        with open(json_datei, "r", encoding="utf-8") as f:
+            daten = json.load(f)
+
+        for eintrag in daten:
+            token = eintrag.get("tokenInklZahlwoerter", "")
+            eintrag["ig"] = ig_mapping.get(token, "")
+
+        ausgabe_datei = ausgabe_ordner / json_datei.name
+        with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
+            json.dump(daten, f_out, ensure_ascii=False, indent=2)
+
+        print(f"[INFO] Aktualisierte Datei gespeichert: {ausgabe_datei}")
