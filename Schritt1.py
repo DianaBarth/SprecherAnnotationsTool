@@ -1,90 +1,139 @@
 import os
-from docx import Document
 from pathlib import Path
-import Eingabe.config as config  # Importiere das komplette config-Modul
+from docx import Document
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
+    """
+    Extrahiert Kapitel aus DOCX, liest Word-Formatierungen (Einrückung, Zentriert, Rechtsbündig) aus,
+    fügt Annotationen [EinrückungsStart]/[EinrückungsEnde], [ZentriertStart]/[ZentriertEnde], [RechtsbuendigStart]/[RechtsbuendigEnde]
+    ein und speichert Kapitel in Dateien, unter Berücksichtigung offener Tags über Dateiteile hinweg.
+    """
 
     ausgabe_ordner = Path(ausgabe_ordner)
-
-    print(f"[DEBUG] Starte Kapitel-Extraktion mit Datei: {docx_datei}")
-    print(f"[DEBUG] Zielordner: {ausgabe_ordner}")
-    print(f"[DEBUG] kapitel_namen: {kapitel_namen}")
-    print(f"[DEBUG -------------------------STARTE Schritt 1 für {ausgewaehlte_kapitel}]")
+    ausgabe_ordner.mkdir(parents=True, exist_ok=True)
 
     if not os.path.isfile(docx_datei):
         print(f"[FEHLER] Docx-Datei existiert nicht: {docx_datei}")
         return
 
-    if not os.path.exists(ausgabe_ordner):
-        os.makedirs(ausgabe_ordner, exist_ok=True)
-        print(f"[DEBUG] Zielordner wurde angelegt.")
-
-    dateiname_gesamt = os.path.splitext(os.path.basename(docx_datei))[0] + "_Gesamt.txt"
-    dateipfad_gesamt = os.path.join(ausgabe_ordner, dateiname_gesamt)
-
     doc = Document(docx_datei)
-    alle_texte = [p.text for p in doc.paragraphs]
-    print(f"[DEBUG] Anzahl Paragraphen in Dokument: {len(alle_texte)}")
+    alle_paragraphen = doc.paragraphs
+
+    def get_formatierung(paragraph):
+        indent = paragraph.paragraph_format.left_indent
+        einrueckung = indent and indent.pt > 0
+        ausrichtung = paragraph.alignment
+        ist_zentriert = ausrichtung == 1
+        ist_rechtsbuendig = ausrichtung == 2
+        return {
+            "Einrückung": einrueckung,
+            "Zentriert": ist_zentriert,
+            "Rechtsbuendig": ist_rechtsbuendig,
+        }
+
+    START_TAGS = {
+        "Einrückung": "|EinrückungsStart| ",
+        "Zentriert": "|ZentriertStart| ",
+        "Rechtsbuendig": "|RechtsbuendigStart| ",
+    }
+    END_TAGS = {
+        "Einrückung": "|EinrückungsEnde| ",
+        "Zentriert": "|ZentriertEnde| ",
+        "Rechtsbuendig": "|RechtsbuendigEnde| ",
+    }
 
     def kapitel_startet_mit(text, kapitel):
-        # Ignoriere Groß-/Kleinschreibung und Leerzeichen vorne/hinten
         return text.strip().lower().startswith(kapitel.strip().lower())
+
+    def ermittle_offene_tags(text):
+        offene = set()
+        for fmt in ["Einrückung", "Zentriert", "Rechtsbuendig"]:
+            start_count = text.count(START_TAGS[fmt])
+            end_count = text.count(END_TAGS[fmt])
+            if start_count > end_count:
+                offene.add(fmt)
+        return offene
 
     if kapitel_namen:
         for i, kapitel_name in enumerate(kapitel_namen):
-            print(f"[DEBUG] Verarbeite Kapitel {i+1}/{len(kapitel_namen)}: '{kapitel_name}'")
+            print(f"[INFO] Verarbeite Kapitel {i+1}/{len(kapitel_namen)}: '{kapitel_name}'")
 
-            steps = 3  # Anzahl Teilschritte pro Kapitel
-            def melde_fortschritt(teil):
-                if progress_callback:
-                    progress_callback(kapitel_name, round((teil / steps), 3))
-
-            # Schritt 1: Kapitelstart finden
-            start_index = next(
-                (idx for idx, text in enumerate(alle_texte) if kapitel_startet_mit(text, kapitel_name)),
-                None)
+            start_index = next((idx for idx, p in enumerate(alle_paragraphen) if kapitel_startet_mit(p.text, kapitel_name)), None)
             if start_index is None:
                 print(f"[WARN] Kapitel '{kapitel_name}' nicht gefunden.")
                 continue
-            print(f"[DEBUG] Gefundener Startindex für '{kapitel_name}': {start_index}")
-            melde_fortschritt(1)
 
-            # Schritt 2: Nächsten Kapitelstart finden
             if i + 1 < len(kapitel_namen):
-                naechster_start = next(
-                    (idx for idx, text in enumerate(alle_texte) if kapitel_startet_mit(text, kapitel_namen[i + 1])),
-                    len(alle_texte))
+                naechster_start = next((idx for idx, p in enumerate(alle_paragraphen) if kapitel_startet_mit(p.text, kapitel_namen[i+1])), len(alle_paragraphen))
             else:
-                naechster_start = len(alle_texte)
-            print(f"[DEBUG] Nächster Startindex: {naechster_start}")
+                naechster_start = len(alle_paragraphen)
 
-            kapitel_text = alle_texte[start_index:naechster_start]
-            print(f"[DEBUG] Extrahierter Text für '{kapitel_name}', Länge: {len(kapitel_text)} Absätze")
-            melde_fortschritt(2)
+            kapitel_paragraphs = alle_paragraphen[start_index:naechster_start]
 
-            if ausgewaehlte_kapitel is None or kapitel_name in ausgewaehlte_kapitel:
-                # Kompakte Logik für Unterteilung nach kapitel_trenner
-                if kapitel_trenner:
-                    text_gesamt = "\n".join(kapitel_text)
-                    teile = text_gesamt.split(kapitel_trenner) if kapitel_trenner in text_gesamt else [text_gesamt]
+            if ausgewaehlte_kapitel and kapitel_name not in ausgewaehlte_kapitel:
+                continue
+
+            text_abschnitte = []
+            offene_formatierungen = set()
+
+            def format_tags_vor_text(format_status, offene_formatierungen):
+                return "".join(START_TAGS[fmt] for fmt in format_status if format_status[fmt] and fmt not in offene_formatierungen)
+
+            def format_tags_nach_text(format_status, offene_formatierungen):
+                return "".join(END_TAGS[fmt] for fmt in offene_formatierungen if not format_status[fmt])
+
+            for para in kapitel_paragraphs:
+                format_status = get_formatierung(para)
+                start_tags = format_tags_vor_text(format_status, offene_formatierungen)
+                end_tags = format_tags_nach_text(format_status, offene_formatierungen)
+                text = para.text.strip()
+
+                beendete = {fmt for fmt in offene_formatierungen if not format_status[fmt]}
+                offene_formatierungen.difference_update(beendete)
+                neu_geoeffnete = {fmt for fmt in format_status if format_status[fmt] and fmt not in offene_formatierungen}
+                offene_formatierungen.update(neu_geoeffnete)
+
+                if text:
+                    text_mit_tags = f"{start_tags}{text}{end_tags}"
                 else:
-                    teile = ["\n".join(kapitel_text)]
+                    text_mit_tags = f"{start_tags}{end_tags}"
 
-                for idx, teil in enumerate(teile, start=1):
-                    dateipfad = os.path.join(ausgabe_ordner, f"{kapitel_name}_{idx}.txt")
-                    print(f"[DEBUG] Speichere Teil {idx} von Kapitel '{kapitel_name}' in Datei: {dateipfad}")
-                    with open(dateipfad, "w", encoding="utf-8") as f:
-                        f.write(teil)
+                text_abschnitte.append(text_mit_tags)
 
-                melde_fortschritt(3)
-                print("[INFO] Kapitel wurden anhand der Konfiguration extrahiert.")
+            text_gesamt = "\n".join(text_abschnitte)
+            teile = text_gesamt.split(kapitel_trenner) if kapitel_trenner and kapitel_trenner in text_gesamt else [text_gesamt]
+
+            offene_tags_vorher = set()
+
+            for idx, teil in enumerate(teile, start=1):
+                # Start-Tags für offene Formatierungen vom letzten Teil
+                start_tags = "".join(START_TAGS[fmt] for fmt in offene_tags_vorher)
+                teil = start_tags + teil
+
+                # Ermittle aktuelle offene Tags (nach Hinzufügen der Start-Tags)
+                offene_tags_jetzt = ermittle_offene_tags(teil)
+
+                # Am Ende alle offenen Tags sauber schließen
+                end_tags = "".join(END_TAGS[fmt] for fmt in offene_tags_jetzt)
+                teil = teil + end_tags
+
+                # Speichern
+                dateipfad = ausgabe_ordner / f"{kapitel_name}_{idx:03}.txt"
+                with open(dateipfad, "w", encoding="utf-8") as f:
+                    f.write(teil)
+
+                print(f"[INFO] Gespeichert Teil {idx} von Kapitel '{kapitel_name}' als {dateipfad}")
+
+                # Nächster Teil: übernimm die offenen Tags für Start-Tags im nächsten Loop
+                offene_tags_vorher = offene_tags_jetzt
 
     else:
-        print(f"[DEBUG] Speichere Gesamttext in: {dateipfad_gesamt}")
+        text_gesamt = "\n".join([p.text for p in alle_paragraphen])
+        dateiname_gesamt = os.path.splitext(os.path.basename(docx_datei))[0] + "_Gesamt.txt"
+        dateipfad_gesamt = ausgabe_ordner / dateiname_gesamt
         with open(dateipfad_gesamt, "w", encoding="utf-8") as f:
-            f.write("\n".join(alle_texte))
-        print("[INFO] Gesamttext wurde gespeichert.")
+            f.write(text_gesamt)
+        print(f"[INFO] Gesamttext gespeichert: {dateipfad_gesamt}")
 
-        if progress_callback:
-            progress_callback("Gesamttext", 1.0)
+    if progress_callback:
+        progress_callback("Fertig", 100)
