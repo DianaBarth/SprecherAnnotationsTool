@@ -9,7 +9,7 @@ import Eingabe.config as config
 tokenizer = tiktoken.get_encoding("cl100k_base")  # GPT-4/3.5 Tokenizer
 satzzeichen = {".", "!", "?"}
 satzzeichen_pattern = re.compile(r'([.!?])')  # Satzzeichen als Trenner
-zeilenumbruch_marker = "_BREAK__BREAKY"
+zeilenumbruch_marker = "_BREAK*BREAKY"
 
 
 def zähle_gpt_tokens(text: str) -> int:
@@ -46,6 +46,9 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
     ausgabe_ordner = Path(ausgabe_ordner)
     os.makedirs(ausgabe_ordner, exist_ok=True)
 
+    # Alte Regex für Annotationen entfernen, da neue Tags anders sind
+    # annotation_pattern = re.compile(r"\[[^\]]*Start\]|\[[^\]]*Ende\]")  # NICHT MEHR NÖTIG
+
     dateien = sorted([f for f in eingabe_ordner.glob(f"{kapitelname}_*.txt")])
     if not dateien:
         print(f"[WARNUNG] Keine TXT-Dateien für Kapitel '{kapitelname}' gefunden.")
@@ -55,6 +58,14 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
         print(f"[DEBUG] Verarbeite Datei: {datei.name}")
         with open(datei, "r", encoding="utf-8") as f:
             text = f.read()
+
+        # Keine Annotationen mit Regex entfernen! Stattdessen die neuen Tags ignorieren später beim Verarbeiten.
+
+        # Falls gewünscht: Entferne die neuen Formatierungs-Tags (optional)
+        for tag in ["|EinrückungsStart|", "|EinrückungsEnde|",
+                    "|ZentriertStart|", "|ZentriertEnde|",
+                    "|RechtsbuendigStart|", "|RechtsbuendigEnde|"]:
+            text = text.replace(tag, "")  # falls du Tags aus dem reinen Text entfernen willst
 
         saetze = split_text_in_saetze(text)
         abschnitt = ""
@@ -66,18 +77,15 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
             # Wenn wir mit aktuellem Satz die Grenze überschreiten, abschnitt speichern und neu starten
             if token_counter + satz_tokens > config.MAX_PROMPT_TOKENS:
                 if abschnitt:
-                    # Speichern
                     token_anzahl = len(tokenizer.encode(abschnitt))
                     dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnitt_counter:03}.txt"
                     with open(dateiname, "w", encoding="utf-8") as out_f:
                         out_f.write(abschnitt.strip())
                     print(f"[DEBUG] Gespeichert Abschnitt {abschnitt_counter} mit {token_anzahl} Tokens in {dateiname}")
                     abschnitt_counter += 1
-                # Neuen Abschnitt mit aktuellem Satz starten
                 abschnitt = satz
                 token_counter = satz_tokens
             else:
-                # Satz an aktuellen Abschnitt anhängen
                 abschnitt = abschnitt + " " + satz if abschnitt else satz
                 token_counter += satz_tokens
 
@@ -85,10 +93,9 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
                 fortschritt = int((i / len(saetze)) * 100)
                 progress_callback(kapitelname, fortschritt)
 
-        # Letzten Abschnitt speichern, falls vorhanden
         if abschnitt:
             token_anzahl = len(tokenizer.encode(abschnitt))
-            dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnitt_counter:03}.txt"
+            dateiname = ausgabe_ordner / f"{datei.stem}_abschnitt_{abschnitt_counter:03}_annotierungen.txt"
             with open(dateiname, "w", encoding="utf-8") as out_f:
                 out_f.write(abschnitt.strip())
             print(f"[DEBUG] Gespeichert letzter Abschnitt {abschnitt_counter} mit {token_anzahl} Tokens in {dateiname}")
@@ -99,10 +106,7 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
     print(f"[DEBUG -------------------------Schritt 3 abgeschlossen für Kapitel {kapitelname}]")
 
 
-
 #-----------------------
-
-
 def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_callback=None, semikolon_format=True):
     json_ordner = Path(json_ordner)
     ausgabe_ordner = Path(ausgabe_ordner)

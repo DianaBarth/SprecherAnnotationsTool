@@ -3,12 +3,6 @@ from pathlib import Path
 from docx import Document
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
-    """
-    Extrahiert Kapitel aus DOCX, liest Word-Formatierungen (Einrückung, Zentriert, Rechtsbündig) aus,
-    fügt Annotationen [EinrückungsStart]/[EinrückungsEnde], [ZentriertStart]/[ZentriertEnde], [RechtsbuendigStart]/[RechtsbuendigEnde]
-    ein und speichert Kapitel in Dateien, unter Berücksichtigung offener Tags über Dateiteile hinweg.
-    """
-
     ausgabe_ordner = Path(ausgabe_ordner)
     ausgabe_ordner.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +67,8 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
             if ausgewaehlte_kapitel and kapitel_name not in ausgewaehlte_kapitel:
                 continue
 
-            text_abschnitte = []
+            abschnitts_liste = []
+            aktueller_abschnitt = []
             offene_formatierungen = set()
 
             def format_tags_vor_text(format_status, offene_formatierungen):
@@ -83,48 +78,56 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                 return "".join(END_TAGS[fmt] for fmt in offene_formatierungen if not format_status[fmt])
 
             for para in kapitel_paragraphs:
+                text = para.text.strip()
+                if kapitel_trenner and text == kapitel_trenner.strip():
+                    # Trenner gefunden → Abschnitt beenden
+                    if aktueller_abschnitt:
+                        abschnitts_liste.append(aktueller_abschnitt)
+                        aktueller_abschnitt = []
+                    continue
+
                 format_status = get_formatierung(para)
                 start_tags = format_tags_vor_text(format_status, offene_formatierungen)
                 end_tags = format_tags_nach_text(format_status, offene_formatierungen)
-                text = para.text.strip()
 
+                # Update offene Formatierungen
                 beendete = {fmt for fmt in offene_formatierungen if not format_status[fmt]}
                 offene_formatierungen.difference_update(beendete)
                 neu_geoeffnete = {fmt for fmt in format_status if format_status[fmt] and fmt not in offene_formatierungen}
                 offene_formatierungen.update(neu_geoeffnete)
 
-                if text:
-                    text_mit_tags = f"{start_tags}{text}{end_tags}"
-                else:
-                    text_mit_tags = f"{start_tags}{end_tags}"
+                text_mit_tags = f"{start_tags}{text}{end_tags}" if text else f"{start_tags}{end_tags}"
+                aktueller_abschnitt.append(text_mit_tags)
 
-                text_abschnitte.append(text_mit_tags)
+            # letzten Abschnitt hinzufügen
+            if aktueller_abschnitt:
+                abschnitts_liste.append(aktueller_abschnitt)
 
-            text_gesamt = "\n".join(text_abschnitte)
-            teile = text_gesamt.split(kapitel_trenner) if kapitel_trenner and kapitel_trenner in text_gesamt else [text_gesamt]
-
+            # Teile speichern mit korrektem Tag-Handling
             offene_tags_vorher = set()
 
-            for idx, teil in enumerate(teile, start=1):
-                # Start-Tags für offene Formatierungen vom letzten Teil
-                start_tags = "".join(START_TAGS[fmt] for fmt in offene_tags_vorher)
-                teil = start_tags + teil
+            for idx, teil_abschnitt in enumerate(abschnitts_liste, start=1):
+                text = "\n".join(teil_abschnitt)
 
-                # Ermittle aktuelle offene Tags (nach Hinzufügen der Start-Tags)
-                offene_tags_jetzt = ermittle_offene_tags(teil)
+                # Am Anfang: evtl. offene Tags vom vorherigen Teil einfügen
+                if offene_tags_vorher:
+                    start_tags = "".join(START_TAGS[fmt] for fmt in offene_tags_vorher)
+                    text = start_tags + text
 
-                # Am Ende alle offenen Tags sauber schließen
+                # Aktuelle offene Tags bestimmen
+                offene_tags_jetzt = ermittle_offene_tags(text)
+
+                # Am Ende: sicher alle offenen Tags schließen
                 end_tags = "".join(END_TAGS[fmt] for fmt in offene_tags_jetzt)
-                teil = teil + end_tags
+                text = text + end_tags
 
                 # Speichern
                 dateipfad = ausgabe_ordner / f"{kapitel_name}_{idx:03}.txt"
                 with open(dateipfad, "w", encoding="utf-8") as f:
-                    f.write(teil)
+                    f.write(text)
 
                 print(f"[INFO] Gespeichert Teil {idx} von Kapitel '{kapitel_name}' als {dateipfad}")
 
-                # Nächster Teil: übernimm die offenen Tags für Start-Tags im nächsten Loop
                 offene_tags_vorher = offene_tags_jetzt
 
     else:

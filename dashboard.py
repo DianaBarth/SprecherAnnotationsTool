@@ -1288,7 +1288,7 @@ class DashBoard(ttk.Frame):
 
             if task_flags.get(1, False):
                 print(f"[DEBUG] Starte Aufgabe 1: Extraktion für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "1", 0.1))
+                progress_queue.put((kapitel_name, 1.1, 0.1))
 
                 extrahiere_kapitel_mit_config(
                     selected_file_path,
@@ -1296,7 +1296,7 @@ class DashBoard(ttk.Frame):
                     kapitel_trenner,
                     ordner_nur_str["txt"],
                     [kapitel_name],
-                    lambda k, w: progress_queue.put((k, "1", w))
+                    lambda k, w: progress_queue.put((k, 1, w))
                 )
                 print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
                
@@ -1305,13 +1305,13 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Aufgabe 1.2: Vorverarbeitung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "Vorverarbeitung", 0.1))
+                progress_queue.put((kapitel_name, 1.2 , 0.1))
 
                 verarbeite_kapitel_und_speichere_json(
                     ordner_nur_str["txt"],
                     ordner_nur_str["json"],
                     [kapitel_name],
-                    lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.1", fortschritt))
+                    lambda kapitel, fortschritt: progress_queue.put((kapitel, 1.2, fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
              
@@ -1321,14 +1321,14 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Aufgabe 2: Satzaufteilung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "Satzbildung", 0.1))
+                progress_queue.put((kapitel_name, 2, 0.1))
 
                 daten_aufteilen(
                     kapitel_name,
                     txt_ordner=ordner_nur_str["txt"],  
                     json_ordner=ordner_nur_str["json"],
                     ausgabe_ordner=ordner_nur_str["saetze"],                  
-                    progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.2", fortschritt))
+                    progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, 2, fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
              
@@ -1421,21 +1421,21 @@ class DashBoard(ttk.Frame):
                     ordner_nur_str["ki"],
                     ordner_nur_str["merge"],
                     [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, next_key + ".1", w))
-                )
+                    lambda w: progress_queue.put(kapitel_name, next_key, w)
+                    )
 
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Visualisierung.", flush=True)
                     return
 
                 print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, next_key + ".2", 0.1))
+                progress_queue.put((kapitel_name, next_key + 1, 0.1))
 
                 visualisiere_annotationen(
                     ordner_nur_str["merge"],
                     ordner_nur_str["pdf"],
                     [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, "final 2", w))
+                    lambda w: progress_queue.put((kapitel_name, next_key + 2, w))
                 )
 
             progress_queue.put((kapitel_name, "Fertig", 1.0))
