@@ -4,12 +4,10 @@ import json
 import pandas as pd
 from pathlib import Path
 from num2words import num2words
-
 import Eingabe.config as config
 
 def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewaehlte_kapitel=None, progress_callback=None):
 
-    # Annotation-Strings
     START_TAGS = {
         "Einrückung": "|EinrückungsStart|",
         "Zentriert": "|ZentriertStart|",
@@ -23,8 +21,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
 
     def roemisch_zu_int(roemisch):
         roem_map = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
-        ergebnis = 0
-        vorher = 0
+        ergebnis, vorher = 0, 0
         for buchstabe in reversed(roemisch.upper()):
             wert = roem_map.get(buchstabe, 0)
             ergebnis = ergebnis - wert if wert < vorher else ergebnis + wert
@@ -58,7 +55,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         if match_roemisch and match_roemisch.group(1):
             return str(roemisch_zu_int(match_roemisch.group(1)))
         if "Prolog" in kapitelname:
-            return 0
+            return "0"
         return kapitelname
 
     eingabeordner = Path(eingabeordner)
@@ -72,84 +69,62 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             erweiterte_kapitel.add(kapitel)
             for idx in range(0, 1000):
                 erweiterte_kapitel.add(f"{kapitel}_{idx:03d}")
-        textdateien = [datei for datei in textdateien if datei.stem in erweiterte_kapitel]
+        textdateien = [d for d in textdateien if d.stem in erweiterte_kapitel]
 
-    for i, datei in enumerate(textdateien):
+    for datei in textdateien:
         kapitelname_original = datei.stem
         kapitelname = extrahiere_kapitelname(kapitelname_original)
 
-        step_count = 6
-        current_step = 0
-        def report_step():
-            if progress_callback:
-                progress = round((current_step + 1) / step_count, 3)
-                progress_callback(kapitelname_original, progress)
-
         with open(datei, "r", encoding="utf-8") as f:
             text = f.read()
-        current_step += 1
-        report_step()
 
-        # Tags vor Tokenisierung durch Leerzeichen abtrennen
-        alle_tags = list(START_TAGS.values()) + list(END_TAGS.values())
-        for tag in alle_tags:
+        # Tags abtrennen
+        for tag in list(START_TAGS.values()) + list(END_TAGS.values()):
             text = text.replace(tag, f" {tag} ")
 
-        # Zeilenumbrüche durch speziellen Token ersetzen
-        text = regex.sub(r"\r\n|\r|\n", " _BREAK_BREAKY ", text)
-        text = regex.sub(r"(_BREAK__BREAKY)+", " _BREAK__BREAKY ", text)
+        # Zeilenumbrüche vereinheitlichen
+        text = regex.sub(r"\r\n|\r|\n", " _BREAK_ ", text)
+        text = regex.sub(r"(_BREAK_)+", " _BREAK_ ", text)
 
-        current_step += 1
-        report_step()
-
-        # Tokenisierung
-        raw_tokens = regex.split(r"\s+|(?<=\p{P})|(?=\p{P})|_BREAK_", text, flags=regex.UNICODE)
-        raw_tokens = [t for t in raw_tokens if t.strip()]
+        # Tokenisierung inkl. Sonderzeichen & Zeilenumbrüche
+        woerter_und_satzzeichen = regex.split(r"\s+|(?<=\p{P})|(?=\p{P})", text, flags=regex.UNICODE)
+        woerter_und_satzzeichen = [w for w in woerter_und_satzzeichen if w.strip()]
 
         cleaned_tokens = []
         cleaned_annotations = []
         positions = []
 
-        aktive_formate = []
-        position_status = None  # Aktive Formatierung (z.B. "Zentriert")
+        pending_position_start = None
 
         i = 0
-        while i < len(raw_tokens):
-            token = raw_tokens[i]
+        while i < len(woerter_und_satzzeichen):
+            token = woerter_und_satzzeichen[i]
 
             if token in START_TAGS.values():
                 typ = [k for k, v in START_TAGS.items() if v == token][0]
-                aktive_formate.append(typ)
-                position_status = aktive_formate[-1]  # Immer der zuletzt aktivierte Typ
+                pending_position_start = typ
                 i += 1
-                continue  # Tag nicht als Token speichern
+                continue
 
-            if token in END_TAGS.values():
+            elif token in END_TAGS.values():
                 typ = [k for k, v in END_TAGS.items() if v == token][0]
-                if aktive_formate and typ in aktive_formate:
-                    # Schließe den zuletzt geöffneten dieses Typs
-                    for idx in range(len(aktive_formate) - 1, -1, -1):
-                        if aktive_formate[idx] == typ:
-                            del aktive_formate[idx]
-                            break
-                    # Positionen der letzten Tokens mit Start-Tag auf Ende setzen
-                    for j in range(len(cleaned_tokens) - 1, -1, -1):
-                        if positions[j] == f"{typ}Start":
-                            positions[j] = f"{typ}Ende"
-                            break
-                    # Aktualisiere position_status auf zuletzt aktiven Typ oder None
-                    position_status = aktive_formate[-1] if aktive_formate else None
+                for j in range(len(positions) - 1, -1, -1):
+                    if positions[j] == f"{typ}Start":
+                        for k in range(len(positions) - 1, j, -1):
+                            if positions[k] == "":
+                                positions[k] = f"{typ}Ende"
+                                break
+                        break
                 i += 1
-                continue  # Tag nicht als Token speichern
+                continue
 
-            if token == "BREAKY":
+            elif token == "_BREAK_":
                 cleaned_tokens.append("")
                 cleaned_annotations.append("zeilenumbruch")
                 positions.append("")
                 i += 1
                 continue
 
-            # Normale Tokens verarbeiten
             annotationen = []
             if regex.match(r"[\p{P}]", token):
                 if token in ['–', '(', ')', '{', '}', '[', ']', '“', '„']:
@@ -160,17 +135,15 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             cleaned_tokens.append(token)
             cleaned_annotations.append(",".join(annotationen))
 
-            if position_status:
-                positions.append(f"{position_status}Start")
+            if pending_position_start:
+                positions.append(f"{pending_position_start}Start")
+                pending_position_start = None
             else:
                 positions.append("")
 
             i += 1
 
-        current_step += 1
-        report_step()
-
-        if len(cleaned_tokens) != len(cleaned_annotations) or len(cleaned_tokens) != len(positions):
+        if not (len(cleaned_tokens) == len(cleaned_annotations) == len(positions)):
             raise ValueError("Längen von Tokens, Annotationen und Positionen stimmen nicht überein.")
 
         tokenInklZahlwoerter = [ersetze_zahl_in_token(t) for t in cleaned_tokens]
@@ -196,6 +169,3 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         json_filename = ausgabeordner / f"{kapitelname_original}_annotierungen.json"
         with open(json_filename, "w", encoding="utf-8") as out_f:
             json.dump(json.loads(df.to_json(orient="records", force_ascii=False)), out_f, indent=2, ensure_ascii=False)
-
-        current_step += 1
-        report_step()

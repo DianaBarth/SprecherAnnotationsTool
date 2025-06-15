@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from docx import Document
+from Eingabe.config import ANZAHL_ÜBERSCHRIFTENZEILEN
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
     ausgabe_ordner = Path(ausgabe_ordner)
@@ -106,8 +107,23 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
             # Teile speichern mit korrektem Tag-Handling
             offene_tags_vorher = set()
 
-            for idx, teil_abschnitt in enumerate(abschnitts_liste, start=1):
-                text = "\n".join(teil_abschnitt)
+            for idx, teil_abschnitt in enumerate(abschnitts_liste, start=1):               
+
+                if idx == 1:
+                    # Nur beim ersten Abschnitt des Kapitels
+                    kopfzeilen = teil_abschnitt[:ANZAHL_ÜBERSCHRIFTENZEILEN]
+                    rest = teil_abschnitt[ANZAHL_ÜBERSCHRIFTENZEILEN:]
+
+                    if kopfzeilen:
+                        kopftext = "\n".join(kopfzeilen)
+                        kopftext = f"|UeberschriftStart|\n{kopftext}\n|UeberschriftEnde|"
+                    else:
+                        kopftext = ""
+
+                    text = kopftext + ("\n" + "\n".join(rest) if rest else "")
+                    print("[DEBUG] Überschrift für Kapitel", kapitel_name, "gesetzt.")
+                else:
+                    text = "\n".join(teil_abschnitt)
 
                 # Am Anfang: evtl. offene Tags vom vorherigen Teil einfügen
                 if offene_tags_vorher:
