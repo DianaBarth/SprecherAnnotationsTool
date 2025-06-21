@@ -76,16 +76,16 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                 end_tags = []
                 start_tags = []
 
-                # Alle aktuell offenen schließen, die jetzt nicht mehr gebraucht werden
+                # Beende alles, was nicht mehr gebraucht wird
                 for fmt in list(offene_formatierungen):
                     if not format_status.get(fmt, False):
                         end_tags.append(f"\n{END_TAGS[fmt].strip()}")
                         offene_formatierungen.remove(fmt)
 
-                # Alle neuen öffnen
+                # Starte neue Tags (mit Zeilenumbruch danach!)
                 for fmt in format_status:
                     if format_status[fmt] and fmt not in offene_formatierungen:
-                        start_tags.append(f"\n{START_TAGS[fmt].strip()}")
+                        start_tags.append(f"\n{START_TAGS[fmt].strip()}\n")
                         offene_formatierungen.add(fmt)
 
                 return "".join(end_tags + start_tags)
@@ -150,12 +150,12 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                     start_tags = "".join(START_TAGS[fmt] for fmt in offene_tags_vorher)
                     text = start_tags + text
 
-                # Aktuelle offene Tags bestimmen
-                offene_tags_jetzt = ermittle_offene_tags(text)
-
-                # Am Ende: sicher alle offenen Tags schließen
-                end_tags = "".join(END_TAGS[fmt] for fmt in offene_tags_jetzt)
+                # Alle noch offenen Formatierungen explizit schließen
+                end_tags = "".join(f"\n{END_TAGS[fmt].strip()}" for fmt in offene_formatierungen)
                 text = text + end_tags
+
+                # leere offene_formatierungen zurücksetzen für nächste Datei
+                offene_tags_vorher = set()
 
                 # Speichern
                 dateipfad = ausgabe_ordner / f"{kapitel_name}_{idx:03}.txt"
@@ -163,9 +163,8 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                     f.write(text)
 
                 print(f"[INFO] Gespeichert Teil {idx} von Kapitel '{kapitel_name}' als {dateipfad}")
-
-                offene_tags_vorher = offene_tags_jetzt
-
+                
+                offene_tags_vorher = set()
     else:
         text_gesamt = "\n".join([p.text for p in alle_paragraphen])
         dateiname_gesamt = os.path.splitext(os.path.basename(docx_datei))[0] + "_Gesamt.txt"
