@@ -53,6 +53,7 @@ class AnnotationenEditor(ttk.Frame):
         # Widgets bauen
         self._erstelle_widgets()
 
+
     def _lade_json_daten(self):
         aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
         print(f"Lade Daten für: {aktueller_pfad}")

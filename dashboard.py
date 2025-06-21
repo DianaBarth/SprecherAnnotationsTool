@@ -464,7 +464,7 @@ class DashBoard(ttk.Frame):
         # --- Spinner-Animation starten ---
         self._active_task_spinners = {}
         self._spinner_index = 0
-        self.after(200, self._animate_task_spinners)
+        #self.after(200, self._animate_task_spinners)
 
         # --- Automatisches Herunterfahren (optional) ---
         if self.shutdown_controller._is_shutdown_supported():
@@ -551,27 +551,27 @@ class DashBoard(ttk.Frame):
             else:
                 label.config(text="")
 
-    def _animate_task_spinners(self):
-        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
-        frame = self._spinner_frames[self._spinner_index]
+    # def _animate_task_spinners(self):
+    #     self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
+    #     frame = self._spinner_frames[self._spinner_index]
 
-        for task_id, label in list(self.task_spinner_labels.items()):
-            if not label.winfo_exists():
-                del self.task_spinner_labels[task_id]
-                continue
+    #     for task_id, label in list(self.task_spinner_labels.items()):
+    #         if not label.winfo_exists():
+    #             del self.task_spinner_labels[task_id]
+    #             continue
             
-            # Prüfen, ob Aufgabe aktiviert ist (existiert und True)
-            if self.task_vars.get(task_id) and self.task_vars[task_id].get():
-                # Spinner nur anzeigen, wenn auch aktiviert
-                if getattr(self, "_active_task_spinners", {}).get(task_id, False):
-                    label.config(text=frame)
-                else:
-                    label.config(text="")
-            else:
-                label.config(text="")
+    #         # Prüfen, ob Aufgabe aktiviert ist (existiert und True)
+    #         if self.task_vars.get(task_id) and self.task_vars[task_id].get():
+    #             # Spinner nur anzeigen, wenn auch aktiviert
+    #             if getattr(self, "_active_task_spinners", {}).get(task_id, False):
+    #                 label.config(text=frame)
+    #             else:
+    #                 label.config(text="")
+    #         else:
+    #             label.config(text="")
 
-        if self.task_spinner_labels:
-            self.after(200, self._animate_task_spinners)
+    #     if self.task_spinner_labels:
+    #         self.after(200, self._animate_task_spinners)
 
 
     def aktualisiere_progressbar(self, kapitel_name, task_id=None, wert=0, mehrere=False):

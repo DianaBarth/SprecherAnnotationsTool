@@ -93,13 +93,13 @@ def extrahiere_kapitelname(kapitelname):
 def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewaehlte_kapitel=None, progress_callback=None):
     START_TAGS = {
         "Ueberschrift": "|UeberschriftStart|",
-        "Einrueckung": "|EinrückungsStart|",
+        "Einrueckung": "|EinrueckungStart|",
         "Zentriert": "|ZentriertStart|",
         "Rechtsbuendig": "|RechtsbuendigStart|",
     }
     END_TAGS = {
         "Ueberschrift": "|UeberschriftEnde|",
-        "Einrueckung": "|EinrückungsEnde|",
+        "Einrueckung": "|EinrueckungEnde|",
         "Zentriert": "|ZentriertEnde|",
         "Rechtsbuendig": "|RechtsbuendigEnde|",
     }

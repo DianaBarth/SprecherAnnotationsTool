@@ -48,12 +48,12 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
         return format_status
 
     START_TAGS = {
-        "Einrueckung": "|EinrueckungsStart| ",
+        "Einrueckung": "|EinrueckungStart| ",
         "Zentriert": "|ZentriertStart| ",
         "Rechtsbuendig": "|RechtsbuendigStart| ",
     }
     END_TAGS = {
-        "Einrueckung": "|EinrueckungsEnde| ",
+        "Einrueckung": "|EinrueckungEnde| ",
         "Zentriert": "|ZentriertEnde| ",
         "Rechtsbuendig": "|RechtsbuendigEnde| ",
     }
@@ -108,6 +108,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                 for fmt in list(offene_formatierungen):
                     if not format_status.get(fmt, False):
                         tags_mit_newline.append(f"\n{END_TAGS[fmt].strip()}")
+                        offene_formatierungen.remove(fmt)
                 return "".join(tags_mit_newline)
             
             for para in kapitel_paragraphs:
@@ -144,7 +145,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                         kopftext = "\n".join(kopfzeilen)
 
                         # Entferne Einrückungs-, Zentriert- und Rechtsbuendig-Tags aus Überschrift
-                        kopftext = re.sub(r"\|Einrueckungs(Start|Ende)\|\s*", "", kopftext)
+                        kopftext = re.sub(r"\|Einrueckung(Start|Ende)\|\s*", "", kopftext)
                         kopftext = re.sub(r"\|Zentriert(Start|Ende)\|\s*", "", kopftext)
                         kopftext = re.sub(r"\|Rechtsbuendig(Start|Ende)\|\s*", "", kopftext)
 
@@ -174,10 +175,19 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                 with open(dateipfad, "w", encoding="utf-8") as f:
                     f.write(text)
 
-                print(f"[INFO] Gespeichert Teil {idx} von Kapitel '{kapitel_name}' als {dateipfad}")
-                
-                offene_tags_vorher = set()
+                # Nach dem letzten Kapitelteil: Offene Tags schließen (sicherheitsnetz)
+            if offene_formatierungen:
+                print(f"[WARN] Nicht geschlossene Tags am Ende von Kapitel '{kapitel_name}': {offene_formatierungen}")
+                letzte_datei = ausgabe_ordner / f"{kapitel_name}_{len(abschnitts_liste):03}.txt"
+                with open(letzte_datei, "a", encoding="utf-8") as f:
+                    for fmt in list(offene_formatierungen):
+                        f.write(f"\n{END_TAGS[fmt].strip()}")
                 offene_formatierungen.clear()
+
+            print(f"[INFO] Gespeichert Teil {idx} von Kapitel '{kapitel_name}' als {dateipfad}")
+            
+            offene_tags_vorher = set()
+            offene_formatierungen.clear()
     else:
         text_gesamt = "\n".join([p.text for p in alle_paragraphen])
         dateiname_gesamt = os.path.splitext(os.path.basename(docx_datei))[0] + "_Gesamt.txt"

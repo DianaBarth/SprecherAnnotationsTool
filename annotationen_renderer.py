@@ -276,7 +276,7 @@ class AnnotationRenderer:
             return True
 
         # Einrückung
-        if positions_annot == 'einrueckungsstart':
+        if positions_annot == 'einrueckungstart':
             print("einrueckungsstart erkannt - starte neue Gruppe")
             self.grouptyp_aktiv = 'einrueckung'
             self.aktuelle_token_gruppe = [element]
@@ -289,7 +289,7 @@ class AnnotationRenderer:
                 self.aktuelle_token_gruppe.append(element)
                 return True
 
-            if positions_annot == 'einrueckungsende':
+            if positions_annot == 'einrueckungende':
                 print("einrueckungsende erkannt - schließe Gruppe und zeichne eingerückt")
                 self.aktuelle_token_gruppe.append(element)
                 self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='einrueckung')
@@ -896,53 +896,64 @@ class AnnotationRenderer:
         schrift = self.schrift_holen(element_kopie)
         self._zeichne_token(canvas, idx, element_kopie, x, y, schrift)
 
-    def zeichne_token_gruppe_init(self, canvas, token_liste, ausrichtung='rechts'):
+    def zeichne_token_gruppe_init(self, canvas, token_liste, ausrichtung='links'):
         canvas.update_idletasks()
-        breite_canvas = canvas.winfo_width()
-        linker_rand = config.LINKER_SEITENRAND if hasattr(config, 'LINKER_SEITENRAND') else 10
-        rechter_rand = breite_canvas - (config.RECHTER_SEITENRAND if hasattr(config, 'RECHTER_SEITENRAND') else 10)
-        einrueckung = config.EINRUECKUNG if hasattr(config, 'EINRUECKUNG') else 40
-        zeilen = []
-        aktuelle_zeile = []
+        linker_rand = config.LINKER_SEITENRAND
+        rechter_rand = canvas.winfo_width() - config.RECHTER_SEITENRAND
+        extra_space = 10 if not self.ist_PDF else 2
+        schrift_cache = {}
+        y_pos = self.y_pos
 
-        # Tokens in Zeilen splitten anhand _hat_zeilenumbruch (oder Zeilenumbruch in Annotation)
+        max_breite = rechter_rand - linker_rand
+        einrueckung = 40  # px, nur bei einrückung
+
+        aktuelle_zeile = []
+        zeilen = []
+        zeilenbreite = 0
+
         for token in token_liste:
-            aktuelle_zeile.append(token)
-            if token.get('_hat_zeilenumbruch') or ('zeilenumbruch' in token.get('annotation', [])):
+            schrift = schrift_cache[id(token)] = self.schrift_holen(token)
+            text = token.get("token", "")
+            text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
+
+            token_hat_zeilenumbruch = token.get('_hat_zeilenumbruch', False)
+
+            if token_hat_zeilenumbruch or (zeilenbreite + text_breite > max_breite and aktuelle_zeile):
                 zeilen.append(aktuelle_zeile)
-                aktuelle_zeile = []
+                aktuelle_zeile = [token]
+                zeilenbreite = text_breite + extra_space
+            else:
+                aktuelle_zeile.append(token)
+                zeilenbreite += text_breite + extra_space
+
         if aktuelle_zeile:
             zeilen.append(aktuelle_zeile)
 
-        y_pos = self.y_pos
-        extra_space = 10 if not self.ist_PDF else 2
-        schrift_cache = {}
-
         for zeile in zeilen:
+            # Gesamtbreite der Zeile berechnen
             gesamtbreite = 0
             for token in zeile:
-                tid = id(token)
-                schrift = schrift_cache[tid] = self.schrift_holen(token)
+                schrift = schrift_cache[id(token)]
                 text = token.get("token", "")
                 text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
                 gesamtbreite += text_breite + extra_space
-            gesamtbreite -= extra_space  # letztes extra_space abziehen
+            gesamtbreite -= extra_space
 
             # x-Start je nach Ausrichtung
             if ausrichtung == 'rechts':
                 x_pos = rechter_rand - gesamtbreite
                 if x_pos < 0:
-                    print(f"⚠️ Zeile zu breit fürs rechtsbündige Zeichnen, wird abgeschnitten")
+                    print(f"⚠️ Zeile zu lang für rechtsbündig (breite={gesamtbreite}, max={rechter_rand}) – x=0")
                     x_pos = 0
             elif ausrichtung == 'zentriert':
-                x_pos = max(linker_rand, (breite_canvas - gesamtbreite) // 2)
-            elif ausrichtung == 'einrueckung':              
+                x_pos = linker_rand + (max_breite - gesamtbreite) // 2
+                if x_pos < 0:
+                    x_pos = 0
+            elif ausrichtung == 'einrueckung':
                 x_pos = linker_rand + einrueckung
-            else:
-                # Default: linksbündig am linken Rand
+            else:  # links oder unbekannt
                 x_pos = linker_rand
 
-            # Zeichnen der Tokens
             for token in zeile:
                 schrift = schrift_cache[id(token)]
                 text = token.get("token", "")
