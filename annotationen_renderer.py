@@ -163,8 +163,6 @@ class AnnotationRenderer:
         if self._handle_textausrichtung(canvas, element_kopie, positions_annot, annotation, index):
             return  # Gruppe aktiv → Token wird später gezeichnet
 
-        self._handle_einrueckung(positions_annot, token, index)
-
         aktuelle_x = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
         if 'zeilenumbruch' in annotation:
@@ -225,6 +223,7 @@ class AnnotationRenderer:
 
         print(f"_handle_textausrichtung: position='{positions_annot}', index={index}, grouptyp_aktiv={self.grouptyp_aktiv}")
 
+        # Rechtsbündig
         if positions_annot == 'rechtsbuendigstart':
             print("rechtsbuendigstart erkannt - starte neue Gruppe")
             self.grouptyp_aktiv = 'rechts'
@@ -239,9 +238,61 @@ class AnnotationRenderer:
                 return True
 
             if positions_annot == 'rechtsbuendigende':
-                print("rechtsbuendigende erkannt - schließe Gruppe und zeichne")
+                print("rechtsbuendigende erkannt - schließe Gruppe und zeichne rechtsbündig")
                 self.aktuelle_token_gruppe.append(element)
-                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe)
+                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='rechts')
+                self.grouptyp_aktiv = None
+                self.aktuelle_token_gruppe = []
+                return True
+
+            print(f"Token innerhalb offener Gruppe hinzufügen: index={index}")
+            self.aktuelle_token_gruppe.append(element)
+            return True
+
+        # Zentriert
+        if positions_annot == 'zentriertstart':
+            print("zentriertstart erkannt - starte neue Gruppe")
+            self.grouptyp_aktiv = 'zentriert'
+            self.aktuelle_token_gruppe = [element]
+            return True
+
+        if self.grouptyp_aktiv == 'zentriert':
+            if 'zeilenumbruch' in annotation:
+                print("Zeilenumbruch innerhalb offener Gruppe - speichern und Gruppe bleibt offen")
+                element['_hat_zeilenumbruch'] = True
+                self.aktuelle_token_gruppe.append(element)
+                return True
+
+            if positions_annot == 'zentriertende':
+                print("zentriertende erkannt - schließe Gruppe und zeichne zentriert")
+                self.aktuelle_token_gruppe.append(element)
+                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='zentriert')
+                self.grouptyp_aktiv = None
+                self.aktuelle_token_gruppe = []
+                return True
+
+            print(f"Token innerhalb offener Gruppe hinzufügen: index={index}")
+            self.aktuelle_token_gruppe.append(element)
+            return True
+
+        # Einrückung
+        if positions_annot == 'einrueckungsstart':
+            print("einrueckungsstart erkannt - starte neue Gruppe")
+            self.grouptyp_aktiv = 'einrueckung'
+            self.aktuelle_token_gruppe = [element]
+            return True
+
+        if self.grouptyp_aktiv == 'einrueckung':
+            if 'zeilenumbruch' in annotation:
+                print("Zeilenumbruch innerhalb offener Gruppe - speichern und Gruppe bleibt offen")
+                element['_hat_zeilenumbruch'] = True
+                self.aktuelle_token_gruppe.append(element)
+                return True
+
+            if positions_annot == 'einrueckungsende':
+                print("einrueckungsende erkannt - schließe Gruppe und zeichne eingerückt")
+                self.aktuelle_token_gruppe.append(element)
+                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='einrueckung')
                 self.grouptyp_aktiv = None
                 self.aktuelle_token_gruppe = []
                 return True
@@ -253,7 +304,7 @@ class AnnotationRenderer:
         # Keine Gruppe aktiv, normaler Token
         return False
 
- 
+
     def _rekonstruiere_gruppe_bis_start(self, end_index, aktuelles_element, endetyp):
         # Ermittelt die Gruppe rückwärts vom Ende bis zum Start-Token
         starttyp = "zentriertstart" if "zentriert" in endetyp else "rechtsbuendigstart"
@@ -284,18 +335,6 @@ class AnnotationRenderer:
                 self.group_tokens.insert(0, token)
                 self.group_width += self.berechne_breite_des_tokens(token, self.canvas, schrift)
                 
-    def _handle_einrueckung(self, position, token, index):
-        if position == "einrückungsstart":
-            print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
-            self.einrueckung_aktiv = True
-            self.y_pos += self.zeilen_hoehe
-            self.x_pos = self.einrueckung_start_x
-        elif position == "einrückungsende":
-            print(f"Einrückung beendet bei Token '{token}' (Index {index})")
-            self.einrueckung_aktiv = False
-            self.y_pos += self.zeilen_hoehe
-            self.x_pos = config.LINKER_SEITENRAND
-
     def _berechne_textgroesse(self, canvas, schrift, token):
         if not self.ist_PDF:
             schriftobjekt, schriftfarbe = schrift
@@ -857,18 +896,19 @@ class AnnotationRenderer:
         schrift = self.schrift_holen(element_kopie)
         self._zeichne_token(canvas, idx, element_kopie, x, y, schrift)
 
-    def zeichne_token_gruppe_init(self, canvas, token_liste):
-        # Sicherstellen, dass der Canvas die aktuelle Breite kennt
+    def zeichne_token_gruppe_init(self, canvas, token_liste, ausrichtung='rechts'):
         canvas.update_idletasks()
-        rechte_grenze = canvas.winfo_width() - config.RECHTER_SEITENRAND  # z. B. 10–20 px Puffer
-
+        breite_canvas = canvas.winfo_width()
+        linker_rand = config.LINKER_SEITENRAND if hasattr(config, 'LINKER_SEITENRAND') else 10
+        rechter_rand = breite_canvas - (config.RECHTER_SEITENRAND if hasattr(config, 'RECHTER_SEITENRAND') else 10)
+        einrueckung = config.EINRUECKUNG if hasattr(config, 'EINRUECKUNG') else 40
         zeilen = []
         aktuelle_zeile = []
 
-        # Tokens in Zeilen splitten anhand von _hat_zeilenumbruch
+        # Tokens in Zeilen splitten anhand _hat_zeilenumbruch (oder Zeilenumbruch in Annotation)
         for token in token_liste:
             aktuelle_zeile.append(token)
-            if token.get('_hat_zeilenumbruch'):
+            if token.get('_hat_zeilenumbruch') or ('zeilenumbruch' in token.get('annotation', [])):
                 zeilen.append(aktuelle_zeile)
                 aktuelle_zeile = []
         if aktuelle_zeile:
@@ -879,7 +919,6 @@ class AnnotationRenderer:
         schrift_cache = {}
 
         for zeile in zeilen:
-            # Gesamtbreite der Zeile berechnen
             gesamtbreite = 0
             for token in zeile:
                 tid = id(token)
@@ -889,13 +928,21 @@ class AnnotationRenderer:
                 gesamtbreite += text_breite + extra_space
             gesamtbreite -= extra_space  # letztes extra_space abziehen
 
-            # Start-x so berechnen, dass Zeile rechtsbündig an rechte_grenze anschließt
-            x_pos = rechte_grenze - gesamtbreite
-            if x_pos < 0:
-                print(f"⚠️  Zeile ist zu lang zum rechtsbündigen Zeichnen – sie wird abgeschnitten (breite={gesamtbreite}, canvas={rechte_grenze})")
-                x_pos = 0  # Notfall: nicht negativ werden
+            # x-Start je nach Ausrichtung
+            if ausrichtung == 'rechts':
+                x_pos = rechter_rand - gesamtbreite
+                if x_pos < 0:
+                    print(f"⚠️ Zeile zu breit fürs rechtsbündige Zeichnen, wird abgeschnitten")
+                    x_pos = 0
+            elif ausrichtung == 'zentriert':
+                x_pos = max(linker_rand, (breite_canvas - gesamtbreite) // 2)
+            elif ausrichtung == 'einrueckung':              
+                x_pos = linker_rand + einrueckung
+            else:
+                # Default: linksbündig am linken Rand
+                x_pos = linker_rand
 
-            # Tokens der Zeile zeichnen
+            # Zeichnen der Tokens
             for token in zeile:
                 schrift = schrift_cache[id(token)]
                 text = token.get("token", "")

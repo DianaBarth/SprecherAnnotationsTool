@@ -21,18 +21,18 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
         ist_zentriert = ausrichtung == 1
         ist_rechtsbuendig = ausrichtung == 2
         return {
-            "Einrückung": einrueckung,
+            "Einrueckung": einrueckung,
             "Zentriert": ist_zentriert,
             "Rechtsbuendig": ist_rechtsbuendig,
         }
 
     START_TAGS = {
-        "Einrückung": "|EinrückungsStart| ",
+        "Einrueckung": "|EinrueckungsStart| ",
         "Zentriert": "|ZentriertStart| ",
         "Rechtsbuendig": "|RechtsbuendigStart| ",
     }
     END_TAGS = {
-        "Einrückung": "|EinrückungsEnde| ",
+        "Einrueckung": "|EinrueckungsEnde| ",
         "Zentriert": "|ZentriertEnde| ",
         "Rechtsbuendig": "|RechtsbuendigEnde| ",
     }
@@ -42,7 +42,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
 
     def ermittle_offene_tags(text):
         offene = set()
-        for fmt in ["Einrückung", "Zentriert", "Rechtsbuendig"]:
+        for fmt in ["Einrueckung", "Zentriert", "Rechtsbuendig"]:
             start_count = text.count(START_TAGS[fmt])
             end_count = text.count(END_TAGS[fmt])
             if start_count > end_count:
