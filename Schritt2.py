@@ -5,8 +5,29 @@ import pandas as pd
 
 from pathlib import Path
 from num2words import num2words
+import locale
+import calendar
 
 import Eingabe.config as config  # Importiere das komplette config-Modul
+
+def get_monatsnamen(sprache_code):
+    """Gibt Monatsnamen gemäß Sprachcode via locale zurück."""
+    try:
+        # Mapping für Sprachcode zu Locale (falls nötig anpassen)
+        locale_map = {
+            "de": "de_DE.UTF-8",
+            "en": "en_US.UTF-8",
+            "fr": "fr_FR.UTF-8"
+        }
+        loc = locale_map.get(sprache_code, "de_DE.UTF-8")
+        locale.setlocale(locale.LC_TIME, loc)
+        return [calendar.month_name[i] for i in range(1, 13)]
+    
+    except Exception as e:
+        print(f"Warnung: locale konnte nicht gesetzt werden ({e})")
+        # Fallback auf deutsche Monatsnamen
+        return ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                "Juli", "August", "September", "Oktober", "November", "Dezember"]
 
 def roemisch_zu_int(roemisch):
     roem_map = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
@@ -20,21 +41,39 @@ def roemisch_zu_int(roemisch):
 def ist_roemisch(token):
     return re.fullmatch(r'M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})', token.upper()) is not None
 
-def ersetze_zahl_in_token(token):
-    token_clean = token.rstrip('.:,;!?')
-    if ist_roemisch(token_clean):
-        zahl = roemisch_zu_int(token_clean)
-        if zahl > 0:
-            return token.replace(token_clean, num2words(zahl, lang='de'))
-    zahlen = re.findall(r'\d+', token)
-    if not zahlen:
+def ersetze_zahl_in_token(token, vorher_token=None, naechstes_token=None):
+    print(f"DEBUG: Verarbeite Token='{token}', vorher_token='{vorher_token}', naechstes_token='{naechstes_token}'")
+    
+    match = re.match(r"(\d+)([.,:;!?\-]*)$", token)
+    if not match:
+        print("DEBUG: Kein Zahlmuster erkannt, Token wird unverändert zurückgegeben.")
         return token
-    if token.isdigit():
-        return num2words(int(token), lang='de')
-    for zahl_str in zahlen:
-        wort = num2words(int(zahl_str), lang='de')
-        token = token.replace(zahl_str, "_" + wort)
-    return token
+    
+    zahl_str, endzeichen = match.groups()
+    zahl = int(zahl_str)
+    print(f"DEBUG: Gefundene Zahl='{zahl}', Endzeichen='{endzeichen}'")
+
+    # Beispielkontext: Ordnungszahl nach 'am' oder 'zum' oder vor Monatsnamen
+    monate = get_monatsnamen(config.SPRACHE)
+    
+    if endzeichen == '.' and (
+        (vorher_token and vorher_token.lower() in ['am', 'zum']) or
+        (naechstes_token and naechstes_token.lower() in monate)
+    ):
+        print("DEBUG: Kontext für Ordnungszahl erkannt (Punkt plus Kontext).")
+        wort = num2words(zahl, lang='de', to='ordinal')
+        print(f"DEBUG: Num2words Ordinal (standard)='{wort}'")
+        # Anpassung auf Dativ maskulin (z.B. "achtundzwanzigste" -> "achtundzwanzigsten")
+        if wort.endswith('ste'):
+            wort = wort[:-3] + 'sten'
+        elif wort.endswith('te'):
+            wort = wort[:-2] + 'ten'
+        print(f"DEBUG: Angepasste Ordnungszahl (Dativ)='{wort}'")
+        return wort
+    else:
+        wort = num2words(zahl, lang=config.SPRACHE)
+        print(f"DEBUG: Normale Kardinalzahl='{wort}'")
+        return wort
 
 def extrahiere_kapitelname(kapitelname):
     match_arabisch = regex.match(r"^(\d+)", kapitelname)
@@ -91,7 +130,10 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         text = regex.sub(r"\r\n|\r|\n", " |BREAK| ", text)
         text = regex.sub(r"(_BREAK_)+", " |BREAK| ", text)
 
-        woerter_und_satzzeichen = regex.split(r"\s+|(?<=\p{P})|(?=\p{P})", text, flags=regex.UNICODE)
+        # Alle Zahlen mit folgendem Punkt als Einheit behandeln
+        # (Ersetze '3.' durch '3.' als ein Token)
+        pattern = r"\d+\.(?!\d)|\d+|[\p{P}]|\S+"
+        woerter_und_satzzeichen = regex.findall(pattern, text, flags=regex.UNICODE)
         woerter_und_satzzeichen = [w for w in woerter_und_satzzeichen if w.strip()]
 
         cleaned_tokens = []
@@ -198,7 +240,11 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         if not (len(cleaned_tokens) == len(cleaned_annotations) == len(positions)):
             raise ValueError("Längen von Tokens, Annotationen und Positionen stimmen nicht überein.")
 
-        tokenInklZahlwoerter = [ersetze_zahl_in_token(t) for t in cleaned_tokens]
+        tokenInklZahlwoerter = []
+        for idx, token in enumerate(cleaned_tokens):
+            vorher_token = cleaned_tokens[idx-1] if idx > 0 else None
+            naechstes_token = cleaned_tokens[idx+1] if idx+1 < len(cleaned_tokens) else None
+            tokenInklZahlwoerter.append(ersetze_zahl_in_token(token, vorher_token, naechstes_token))
 
         df = pd.DataFrame({
             "KapitelNummer": kapitelname,
