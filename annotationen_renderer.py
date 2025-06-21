@@ -907,6 +907,11 @@ class AnnotationRenderer:
         max_breite = rechter_rand - linker_rand
         einrueckung = 40  # px, nur bei einrückung
 
+        if ausrichtung == 'einrueckung':
+            max_breite_zeile = max_breite - einrueckung
+        else:
+            max_breite_zeile = max_breite
+
         aktuelle_zeile = []
         zeilen = []
         zeilenbreite = 0
@@ -918,7 +923,7 @@ class AnnotationRenderer:
 
             token_hat_zeilenumbruch = token.get('_hat_zeilenumbruch', False)
 
-            if token_hat_zeilenumbruch or (zeilenbreite + text_breite > max_breite and aktuelle_zeile):
+            if token_hat_zeilenumbruch or (zeilenbreite + text_breite > max_breite_zeile and aktuelle_zeile):
                 zeilen.append(aktuelle_zeile)
                 aktuelle_zeile = [token]
                 zeilenbreite = text_breite + extra_space
@@ -930,7 +935,6 @@ class AnnotationRenderer:
             zeilen.append(aktuelle_zeile)
 
         for zeile in zeilen:
-            # Gesamtbreite der Zeile berechnen
             gesamtbreite = 0
             for token in zeile:
                 schrift = schrift_cache[id(token)]
@@ -939,11 +943,9 @@ class AnnotationRenderer:
                 gesamtbreite += text_breite + extra_space
             gesamtbreite -= extra_space
 
-            # x-Start je nach Ausrichtung
             if ausrichtung == 'rechts':
                 x_pos = rechter_rand - gesamtbreite
                 if x_pos < 0:
-                    print(f"⚠️ Zeile zu lang für rechtsbündig (breite={gesamtbreite}, max={rechter_rand}) – x=0")
                     x_pos = 0
             elif ausrichtung == 'zentriert':
                 x_pos = linker_rand + (max_breite - gesamtbreite) // 2
@@ -951,7 +953,7 @@ class AnnotationRenderer:
                     x_pos = 0
             elif ausrichtung == 'einrueckung':
                 x_pos = linker_rand + einrueckung
-            else:  # links oder unbekannt
+            else:
                 x_pos = linker_rand
 
             for token in zeile:
