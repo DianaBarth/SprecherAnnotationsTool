@@ -122,9 +122,12 @@ if __name__ == "__main__":
         def log_enthaelt_error(logdatei):
             if not os.path.exists(logdatei):
                 return False
+
+            muster = re.compile(r"(?<!['\"])\b(FEHLER|ERROR)\b(?!['\"])", re.IGNORECASE)
+
             with open(logdatei, "r", encoding="utf-8") as f:
                 for zeile in f:
-                    if "ERROR" in zeile.upper() or "FEHLER" in zeile.upper():
+                    if muster.search(zeile):
                         return True
             return False
 

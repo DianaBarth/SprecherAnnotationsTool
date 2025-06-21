@@ -1,5 +1,6 @@
 # ------------------ Imports ------------------
 import ast
+import re
 import copy
 import concurrent.futures
 import os
@@ -211,8 +212,11 @@ class FehlerAnzeige(ttk.LabelFrame):
         current_error = []
         collecting = False
 
+        # Regex für FEHLER/ERROR ohne Anführungszeichen
+        muster = re.compile(r"(?<!['\"])\b(ERROR|FEHLER)\b(?!['\"])", re.IGNORECASE)
+
         for line in lines:
-            if any(keyword in line for keyword in ["ERROR", "Error", "FEHLER", "Fehler"]):
+            if muster.search(line):
                 if collecting and current_error:
                     errors.append("".join(current_error))
                     current_error = []

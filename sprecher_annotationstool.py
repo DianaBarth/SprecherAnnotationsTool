@@ -1,4 +1,5 @@
 import tkinter as tk
+import re
 from tkinter import ttk
 import queue
 from multiprocessing import Manager
