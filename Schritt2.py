@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 from num2words import num2words
 
-import Eingabe.config as config # Importiere das komplette config-Modul
+import Eingabe.config as config  # Importiere das komplette config-Modul
 
 def roemisch_zu_int(roemisch):
     roem_map = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
@@ -40,7 +40,11 @@ def extrahiere_kapitelname(kapitelname):
     match_arabisch = regex.match(r"^(\d+)", kapitelname)
     if match_arabisch:
         return match_arabisch.group(1)
-    match_roemisch = regex.match(r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))", kapitelname, flags=re.IGNORECASE)
+    match_roemisch = regex.match(
+        r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))",
+        kapitelname,
+        flags=re.IGNORECASE,
+    )
     if match_roemisch and match_roemisch.group(1):
         return str(roemisch_zu_int(match_roemisch.group(1)))
     if "Prolog" in kapitelname:
@@ -105,6 +109,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             # START-TAG erkennen
             if token in START_TAGS.values():
                 typ = [k for k, v in START_TAGS.items() if v == token][0]
+                print(f"DEBUG: START-TAG '{token}' erkannt, pending_position_start gesetzt auf '{typ}'")
                 if typ == "Ueberschrift":
                     in_ueberschrift = True
                     typ = "Zentriert"
@@ -115,6 +120,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             # END-TAG erkennen
             elif token in END_TAGS.values():
                 typ = [k for k, v in END_TAGS.items() if v == token][0]
+                print(f"DEBUG: END-TAG '{token}' erkannt")
                 if typ == "Ueberschrift":
                     in_ueberschrift = False
                     typ = "Zentriert"
@@ -122,11 +128,11 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                 # Position des letzten echten Tokens vor dem End-Tag mit Ende-Annotation versehen
                 if typ in last_token_idx and last_token_idx[typ] is not None:
                     idx = last_token_idx[typ]
-                    # Füge Ende-Tag an bestehende Position (wenn vorhanden) an
                     if positions[idx]:
                         positions[idx] += f",{typ}Ende"
                     else:
                         positions[idx] = f"{typ}Ende"
+                    print(f"DEBUG: Position an Index {idx} ergänzt mit '{typ}Ende'")
                     last_token_idx[typ] = None  # Reset
 
                 i += 1
@@ -134,6 +140,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
 
             # Zeilenumbruch |BREAK|
             elif token == "|BREAK|":
+                print(f"DEBUG: Zeilenumbruch erkannt an Position {len(positions)}")
                 cleaned_tokens.append("")
                 cleaned_annotations.append("zeilenumbruch")
                 positions.append("")
@@ -157,24 +164,36 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             if in_ueberschrift:
                 annotationen.append("Überschrift")
 
-            # Position für Start setzen, wenn Pending vorhanden und token ist echt (nicht leer)
-            if pending_position_start and token.strip():
-                position_wert = f"{pending_position_start}Start"
-                last_token_idx[pending_position_start] = len(positions)
-                pending_position_start = None
-            else:
-                # Falls kein Pending, update letzte Position für alle offenen Typen (laufend im Block)
-                for typ in last_token_idx:
-                    if token.strip():
+            if token.strip():  # nur wenn echtes Token
+                if pending_position_start:
+                    position_wert = f"{pending_position_start}Start"
+                    last_token_idx[pending_position_start] = len(positions)
+                    print(f"DEBUG: Token '{token}' bekommt Position '{position_wert}' (pending_position_start='{pending_position_start}')")
+                    pending_position_start = None
+                else:
+                    for typ in last_token_idx:
                         last_token_idx[typ] = len(positions)
+                    print(f"DEBUG: Token '{token}' aktualisiert letzte Positionen: {last_token_idx}")
+
+            else:
+                print(f"DEBUG: Leer-Token an Position {len(positions)}")
+            
+            
+            print(f"DEBUG: Token '{token}': Annotationen = {annotationen}, position_wert = {position_wert}")
 
             cleaned_tokens.append(token)
             cleaned_annotations.append(",".join(annotationen))
             positions.append(position_wert)
+            
+        
 
+     
             i += 1
 
-
+        print(f"DEBUG: Anzahl Tokens: {len(cleaned_tokens)}")
+        print(f"DEBUG: Anzahl Annotationen: {len(cleaned_annotations)}")
+        print(f"DEBUG: Beispiel Annotationen (erste 40): {cleaned_annotations[:40]}")
+        print(f"DEBUG: Beispiel Positions (erste 40): {positions[:40]}")
 
         if not (len(cleaned_tokens) == len(cleaned_annotations) == len(positions)):
             raise ValueError("Längen von Tokens, Annotationen und Positionen stimmen nicht überein.")
@@ -187,17 +206,12 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             "token": cleaned_tokens,
             "tokenInklZahlwoerter": tokenInklZahlwoerter,
             "annotation": cleaned_annotations,
-            "person": "",
-            "betonung": "",
-            "pause": "",
-            "gedanken": "",
-            "spannung": "",
-            "ig": "",
             "position": positions,
         })
 
         for typ_name in config.KI_AUFGABEN.values():
-            df[typ_name] = ""
+            if typ_name not in df.columns:
+                df[typ_name] = ""
 
         json_filename = ausgabeordner / f"{kapitelname_original}_annotierungen.json"
         with open(json_filename, "w", encoding="utf-8") as out_f:
