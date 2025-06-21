@@ -1,7 +1,8 @@
 import os
+import re
 from pathlib import Path
 from docx import Document
-from Eingabe.config import ANZAHL_ÜBERSCHRIFTENZEILEN
+from Eingabe.config import ANZAHL_ÜBERSCHRIFTENZEILEN, EINRUECKUNGSFORMAT
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
     ausgabe_ordner = Path(ausgabe_ordner)
@@ -15,16 +16,36 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
     alle_paragraphen = doc.paragraphs
 
     def get_formatierung(paragraph):
-        indent = paragraph.paragraph_format.left_indent
-        einrueckung = indent and indent.pt > 0
+        pf = paragraph.paragraph_format
+        stilname = paragraph.style.name.strip().lower() if paragraph.style else ""
+
         ausrichtung = paragraph.alignment
         ist_zentriert = ausrichtung == 1
         ist_rechtsbuendig = ausrichtung == 2
-        return {
+
+        print(f"[DEBUG] Indents: left={pf.left_indent}, first_line={pf.first_line_indent}, right={pf.right_indent}")
+        print(f"[DEBUG] Stilname: {stilname}")
+
+        einrueckung = False
+        if not ist_zentriert and not ist_rechtsbuendig:
+            if pf.left_indent and abs(pf.left_indent.pt) > 0.1:
+                einrueckung = True
+            elif pf.first_line_indent and abs(pf.first_line_indent.pt) > 0.1:
+                einrueckung = True
+            elif pf.right_indent and abs(pf.right_indent.pt) > 0.1:
+                einrueckung = True
+            if any(name in stilname for name in EINRUECKUNGSFORMAT):
+                einrueckung = True
+
+        format_status = {
             "Einrueckung": einrueckung,
             "Zentriert": ist_zentriert,
             "Rechtsbuendig": ist_rechtsbuendig,
         }
+
+        print(f"[DEBUG] Format für Absatz: {paragraph.text[:60]}... => {format_status}")
+
+        return format_status
 
     START_TAGS = {
         "Einrueckung": "|EinrueckungsStart| ",
@@ -39,15 +60,6 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
 
     def kapitel_startet_mit(text, kapitel):
         return text.strip().lower().startswith(kapitel.strip().lower())
-
-    def ermittle_offene_tags(text):
-        offene = set()
-        for fmt in ["Einrueckung", "Zentriert", "Rechtsbuendig"]:
-            start_count = text.count(START_TAGS[fmt])
-            end_count = text.count(END_TAGS[fmt])
-            if start_count > end_count:
-                offene.add(fmt)
-        return offene
 
     if kapitel_namen:
         for i, kapitel_name in enumerate(kapitel_namen):
@@ -111,12 +123,6 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                 start_tags = format_tags_vor_text(format_status, offene_formatierungen)
                 end_tags = format_tags_nach_text(format_status, offene_formatierungen)
 
-                # Update offene Formatierungen
-                beendete = {fmt for fmt in offene_formatierungen if not format_status[fmt]}
-                offene_formatierungen.difference_update(beendete)
-                neu_geoeffnete = {fmt for fmt in format_status if format_status[fmt] and fmt not in offene_formatierungen}
-                offene_formatierungen.update(neu_geoeffnete)
-
                 text_mit_tags = f"{start_tags}{text}{end_tags}" if text else f"{start_tags}{end_tags}"
                 aktueller_abschnitt.append(text_mit_tags)
 
@@ -136,6 +142,12 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
 
                     if kopfzeilen:
                         kopftext = "\n".join(kopfzeilen)
+
+                        # Entferne Einrückungs-, Zentriert- und Rechtsbuendig-Tags aus Überschrift
+                        kopftext = re.sub(r"\|Einrueckungs(Start|Ende)\|\s*", "", kopftext)
+                        kopftext = re.sub(r"\|Zentriert(Start|Ende)\|\s*", "", kopftext)
+                        kopftext = re.sub(r"\|Rechtsbuendig(Start|Ende)\|\s*", "", kopftext)
+
                         kopftext = f"|UeberschriftStart|\n{kopftext}\n|UeberschriftEnde|"
                     else:
                         kopftext = ""
@@ -165,6 +177,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
                 print(f"[INFO] Gespeichert Teil {idx} von Kapitel '{kapitel_name}' als {dateipfad}")
                 
                 offene_tags_vorher = set()
+                offene_formatierungen.clear()
     else:
         text_gesamt = "\n".join([p.text for p in alle_paragraphen])
         dateiname_gesamt = os.path.splitext(os.path.basename(docx_datei))[0] + "_Gesamt.txt"

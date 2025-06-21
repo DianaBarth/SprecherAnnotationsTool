@@ -20,9 +20,10 @@ MAX_PROMPT_TOKENS = 250
 MAX_TOTAL_TOKENS = 1500
 
 # Allgemeine Formatierung
+EINRUECKUNGSFORMAT = ["zitat", "schriftstücke", "quote"] 
 ANZAHL_ÜBERSCHRIFTENZEILEN = 2
 BILDHOEHE_PX = 19
-PDF_SEITENFORMAT = 'letter'
+PDF_SEITENFORMAT = 'A4'
 DATUMSFORMAT = '%Y-%m-%d_%H-%M-%S'
 
 # Layout-Einstellungen
