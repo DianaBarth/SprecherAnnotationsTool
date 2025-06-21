@@ -37,9 +37,9 @@ class AnnotationenEditor(ttk.Frame):
         else:
              self.kapitel_liste = kapitel_config.kapitel_liste 
         
-        # Start mit erstem Hauptkapitel und erstem Abschnitt
-        self.current_hauptkapitel_index = 0
-        self.current_abschnitt_index = 0
+        # Start mit keinem Hauptkapitel und keinem Abschnitt
+        self.current_hauptkapitel_index = None
+        self.current_abschnitt_index = None
 
         # Initiale Kapitelpfade noch leer, werden beim Laden gesetzt
         self.kapitel_pfade = []
@@ -52,9 +52,6 @@ class AnnotationenEditor(ttk.Frame):
     
         # Widgets bauen
         self._erstelle_widgets()
-
-        # Lade Pfade und JSON-Daten für das erste Hauptkapitel und ersten Abschnitt
-        self._lade_kapitel_abschnitte()
 
     def _lade_json_daten(self):
         aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
@@ -127,16 +124,18 @@ class AnnotationenEditor(ttk.Frame):
         top_frame.columnconfigure(1, weight=0)
 
         max_len = max((len(str(k)) for k in self.kapitel_liste), default=5)
-        self.hauptkapitel_combo = ttk.Combobox(top_frame, values=self.kapitel_liste, state="readonly", width=max(max_len, 20))
-        self.hauptkapitel_combo.current(self.current_hauptkapitel_index)
+        self.hauptkapitel_combo = ttk.Combobox(
+            top_frame,
+            values=self.kapitel_liste,
+            state="readonly",
+            width=max(max_len, 20)
+        )
+        self.hauptkapitel_combo.set('')  # zu Beginn keine Auswahl
         self.hauptkapitel_combo.grid(row=0, column=0, padx=(0,10))
         self.hauptkapitel_combo.bind("<<ComboboxSelected>>", self._hauptkapitel_gewechselt)
 
         self.abschnitt_combo = ttk.Combobox(top_frame, values=[], state="readonly")
-        if self.abschnitt_combo['values']:
-            self.abschnitt_combo.current(self.current_abschnitt_index)
-        else:
-            self.abschnitt_combo.set('')
+        self.abschnitt_combo.set('')  # leer zu Beginn
         self.abschnitt_combo.grid(row=0, column=1)
         self.abschnitt_combo.bind("<<ComboboxSelected>>", self._abschnitt_gewechselt)
 
@@ -454,12 +453,30 @@ class AnnotationenEditor(ttk.Frame):
 
     def _hauptkapitel_gewechselt(self, event):
         self.current_hauptkapitel_index = self.hauptkapitel_combo.current()
-        self.current_abschnitt_index = 0
-        self._lade_kapitel_abschnitte()
-        self._zeichne_alle_tokens()
+        self.current_abschnitt_index = None
+
+        kapitelname = self.kapitel_liste[self.current_hauptkapitel_index]
+        self.kapitel_pfade = self._lade_alle_kapiteldateien(kapitelname)
+
+        abschnittswerte = [f"Abschnitt {i+1}" for i in range(len(self.kapitel_pfade))]
+        self.abschnitt_combo['values'] = abschnittswerte
+        self.abschnitt_combo.set('')  # zurücksetzen
+
+        # Canvas und Daten leeren, da noch kein Abschnitt gewählt ist
+        self.json_dicts = []
+        self.canvas.delete('all')
+        self.default_annotation_label.grid()
 
     def _abschnitt_gewechselt(self, event):
-        self.current_abschnitt_index = self.abschnitt_combo.current()
+        idx = self.abschnitt_combo.current()
+        if idx == -1:
+            # Kein Abschnitt ausgewählt, Daten und Canvas leeren
+            self.json_dicts = []
+            self.canvas.delete('all')
+            self.default_annotation_label.grid()
+            return
+
+        self.current_abschnitt_index = idx
         self._lade_json_daten()
         self._zeichne_alle_tokens()
 
