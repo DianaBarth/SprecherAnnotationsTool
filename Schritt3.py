@@ -62,7 +62,8 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
         # Keine Annotationen mit Regex entfernen! Stattdessen die neuen Tags ignorieren später beim Verarbeiten.
 
         # Falls gewünscht: Entferne die neuen Formatierungs-Tags (optional)
-        for tag in ["|EinrückungsStart|", "|EinrückungsEnde|",
+        for tag in ["|UeberschriftStart|","|UeberschriftEnde|",
+                    "|EinrückungsStart|", "|EinrückungsEnde|",
                     "|ZentriertStart|", "|ZentriertEnde|",
                     "|RechtsbuendigStart|", "|RechtsbuendigEnde|"]:
             text = text.replace(tag, "")  # falls du Tags aus dem reinen Text entfernen willst

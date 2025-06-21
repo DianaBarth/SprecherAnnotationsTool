@@ -73,11 +73,31 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
             offene_formatierungen = set()
 
             def format_tags_vor_text(format_status, offene_formatierungen):
-                return "".join(START_TAGS[fmt] for fmt in format_status if format_status[fmt] and fmt not in offene_formatierungen)
+                end_tags = []
+                start_tags = []
+
+                # Alle aktuell offenen schließen, die jetzt nicht mehr gebraucht werden
+                for fmt in list(offene_formatierungen):
+                    if not format_status.get(fmt, False):
+                        end_tags.append(f"\n{END_TAGS[fmt].strip()}")
+                        offene_formatierungen.remove(fmt)
+
+                # Alle neuen öffnen
+                for fmt in format_status:
+                    if format_status[fmt] and fmt not in offene_formatierungen:
+                        start_tags.append(f"\n{START_TAGS[fmt].strip()}")
+                        offene_formatierungen.add(fmt)
+
+                return "".join(end_tags + start_tags)
+
 
             def format_tags_nach_text(format_status, offene_formatierungen):
-                return "".join(END_TAGS[fmt] for fmt in offene_formatierungen if not format_status[fmt])
-
+                tags_mit_newline = []
+                for fmt in list(offene_formatierungen):
+                    if not format_status.get(fmt, False):
+                        tags_mit_newline.append(f"\n{END_TAGS[fmt].strip()}")
+                return "".join(tags_mit_newline)
+            
             for para in kapitel_paragraphs:
                 text = para.text.strip()
                 if kapitel_trenner and text == kapitel_trenner.strip():
