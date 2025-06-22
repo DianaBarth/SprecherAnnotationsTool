@@ -253,18 +253,19 @@ class AnnotationenEditor(ttk.Frame):
         x_pos = config.LINKER_SEITENRAND
         y_pos = config.LINKER_SEITENRAND
         zeilenhoehe = self.renderer.zeilen_hoehe
+        spacing = 10  # Optional als config konfigurierbar
 
         for i in range(bis_index):
             elem = self.json_dicts[i]
-            annotation = elem.get("annotation", {})
-            if "zeilenumbruch" in annotation.lower():
+            annotation_text = str(elem.get("annotation", ""))
+            if "zeilenumbruch" in annotation_text.lower():
                 y_pos += zeilenhoehe
                 x_pos = config.LINKER_SEITENRAND
             else:
                 token = elem.get("token", "")
                 schrift = self.renderer.schrift_holen(elem)
                 text_breite, _, _ = self.renderer._berechne_textgroesse(self.canvas, schrift, token)
-                x_pos += text_breite + 10  # 10 = Standard Extra-Space (eventuell anpassen)
+                x_pos += text_breite + spacing
 
         return x_pos, y_pos
 
@@ -276,23 +277,23 @@ class AnnotationenEditor(ttk.Frame):
         self.renderer._reset_gruppe()
 
         # Bereich erweitern, um ganze Gruppen zu erfassen
-        # Suche rückwärts bis zum Gruppenstart (zentriertstart/rechtsbündigstart)
+        # Suche rückwärts bis zum Gruppenstart (zentriertstart/rechtsbuendigstart/einrueckungstart)
         while start_index > 0:
             elem = self.json_dicts[start_index]
             position = elem.get("position", "").lower()
-            if position in ("zentriertstart", "rechtsbuendigstart"):
+            if position in ("zentriertstart", "rechtsbuendigstart", "einrueckungstart"):
                 break
             start_index -= 1
 
-        # Suche vorwärts bis Gruppenende (zentriertende/rechtsbuendigende)
+        # Suche vorwärts bis Gruppenende (zentriertende/rechtsbuendigende/einrueckungende)
         while end_index < len(self.json_dicts) - 1:
             elem = self.json_dicts[end_index]
             position = elem.get("position", "").lower()
-            if position in ("zentriertende", "rechtsbuendigende"):
+            if position in ("zentriertende", "rechtsbuendigende", "einrueckungende"):
                 break
             end_index += 1
 
-        # Lösche alle Canvas-Elemente im Bereich
+        # Lösche alle Canvas-Elemente im Bereich, aber NICHT die Einträge aus canvas_elemente_pro_token
         for i in range(start_index, end_index + 1):
             elem = self.json_dicts[i]
             wortNr = elem.get("WortNr")
@@ -302,22 +303,24 @@ class AnnotationenEditor(ttk.Frame):
                     canvas_id = eintrag.get("canvas_id")
                     if canvas_id:
                         self.canvas.delete(canvas_id)
-                    del self.renderer.canvas_elemente_pro_token[wortNr - 1]
+                    # Wichtig: NICHT das Dict-Element löschen!
+                    # del self.renderer.canvas_elemente_pro_token[wortNr - 1]
 
         # X/Y Positionen anhand voriger Tokens berechnen
-            x_pos, y_pos = self.berechne_positionen_vor_rendern(start_index)
-            self.renderer.x_pos = x_pos
-            self.renderer.y_pos = y_pos
+        x_pos, y_pos = self.berechne_positionen_vor_rendern(start_index)
+        self.renderer.x_pos = x_pos
+        self.renderer.y_pos = y_pos
 
-            # Rendern
-            for i in range(start_index, end_index + 1):
-                naechstes = self.json_dicts[i + 1] if i + 1 < len(self.json_dicts) else None
-                self.renderer.rendern(
-                    index=i,
-                    gui_canvas=self.canvas,
-                    naechstes_dict_element=naechstes,
-                    dict_element=self.json_dicts[i]
-                )
+        # Rendern
+        for i in range(start_index, end_index + 1):
+            naechstes = self.json_dicts[i + 1] if i + 1 < len(self.json_dicts) else None
+            self.renderer.rendern(
+                index=i,
+                gui_canvas=self.canvas,
+                naechstes_dict_element=naechstes,
+                dict_element=self.json_dicts[i]
+            )
+
     
     def _on_token_click(self, idx):
         print(f"Token {idx} wurde angeklickt.")
@@ -327,6 +330,8 @@ class AnnotationenEditor(ttk.Frame):
         self.renderer.markiere_token_mit_rahmen(self.canvas, idx)
 
         basename = os.path.basename(self.dateipfad_json)
+        print(f"Vor Annotation ändern, canvas_elemente_pro_token Keys: {list(self.renderer.canvas_elemente_pro_token.keys())}")
+
         self.kapitel_name = basename.replace("_gesamt.json", "") 
 
         print(f"Vor dem Löschen Widgets im annotation_frame: {[type(c) for c in self.annotation_frame.winfo_children()]}")

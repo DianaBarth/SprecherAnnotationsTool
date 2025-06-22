@@ -223,6 +223,20 @@ class AnnotationRenderer:
 
         print(f"_handle_textausrichtung: position='{positions_annot}', index={index}, grouptyp_aktiv={self.grouptyp_aktiv}")
 
+        # Index im Token speichern, damit wir ihn später beim Zeichnen haben
+        element['_index'] = index
+
+        # Hilfsfunktion zum Eintragen in canvas_elemente_pro_token
+        def _speichere_token_position(token_element, x, y, canvas_id):
+            idx = token_element.get('_index', None)
+            if idx is not None:
+                self.canvas_elemente_pro_token[idx] = {
+                    "x": x,
+                    "y": y,
+                    "canvas_id": canvas_id,
+                    "token": token_element.get("token", "")
+                }
+
         # Rechtsbündig
         if positions_annot == 'rechtsbuendigstart':
             print("rechtsbuendigstart erkannt - starte neue Gruppe")
@@ -240,7 +254,12 @@ class AnnotationRenderer:
             if positions_annot == 'rechtsbuendigende':
                 print("rechtsbuendigende erkannt - schließe Gruppe und zeichne rechtsbündig")
                 self.aktuelle_token_gruppe.append(element)
-                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='rechts')
+
+                gruppen_ids = self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='rechts')
+
+                for elem, x_pos, y_pos, c_id in gruppen_ids:
+                    _speichere_token_position(elem, x_pos, y_pos, c_id)
+
                 self.grouptyp_aktiv = None
                 self.aktuelle_token_gruppe = []
                 return True
@@ -266,7 +285,12 @@ class AnnotationRenderer:
             if positions_annot == 'zentriertende':
                 print("zentriertende erkannt - schließe Gruppe und zeichne zentriert")
                 self.aktuelle_token_gruppe.append(element)
-                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='zentriert')
+
+                gruppen_ids = self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='zentriert')
+
+                for elem, x_pos, y_pos, c_id in gruppen_ids:
+                    _speichere_token_position(elem, x_pos, y_pos, c_id)
+
                 self.grouptyp_aktiv = None
                 self.aktuelle_token_gruppe = []
                 return True
@@ -292,7 +316,12 @@ class AnnotationRenderer:
             if positions_annot == 'einrueckungende':
                 print("einrueckungsende erkannt - schließe Gruppe und zeichne eingerückt")
                 self.aktuelle_token_gruppe.append(element)
-                self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='einrueckung')
+
+                gruppen_ids = self.zeichne_token_gruppe_init(canvas, self.aktuelle_token_gruppe, ausrichtung='einrueckung')
+
+                for elem, x_pos, y_pos, c_id in gruppen_ids:
+                    _speichere_token_position(elem, x_pos, y_pos, c_id)
+
                 self.grouptyp_aktiv = None
                 self.aktuelle_token_gruppe = []
                 return True
@@ -303,6 +332,7 @@ class AnnotationRenderer:
 
         # Keine Gruppe aktiv, normaler Token
         return False
+
 
 
     def _rekonstruiere_gruppe_bis_start(self, end_index, aktuelles_element, endetyp):
@@ -875,6 +905,10 @@ class AnnotationRenderer:
         return text_id
 
     def annotation_aendern(self, canvas, idx, aufgabenname, element):
+        if idx not in self.canvas_elemente_pro_token:
+            print(f"FEHLER: idx {idx} nicht in canvas_elemente_pro_token vorhanden!")
+            return  # oder raise Exception / sichere Behandlung
+        
         self.ist_PDF = False
 
         tag = f'token_{idx}'
@@ -896,31 +930,39 @@ class AnnotationRenderer:
         schrift = self.schrift_holen(element_kopie)
         self._zeichne_token(canvas, idx, element_kopie, x, y, schrift)
 
+
     def zeichne_token_gruppe_init(self, canvas, token_liste, ausrichtung='links'):
+        """
+        Zeichnet eine Gruppe von Tokens auf dem Canvas entsprechend der Ausrichtung.
+        Unterstützt Mehrzeilen (bei Zeilenumbruch oder Überlänge).
+        Gibt eine Liste zurück mit Tupeln (element, x, y, canvas_id) für spätere Speicherung.
+        """
+        gruppen_ids = []
         canvas.update_idletasks()
+
         linker_rand = config.LINKER_SEITENRAND
         rechter_rand = canvas.winfo_width() - config.RECHTER_SEITENRAND
         extra_space = 10 if not self.ist_PDF else 2
-        schrift_cache = {}
-        y_pos = self.y_pos
 
+        y_pos = self.y_pos
         max_breite = rechter_rand - linker_rand
-        einrueckung = 40  # px, nur bei einrückung
+        einrueckung = 40  # px, nur bei Einrückung
 
         if ausrichtung == 'einrueckung':
             max_breite_zeile = max_breite - einrueckung
         else:
             max_breite_zeile = max_breite
 
+        schrift_cache = {}
         aktuelle_zeile = []
         zeilen = []
         zeilenbreite = 0
 
+        # Token in Zeilen gruppieren
         for token in token_liste:
             schrift = schrift_cache[id(token)] = self.schrift_holen(token)
             text = token.get("token", "")
             text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
-
             token_hat_zeilenumbruch = token.get('_hat_zeilenumbruch', False)
 
             if token_hat_zeilenumbruch or (zeilenbreite + text_breite > max_breite_zeile and aktuelle_zeile):
@@ -934,6 +976,7 @@ class AnnotationRenderer:
         if aktuelle_zeile:
             zeilen.append(aktuelle_zeile)
 
+        # Jede Zeile zeichnen und Positionen sammeln
         for zeile in zeilen:
             gesamtbreite = 0
             for token in zeile:
@@ -943,6 +986,7 @@ class AnnotationRenderer:
                 gesamtbreite += text_breite + extra_space
             gesamtbreite -= extra_space
 
+            # Start-x bestimmen nach Ausrichtung
             if ausrichtung == 'rechts':
                 x_pos = rechter_rand - gesamtbreite
                 if x_pos < 0:
@@ -956,14 +1000,23 @@ class AnnotationRenderer:
             else:
                 x_pos = linker_rand
 
+            # Tokens der Zeile zeichnen
             for token in zeile:
                 schrift = schrift_cache[id(token)]
                 text = token.get("token", "")
                 text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
 
-                self._zeichne_token(canvas, None, token, x_pos, y_pos, schrift)
+                text_id = self._zeichne_token(canvas, token.get('_index', None), token, x_pos, y_pos, schrift)
+
+                gruppen_ids.append((token, x_pos, y_pos, text_id))
+
                 x_pos += text_breite + extra_space
 
             y_pos += self.zeilen_hoehe
 
         self.y_pos = y_pos
+        self.letzte_zeile_y_pos = y_pos
+        self.x_pos = config.LINKER_SEITENRAND
+
+        return gruppen_ids
+
