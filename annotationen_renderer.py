@@ -931,86 +931,90 @@ class AnnotationRenderer:
         self._zeichne_token(canvas, idx, element_kopie, x, y, schrift)
 
 
-    def zeichne_token_gruppe_init(self, canvas, token_liste, ausrichtung='links'):
-        """
-        Zeichnet eine Gruppe von Tokens auf dem Canvas entsprechend der Ausrichtung.
-        Unterstützt Mehrzeilen (bei Zeilenumbruch oder Überlänge).
-        Gibt eine Liste zurück mit Tupeln (element, x, y, canvas_id) für spätere Speicherung.
-        """
+    def zeichne_token_gruppe_init(self, canvas, token_gruppe, ausrichtung):
         gruppen_ids = []
-        canvas.update_idletasks()
+        y_pos = self.y_pos
 
+        # Randberechnung
+        canvas.update_idletasks()
         linker_rand = config.LINKER_SEITENRAND
         rechter_rand = canvas.winfo_width() - config.RECHTER_SEITENRAND
-        extra_space = 10 if not self.ist_PDF else 2
-
-        y_pos = self.y_pos
         max_breite = rechter_rand - linker_rand
-        einrueckung = 40  # px, nur bei Einrückung
+
+        einrueckung = 40  # px bei 'einrueckung'
+        abstand = 10 if not self.ist_PDF else 2
 
         if ausrichtung == 'einrueckung':
-            max_breite_zeile = max_breite - einrueckung
+            max_zeilenbreite = max_breite - einrueckung
         else:
-            max_breite_zeile = max_breite
+            max_zeilenbreite = max_breite
 
-        schrift_cache = {}
         aktuelle_zeile = []
         zeilen = []
         zeilenbreite = 0
+        schrift_cache = {}
 
-        # Token in Zeilen gruppieren
-        for token in token_liste:
-            schrift = schrift_cache[id(token)] = self.schrift_holen(token)
-            text = token.get("token", "")
+        # Zeilen aufbauen unter Berücksichtigung von manuellen und automatischen Umbrüchen
+        for element in token_gruppe:
+            schrift = schrift_cache[id(element)] = self.schrift_holen(element)
+            text = element.get("token", "")
             text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
-            token_hat_zeilenumbruch = token.get('_hat_zeilenumbruch', False)
 
-            if token_hat_zeilenumbruch or (zeilenbreite + text_breite > max_breite_zeile and aktuelle_zeile):
+            hat_zeilenumbruch = element.get("_hat_zeilenumbruch", False)
+
+            if hat_zeilenumbruch:
                 zeilen.append(aktuelle_zeile)
-                aktuelle_zeile = [token]
-                zeilenbreite = text_breite + extra_space
+                aktuelle_zeile = [element]
+                zeilenbreite = text_breite + abstand
+            elif (zeilenbreite + text_breite > max_zeilenbreite and aktuelle_zeile):
+                zeilen.append(aktuelle_zeile)
+                aktuelle_zeile = [element]
+                zeilenbreite = text_breite
             else:
-                aktuelle_zeile.append(token)
-                zeilenbreite += text_breite + extra_space
+                if aktuelle_zeile:
+                    zeilenbreite += abstand + text_breite
+                else:
+                    zeilenbreite = text_breite
+                aktuelle_zeile.append(element)
 
         if aktuelle_zeile:
             zeilen.append(aktuelle_zeile)
 
-        # Jede Zeile zeichnen und Positionen sammeln
+        # Zeilen zeichnen
         for zeile in zeilen:
+            # Breite berechnen
             gesamtbreite = 0
-            for token in zeile:
-                schrift = schrift_cache[id(token)]
-                text = token.get("token", "")
+            for idx, element in enumerate(zeile):
+                schrift = schrift_cache[id(element)]
+                text = element.get("token", "")
                 text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
-                gesamtbreite += text_breite + extra_space
-            gesamtbreite -= extra_space
+                gesamtbreite += text_breite
+                if idx < len(zeile) - 1:
+                    gesamtbreite += abstand
 
-            # Start-x bestimmen nach Ausrichtung
+            # x-Start je nach Ausrichtung
             if ausrichtung == 'rechts':
                 x_pos = rechter_rand - gesamtbreite
-                if x_pos < 0:
-                    x_pos = 0
             elif ausrichtung == 'zentriert':
                 x_pos = linker_rand + (max_breite - gesamtbreite) // 2
-                if x_pos < 0:
-                    x_pos = 0
             elif ausrichtung == 'einrueckung':
                 x_pos = linker_rand + einrueckung
             else:
                 x_pos = linker_rand
 
-            # Tokens der Zeile zeichnen
-            for token in zeile:
-                schrift = schrift_cache[id(token)]
-                text = token.get("token", "")
+            for idx, element in enumerate(zeile):
+                schrift = schrift_cache[id(element)]
+                text = element.get("token", "")
                 text_breite, _, _ = self._berechne_textgroesse(canvas, schrift, text)
 
-                text_id = self._zeichne_token(canvas, token.get('_index', None), token, x_pos, y_pos, schrift)
+                text_id = self._zeichne_token(canvas, element.get("_index"), element, x_pos, y_pos, schrift)
+                gruppen_ids.append((element, x_pos, y_pos, text_id))
 
-                gruppen_ids.append((token, x_pos, y_pos, text_id))
-
-                x_pos += text_breite + extra_space
+                # Nur wenn es NICHT das letzte Token ist
+                if idx < len(zeile) - 1:
+                    x_pos += text_breite + abstand
+                else:
+                    x_pos += text_breite
 
             y_pos += self.zeilen_hoehe
 
@@ -1019,4 +1023,3 @@ class AnnotationRenderer:
         self.x_pos = config.LINKER_SEITENRAND
 
         return gruppen_ids
-

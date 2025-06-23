@@ -474,16 +474,16 @@ def visualisiere_annotationen(eingabe_ordner, ausgabe_ordner, ausgewaehlte_kapit
         # Unterschritt 1: Tokens verarbeiten
         verarbeite_tokens(json_data)
         if progress_callback:
-            progress_callback( 1/3*100)
+            progress_callback("", 1/3)
 
         # Unterschritt 2: Positionen berechnen
         berechne_positionen(json_data)
         if progress_callback:
-            progress_callback( 2/3*100)
+            progress_callback("", 2/3)
 
         # Unterschritt 3: PDF erstellen
         ts = datetime.now().strftime(config.DATUMSFORMAT)
         pdf_datei = os.path.join(ausgabe_ordner, f"{os.path.splitext(fn)[0]}_{ts}.pdf")
         erstelle_pdf(pdf_datei, json_data)
         if progress_callback:
-            progress_callback( 100)
+            progress_callback("", 1)

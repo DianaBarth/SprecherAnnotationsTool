@@ -578,73 +578,41 @@ class DashBoard(ttk.Frame):
     #         self.after(200, self._animate_task_spinners)
 
 
-    def aktualisiere_progressbar(self, kapitel_name, task_id=None, wert=0, mehrere=False):
-        pb = self.kapitel_progressbars.get(kapitel_name)
-        lbl = self.kapitel_task_labels.get(kapitel_name)
+    def aktualisiere_progressbar(self, kapitel_name, task_id, wert=0):
+        """
+        Aktualisiert die Progressbar für eine bestimmte Aufgabe eines Kapitels.
+        :param kapitel_name: Name des Kapitels (str)
+        :param task_id: ID der Aufgabe (int)
+        :param wert: Fortschrittswert in Prozent (0-100)
+        """
+        print(f"Aktualisiere Progressbar: Kapitel={kapitel_name}, Task={task_id}, Wert={wert}")
+        # Prüfe ob Progressbar existiert
+        pb_dict = self.kapitel_progressbars.get(kapitel_name)
+        if not pb_dict:
+            return
 
-        if pb and lbl:
-            try:
-                progress_wert = float(wert)
-            except (ValueError, TypeError):
-                progress_wert = 0
-            
-            pb["value"] = progress_wert
+        pb = pb_dict.get(task_id)
+        if not pb:
+            return
+        try:
+            progress_wert = float(wert)
+        except (ValueError, TypeError):
+            progress_wert = 0
 
-            if progress_wert == 0:
-                pb.grid_remove()
-                lbl.grid_remove()
-            else:
-                if task_id is None:
-                    label_text = "Aufgabe: -"
-                else:
-                    label_text = f"Aufgaben: {task_id}" if mehrere else f"Aufgabe: {task_id}"
-                lbl.config(text=label_text)
-                lbl.grid()
-                pb.grid()
+        pb["value"] = progress_wert
+        pb.update_idletasks()  # GUI sofort aktualisieren
 
-        # Gesamtfortschritt aktualisieren
-        if not hasattr(self, "kapitel_fortschritte"):
-            self.kapitel_fortschritte = {}
-        self.kapitel_fortschritte[kapitel_name] = wert
-
-        # Durchschnitt berechnen
-        if self.kapitel_fortschritte:
-            gesamt = sum(self.kapitel_fortschritte.values()) / len(self.kapitel_fortschritte)
+        if progress_wert == 0:
+            pb.grid_remove()
         else:
-            gesamt = 0
+            pb.grid()
 
-        # Gesamt-Progressbar aktualisieren (wenn vorhanden)
-        if hasattr(self, "gesamt_progressbar") and self.gesamt_progressbar:
-            self.gesamt_progressbar["value"] = gesamt
-
-        # Gesamtstatus-Label aktualisieren
-        if hasattr(self, "gesamt_status_label") and self.gesamt_status_label:
-            self.gesamt_status_label["text"] = f"Gesamtfortschritt: {int(gesamt)} %"
 
     def melde_KI_Tasks_fortschritt(self, kapitel_name, task_id, wert):
         """Wird von parallelen Tasks aufgerufen, um Fortschritt zu melden."""
         with self._progress_lock:
-            if kapitel_name not in self.kapitel_tasks:
-                self.kapitel_tasks[kapitel_name] = {}
-
-            tasks = self.kapitel_tasks[kapitel_name]
-
-            if wert == 0:
-                tasks.pop(task_id, None)
-                self._set_task_spinner(task_id,False)
-            else:
-                tasks[task_id] = wert
-                self._set_task_spinner(task_id,True)
-
-            task_ids = list(tasks.keys())
-            durchschnitt = sum(tasks.values()) / len(tasks) if tasks else 0
-            mehrere = len(task_ids) > 1
-
-        # Für Label die Task-IDs als String mit Semikolon getrennt
-        task_ids_str = "; ".join(task_ids) if mehrere else (task_ids[0] if task_ids else "")
-
-        self.aktualisiere_progressbar(kapitel_name, task_ids_str, durchschnitt, mehrere)
-    
+             # Einzelner Task-Fortschritt wird direkt verwendet
+            self.aktualisiere_progressbar(kapitel_name, task_id, wert)
 
     def InhaltsverzeichnisAuslesenMitDialog(self):
         """Dialog zur Auswahl des Kapitelstils und weiterer Optionen beim Einlesen aus Word."""
@@ -1049,7 +1017,6 @@ class DashBoard(ttk.Frame):
         self.lade_kapitel_checkboxes()
       
     def lade_kapitel_checkboxes(self):
-
         if not self.kapitel_config.kapitel_liste and self.kapitel_config.kapitel_daten:
             self.kapitel_config.kapitel_liste = list(self.kapitel_config.kapitel_daten.keys())
 
@@ -1065,15 +1032,14 @@ class DashBoard(ttk.Frame):
             label = ttk.Label(self.chapter_frame, text="Keine Kapitel gefunden.")
             label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
             return
-   
+
         def alle_auswaehlen_toggle():
             wert = self.all_var.get()
             for var in self.chapter_vars.values():
                 var.set(wert)
-                
+
         self.all_var = tk.BooleanVar(value=True)
         alle_auswaehlen_toggle()
-     
 
         style = ttk.Style()
         style.configure("HervorgehobeneCheckbutton.TCheckbutton",
@@ -1093,45 +1059,46 @@ class DashBoard(ttk.Frame):
         )
         cb_all.grid(row=0, column=0, sticky="w", padx=5, pady=(5, 10))
 
-        # Kapitel-Checkboxen ab Zeile 1
-        for idx, name in enumerate(self.kapitel_config.kapitel_liste, start=1):
+        # Kapitel-Checkboxen ab Zeile 2 (wegen Header)
+        for idx, name in enumerate(self.kapitel_config.kapitel_liste, start=2):
             var = tk.BooleanVar(value=False)
             self.chapter_vars[name] = var
 
             frame = ttk.Frame(self.chapter_frame)
             frame.grid(row=idx, column=0, sticky="ew", padx=5, pady=2)
-            frame.grid_columnconfigure(0, weight=1)
-            frame.grid_columnconfigure(1, weight=0)
-            frame.grid_columnconfigure(2, weight=0)
-            frame.grid_columnconfigure(3, weight=0)
+            frame.grid_columnconfigure(0, weight=1)  # Kapitelname
+            for col in range(1, len(self.aufgaben_input) + 1):
+                frame.grid_columnconfigure(col, weight=0)
 
             cb = ttk.Checkbutton(frame, text=name, variable=var)
             cb.grid(row=0, column=0, sticky="w")
 
-            pb = ttk.Progressbar(frame, orient="horizontal", length=150, mode="determinate")
-            pb.grid(row=0, column=1, sticky="e", padx=5)
-            pb.grid_remove()
-            self.kapitel_progressbars[name] = pb
+            self.kapitel_progressbars[name] = {}
 
-            lbl_task = ttk.Label(frame, text="", width=20, anchor="w")
-            lbl_task.grid(row=0, column=2, sticky="w", padx=(5, 0))
-            lbl_task.grid_remove()
-            self.kapitel_task_labels[name] = lbl_task
+            for aufgaben_index, aufgaben_text in self.aufgaben_input.items():
+                pb = ttk.Progressbar(frame, orient="horizontal", length=100, mode="determinate", maximum=100)
+                pb.grid(row=0, column=aufgaben_index, sticky="w", padx=3)
+                pb.grid_remove()  # Anfangs ausgeblendet
+                self.kapitel_progressbars[name][aufgaben_index] = pb
 
             def einzel_cb_callback(*args, kapitel=name, var=var):
                 if var.get():
-                    self.kapitel_progressbars[kapitel].grid()
+                    for pb in self.kapitel_progressbars[kapitel].values():
+                        pb.grid()
                 else:
-                    self.kapitel_progressbars[kapitel].grid_remove()
+                    for pb in self.kapitel_progressbars[kapitel].values():
+                        pb.grid_remove()
 
                 alle_aktiv = all(v.get() for v in self.chapter_vars.values())
                 self.all_var.set(alle_aktiv)
 
             var.trace_add("write", einzel_cb_callback)
 
-        # Initial: "Alle auswählen" prüfen (wahrscheinlich False, da alle aus)
+        # Initial prüfen, ob alle Kapitel aktiviert sind
         alle_aktiv = all(v.get() for v in self.chapter_vars.values())
         self.all_var.set(alle_aktiv)
+
+
 
     def start_tasks(self):
         # Leere eventuell verbliebene Aufgaben aus früheren Läufen
@@ -1292,7 +1259,7 @@ class DashBoard(ttk.Frame):
 
             if task_flags.get(1, False):
                 print(f"[DEBUG] Starte Aufgabe 1: Extraktion für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, 1.1, 0.1))
+                progress_queue.put((kapitel_name, 1, 0.1))
 
                 extrahiere_kapitel_mit_config(
                     selected_file_path,
@@ -1300,7 +1267,7 @@ class DashBoard(ttk.Frame):
                     kapitel_trenner,
                     ordner_nur_str["txt"],
                     [kapitel_name],
-                    lambda k, w: progress_queue.put((k, 1, w))
+                    lambda status, fortschritt: progress_queue.put((kapitel_name, 1, fortschritt/2))
                 )
                 print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
                
@@ -1309,13 +1276,13 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Aufgabe 1.2: Vorverarbeitung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, 1.2 , 0.1))
+                progress_queue.put((kapitel_name, 1 , 0.1))
 
                 verarbeite_kapitel_und_speichere_json(
                     ordner_nur_str["txt"],
                     ordner_nur_str["json"],
                     [kapitel_name],
-                    lambda kapitel, fortschritt: progress_queue.put((kapitel, 1.2, fortschritt))
+                    lambda status, fortschritt: progress_queue.put((kapitel_name, 1, 0.5 + fortschritt/2))
                 )
                 print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
              
@@ -1332,7 +1299,7 @@ class DashBoard(ttk.Frame):
                     txt_ordner=ordner_nur_str["txt"],  
                     json_ordner=ordner_nur_str["json"],
                     ausgabe_ordner=ordner_nur_str["saetze"],                  
-                    progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, 2, fortschritt))
+                    progress_callback=lambda status, fortschritt: progress_queue.put((kapitel_name, 2, fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
              
@@ -1425,7 +1392,7 @@ class DashBoard(ttk.Frame):
                     ordner_nur_str["ki"],
                     ordner_nur_str["merge"],
                     [kapitel_name],
-                    lambda w: progress_queue.put(kapitel_name, next_key, w)
+                    lambda status, w: progress_queue.put((kapitel_name, next_key, w))
                     )
 
                 if abort_flag.is_set():
@@ -1439,7 +1406,7 @@ class DashBoard(ttk.Frame):
                     ordner_nur_str["merge"],
                     ordner_nur_str["pdf"],
                     [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, next_key + 2, w))
+                    lambda status, w: progress_queue.put((kapitel_name, next_key + 2, w))
                 )
 
             progress_queue.put((kapitel_name, "Fertig", 1.0))

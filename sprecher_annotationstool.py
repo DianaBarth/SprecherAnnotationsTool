@@ -38,6 +38,7 @@ class SprecherAnnotationsTool(tk.Tk):
         self.grid_columnconfigure(0, weight=1)
 
         self.starte_progress_pruefung()
+         
         # KapitelConfig, Dashboard etc. anlegen
         self.kapitel_config = KapitelConfig(self, self.notebook)
         self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client)
@@ -64,20 +65,21 @@ class SprecherAnnotationsTool(tk.Tk):
         self.progress_queue_active = False
 
     def pruefe_progress_queue(self):
-    
-            try:
-                if self.progress_queue_active:
-                    while not self.progress_queue.empty():
-                        kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
-                        print(f"melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
-                        self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)  # deine GUI-Update-Funktion
-            except Exception as e:
-                print(f"[FEHLER bei Queue-Check] {e}")
-
+        print(f"pruefe_progress_queue aktiv? {self.progress_queue_active}")
+        try:
             if self.progress_queue_active:
-                self.after(200, self.pruefe_progress_queue)  # alle 200 ms prüfen
-                
+                while not self.progress_queue.empty():
+                    kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
+                    print(f"melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
+                    self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)  # deine GUI-Update-Funktion
+        except Exception as e:
+            print(f"[FEHLER bei Queue-Check] {e}")
+
+        if self.progress_queue_active:
+            self.after(200, self.pruefe_progress_queue)  # alle 200 ms prüfen
+            
     def pruefe_mp_progress_queue(self):
+        print(f"mp_progress_queue leer? {self.mp_progress_queue.empty()}")
         try:
             if self.progress_queue_active:                   
                 while not self.mp_progress_queue.empty():

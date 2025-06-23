@@ -197,4 +197,4 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
         print(f"[INFO] Gesamttext gespeichert: {dateipfad_gesamt}")
 
     if progress_callback:
-        progress_callback("Fertig", 100)
+        progress_callback("Fertig", 1)
