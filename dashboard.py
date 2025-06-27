@@ -273,10 +273,6 @@ class DashBoard(ttk.Frame):
         super().__init__(notebook)
         self.client = client
      
-        # manager = Manager()
-        # self.progress_queue = manager.Queue()  # Queue wird zwischen Prozessen geteilt
-        # self.progress_queue_active =
-        self.thread_queue = queue.Queue()
         self.tasks_running = False
         self.tasks_lock = threading.Lock()
 
@@ -602,10 +598,10 @@ class DashBoard(ttk.Frame):
         pb["value"] = progress_wert
         pb.update_idletasks()  # GUI sofort aktualisieren
 
-        if progress_wert == 0:
-            pb.grid_remove()
-        else:
-            pb.grid()
+        # if progress_wert == 0:
+        #     pb.grid_remove()
+        # else:
+        #     pb.grid()
 
 
     def melde_KI_Tasks_fortschritt(self, kapitel_name, task_id, wert):
@@ -1099,23 +1095,14 @@ class DashBoard(ttk.Frame):
         self.all_var.set(alle_aktiv)
 
 
-
     def start_tasks(self):
-        # Leere eventuell verbliebene Aufgaben aus früheren Läufen
-        while not self.thread_queue.empty():
-            try:
-                self.thread_queue.get_nowait()
-                self.thread_queue.task_done()
-            except queue.Empty:
-                break
-
         with self.tasks_lock:
             if self.tasks_running:
                 print("[WARNUNG] Aufgabenverarbeitung läuft bereits.", flush=True)
                 return
             self.tasks_running = True
 
-        self.disable_controls() 
+        self.disable_controls()
 
         print("[DEBUG] Starte Aufgabenverarbeitung", flush=True)
         self.abort_flag.clear()
@@ -1134,8 +1121,7 @@ class DashBoard(ttk.Frame):
         ordner_nur_str = {k: str(v) for k, v in self.ordner.items()}
         max_workers = self.max_workers
         abort_flag = self.abort_flag
-        progress_queue = self.master.progress_queue
-        mp_progress_queue = self.master.mp_progress_queue 
+        mp_progress_queue = self.master.mp_progress_queue
 
         modelle_für_tasks = {}
         if model_selection_boxes:
@@ -1146,20 +1132,14 @@ class DashBoard(ttk.Frame):
                     print(f"[WARNUNG] Fehler beim Auslesen des Modells für Aufgabe {aid}: {e}")
 
         print(f"[DEBUG] Ausgewählte Kapitel: {ausgewaehlte_kapitel}", flush=True)
-        bereits_in_queue = set()
-        for kapitel in ausgewaehlte_kapitel:
-            if kapitel in bereits_in_queue:
-                print(f"[WARNUNG] Kapitel mehrfach in Queue eingefügt: {kapitel}", flush=True)
-            bereits_in_queue.add(kapitel)
-            self.thread_queue.put(kapitel)
-        
+
         kapitel_anzahl = len(ausgewaehlte_kapitel)
         max_threads = min(self.max_workers, kapitel_anzahl)
 
         try:
             with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
                 futures = []
-                for _ in range(max_threads):
+                for kapitel in ausgewaehlte_kapitel:
                     futures.append(thread_executor.submit(
                         self._thread_worker,
                         selected_file_path,
@@ -1167,12 +1147,12 @@ class DashBoard(ttk.Frame):
                         kapitel_trenner,
                         ordner_nur_str,
                         task_flags,
-                        progress_queue,
-                        mp_progress_queue, 
+                        mp_progress_queue,
                         abort_flag,
                         kapitel_daten,
                         modelle_für_tasks,
-                        max_workers
+                        max_workers,
+                        kapitel  # Übergabe der Kapitel-ID direkt
                     ))
 
                 concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
@@ -1187,10 +1167,8 @@ class DashBoard(ttk.Frame):
             self.enable_controls()
             with self.tasks_lock:
                 self.tasks_running = False
-            self.progress_queue_active = False
             self.master.stoppe_progress_pruefung()
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
-
 
     def _thread_worker(self,
                     selected_file_path,
@@ -1198,53 +1176,41 @@ class DashBoard(ttk.Frame):
                     kapitel_trenner,
                     ordner_nur_str,
                     task_flags,
-                    progress_queue,
                     mp_progress_queue,
                     abort_flag,
                     kapitel_daten,
                     modelle_für_tasks,
-                    max_workers):
-        print("[DEBUG] Thread Worker gestartet", flush=True)
+                    max_workers,
+                    kapitel_name):  # <--- Kapitelname direkt übergeben
 
-        while True:
-            try:
-                kapitel = self.thread_queue.get_nowait()
-            except queue.Empty:
-                break
+        print(f"[DEBUG] Thread Worker gestartet für Kapitel: {kapitel_name}", flush=True)
 
-            print(f"starte Verarbeitung {kapitel}")
-
-            self.verarbeite_kapitel(
-                kapitel,
-                selected_file_path,         
-                kapitel_liste,
-                kapitel_trenner,
-                ordner_nur_str,
-                task_flags,
-                progress_queue,
-                mp_progress_queue,
-                abort_flag,
-                kapitel_daten,
-                modelle_für_tasks,
-                max_workers
-            )
-
-            self.thread_queue.task_done()
+        self.verarbeite_kapitel(
+            kapitel_name,
+            selected_file_path,
+            kapitel_liste,
+            kapitel_trenner,
+            ordner_nur_str,
+            task_flags,
+            mp_progress_queue,  # ← einheitlich genutzt
+            abort_flag,
+            kapitel_daten,
+            modelle_für_tasks,
+            max_workers
+        )
 
     def verarbeite_kapitel(self, kapitel_name,
                         selected_file_path,
-                        kapitel_liste,       
-                        kapitel_trenner,                 
+                        kapitel_liste,
+                        kapitel_trenner,
                         ordner_nur_str,
                         task_flags,
-                        progress_queue,
-                        mp_progress_queue,
+                        progress_queue,  # Einheitliche Queue
                         abort_flag,
                         kapitel_daten,
                         modelle_für_tasks,
-                        max_workers
-                        ):
-        
+                        max_workers):
+
         print(f"[DEBUG] Starte Verarbeitung für Kapitel: {kapitel_name}", flush=True)
 
         warte_auf_freien_cpukern_und_ram(max_auslastung_cpu=95.0, max_auslastung_ram=80.0, timeout=30.0)
@@ -1259,7 +1225,7 @@ class DashBoard(ttk.Frame):
 
             if task_flags.get(1, False):
                 print(f"[DEBUG] Starte Aufgabe 1: Extraktion für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, 1, 0.1))
+                progress_queue.put((kapitel_name, 1, 1))
 
                 extrahiere_kapitel_mit_config(
                     selected_file_path,
@@ -1267,42 +1233,41 @@ class DashBoard(ttk.Frame):
                     kapitel_trenner,
                     ordner_nur_str["txt"],
                     [kapitel_name],
-                    lambda status, fortschritt: progress_queue.put((kapitel_name, 1, fortschritt/2))
+                    lambda status, fortschritt: progress_queue.put((kapitel_name, 1, fortschritt / 2))
                 )
                 print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-               
+
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Aufgabe 1.2.", flush=True)
                     return
 
                 print(f"[DEBUG] Starte Aufgabe 1.2: Vorverarbeitung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, 1 , 0.1))
+                progress_queue.put((kapitel_name, 1, 50))
 
                 verarbeite_kapitel_und_speichere_json(
                     ordner_nur_str["txt"],
                     ordner_nur_str["json"],
                     [kapitel_name],
-                    lambda status, fortschritt: progress_queue.put((kapitel_name, 1, 0.5 + fortschritt/2))
+                    lambda status, fortschritt: progress_queue.put((kapitel_name, 1, 50 + fortschritt / 2))
                 )
                 print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-             
+
             if task_flags.get(2, False):
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Aufgabe 2.", flush=True)
                     return
 
                 print(f"[DEBUG] Starte Aufgabe 2: Satzaufteilung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, 2, 0.1))
+                progress_queue.put((kapitel_name, 2, 1))
 
                 daten_aufteilen(
                     kapitel_name,
-                    txt_ordner=ordner_nur_str["txt"],  
+                    txt_ordner=ordner_nur_str["txt"],
                     json_ordner=ordner_nur_str["json"],
-                    ausgabe_ordner=ordner_nur_str["saetze"],                  
+                    ausgabe_ordner=ordner_nur_str["saetze"],
                     progress_callback=lambda status, fortschritt: progress_queue.put((kapitel_name, 2, fortschritt))
                 )
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
-             
 
             next_key = None
 
@@ -1310,20 +1275,14 @@ class DashBoard(ttk.Frame):
                 if abort_flag.is_set():
                     print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen (Abort-Flag gesetzt).", flush=True)
                     return
-                
-                # Ursprünglich aktive Aufgaben basierend auf task_flags
+
                 alle_task_ids = [aid for aid in config.KI_AUFGABEN if task_flags.get(aid, False)]
-
-                # Hole Liste der nicht notwendigen Unterschritte für das Kapitel
                 nicht_nötige = kapitel_daten.get(kapitel_name, {}).get("nicht_notwendige_unterschritte", [])
-
-                # Filtere direkt heraus
                 aktive_tasks = [aid for aid in alle_task_ids if aid not in nicht_nötige]
 
                 if not aktive_tasks:
                     print(f"[INFO] Keine aktiven und notwendigen KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
                 else:
-                  
                     max_workers = min(len(aktive_tasks), os.cpu_count() or 1)
                     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                         futures = []
@@ -1355,13 +1314,13 @@ class DashBoard(ttk.Frame):
                                 prompt,
                                 modell_name,
                                 {"saetze": ordner_nur_str["saetze"], "ki": ordner_nur_str["ki"]},
-                                mp_progress_queue 
+                                progress_queue
                             )
                             futures.append(future)
 
                         for future in concurrent.futures.as_completed(futures):
                             try:
-                                future.result() ##FEHLER!!!
+                                future.result()
                                 print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
                             except Exception as e:
                                 print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
@@ -1369,7 +1328,7 @@ class DashBoard(ttk.Frame):
 
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
             else:
-                next_key = 3 # falls keine KI-Aufgaben genutzt werden , defaultwert
+                next_key = 3  # Falls keine KI-Aufgaben aktiviert sind
 
             if task_flags.get(next_key, False):
                 if abort_flag.is_set():
@@ -1377,7 +1336,7 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Zusammenführung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, next_key, 0.1))
+                progress_queue.put((kapitel_name, next_key, 1))
 
                 update_json_with_ig_annotations(
                     ordner_nur_str["json"],
@@ -1393,7 +1352,7 @@ class DashBoard(ttk.Frame):
                     ordner_nur_str["merge"],
                     [kapitel_name],
                     lambda status, w: progress_queue.put((kapitel_name, next_key, w))
-                    )
+                )
 
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Visualisierung.", flush=True)
@@ -1415,6 +1374,7 @@ class DashBoard(ttk.Frame):
         except Exception as e:
             print(f"[FEHLER] Verarbeitung für Kapitel '{kapitel_name}' fehlgeschlagen:", str(e), flush=True)
             traceback.print_exc()
+
 
     def stop_tasks(self):
         if hasattr(self, 'abort_flag'):

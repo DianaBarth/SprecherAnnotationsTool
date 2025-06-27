@@ -117,7 +117,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                     json.dump(original_daten, f, ensure_ascii=False, indent=2)
                 print(f"[INFO] Keine Annotationen gefunden – Originaldatei kopiert: {datei_ziel}")
                 if progress_callback:
-                    progress_callback("fertig",1)
+                    progress_callback("",100)
                 continue
 
             annotationen_daten = defaultdict(list)
@@ -145,7 +145,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                     continue
 
                 if progress_callback:
-                    progress_callback("",round((i + 1) / (anzahl + 3), 3))
+                    progress_callback("",round((i + 1) / (anzahl + 3), 3)*100)
 
             schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
             print(f"[DEBUG] Schlüssel-Mapping: {schluessel_mapping}")
@@ -157,7 +157,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                     indizes[typ] = baue_index(daten, schluessel_mapping[typ])
 
             if progress_callback:
-                progress_callback("",round((anzahl + 1) / (anzahl + 3), 3) )
+                progress_callback("",round((anzahl + 1) / (anzahl + 3), 3) *100 )
 
             zusammengeführt = []
             for eintrag in original_daten:
@@ -190,7 +190,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
             print(f"[✓] Datei erfolgreich gespeichert: {datei_ziel}")
 
             if progress_callback:
-                progress_callback("",1)
+                progress_callback("",100)
 
     except Exception as e:
         print(f"[FEHLER] Schritt 8.1 fehlgeschlagen: {e}")
@@ -226,7 +226,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                     json.dump(original_daten, f, ensure_ascii=False, indent=2)
                 print(f"[INFO] Keine Annotationen gefunden – Originaldatei kopiert: {datei_ziel}")
                 if progress_callback:
-                    progress_callback("",1)
+                    progress_callback("",100)
                 continue
 
             anzahl = len(dateien)
@@ -248,7 +248,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                     annotationen_daten[typ].extend(daten)
 
                 if progress_callback:
-                    progress_callback("",round((i + 1) / (anzahl + 3), 3))
+                    progress_callback("",round((i + 1) / (anzahl + 3), 3)*100)
 
             schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
             indizes = {}
@@ -256,7 +256,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                 if typ in schluessel_mapping:
                     indizes[typ] = baue_index(daten, schluessel_mapping[typ])
             if progress_callback:
-                progress_callback("", round((anzahl + 1) / (anzahl + 3), 3))
+                progress_callback("", round((anzahl + 1) / (anzahl + 3), 3)*100)
             zusammengeführt = []
             for eintrag in original_daten:
                 wortnr = eintrag.get("WortNr")
@@ -288,7 +288,7 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
             print(f"[✓] Datei erfolgreich gespeichert: {datei_ziel}")
 
             if progress_callback:
-                progress_callback("",1)
+                progress_callback("",100)
 
     except Exception as e:
         print(f"[FEHLER] Schritt 8.1 fehlgeschlagen: {e}")

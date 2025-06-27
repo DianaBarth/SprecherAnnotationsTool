@@ -91,7 +91,7 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
                 token_counter += satz_tokens
 
             if progress_callback:
-                fortschritt = int((i / len(saetze)))
+                fortschritt = int((i / len(saetze))*100)
                 progress_callback(kapitelname, fortschritt)
 
         if abschnitt:
@@ -102,7 +102,7 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
             print(f"[DEBUG] Gespeichert letzter Abschnitt {abschnitt_counter} mit {token_anzahl} Tokens in {dateiname}")
 
     if progress_callback:
-        progress_callback(kapitelname, 1)
+        progress_callback(kapitelname, 100)
 
     print(f"[DEBUG -------------------------Schritt 3 abgeschlossen für Kapitel {kapitelname}]")
 
@@ -174,6 +174,6 @@ def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_call
         speichere_abschnitt(aktueller_abschnitt, abschnittsnummer)
 
     if progress_callback:
-        progress_callback(kapitelname, 1)
+        progress_callback(kapitelname, 100)
 
     print(f"[INFO] IG-Token Extraktion abgeschlossen für: {kapitelname}")

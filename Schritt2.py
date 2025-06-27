@@ -44,31 +44,34 @@ def ist_roemisch(token):
 def ersetze_zahl_in_token(token, vorher_token=None, naechstes_token=None):
     print(f"DEBUG: Verarbeite Token='{token}', vorher_token='{vorher_token}', naechstes_token='{naechstes_token}'")
     
-    match = re.match(r"(\d+)([.,:;!?\-]*)$", token)
+    match = re.match(r"([A-Za-z]?)(\d+)([.,:;!?\-]*)$", token)
     if not match:
         print("DEBUG: Kein Zahlmuster erkannt, Token wird unverändert zurückgegeben.")
         return token
-    
-    zahl_str, endzeichen = match.groups()
-    zahl = int(zahl_str)
-    print(f"DEBUG: Gefundene Zahl='{zahl}', Endzeichen='{endzeichen}'")
 
-    # Beispielkontext: Ordnungszahl nach 'am' oder 'zum' oder vor Monatsnamen
+    prefix, zahl_str, endzeichen = match.groups()
+    zahl = int(zahl_str)
+    print(f"DEBUG: Gefundene Zahl='{zahl}', Präfix='{prefix}', Endzeichen='{endzeichen}'")
+
     monate = get_monatsnamen(config.SPRACHE)
-    
+
+    # Sonderfall: Buchstabe + Zahl (z. B. "J1")
+    if prefix and prefix.isalpha():
+        wort = num2words(zahl, lang=config.SPRACHE)
+        print(f"DEBUG: Sonderfall Buchstabe+Zahl -> '{prefix}_{wort}'")
+        return f"{prefix}_{wort}"
+
+    # Ordinalzahl-Kontext
     if endzeichen == '.' and (
         (vorher_token and vorher_token.lower() in ['am', 'zum']) or
         (naechstes_token and naechstes_token.lower() in monate)
     ):
-        print("DEBUG: Kontext für Ordnungszahl erkannt (Punkt plus Kontext).")
+        print("DEBUG: Kontext für Ordnungszahl erkannt.")
         wort = num2words(zahl, lang='de', to='ordinal')
-        print(f"DEBUG: Num2words Ordinal (standard)='{wort}'")
-        # Anpassung auf Dativ maskulin (z.B. "achtundzwanzigste" -> "achtundzwanzigsten")
         if wort.endswith('ste'):
             wort = wort[:-3] + 'sten'
         elif wort.endswith('te'):
             wort = wort[:-2] + 'ten'
-        print(f"DEBUG: Angepasste Ordnungszahl (Dativ)='{wort}'")
         return wort
     else:
         wort = num2words(zahl, lang=config.SPRACHE)
@@ -132,7 +135,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
 
         # Alle Zahlen mit folgendem Punkt als Einheit behandeln
         # (Ersetze '3.' durch '3.' als ein Token)
-        pattern = r"\d+\.(?!\d)|\d+|[\p{P}]|\S+"
+        pattern = r"[|]\w+[|]|\d+\.(?!\d)|\d+|[\w-]+|[^\w\s-]"
         woerter_und_satzzeichen = regex.findall(pattern, text, flags=regex.UNICODE)
         woerter_und_satzzeichen = [w for w in woerter_und_satzzeichen if w.strip()]
 
@@ -226,10 +229,6 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             cleaned_tokens.append(token)
             cleaned_annotations.append(",".join(annotationen))
             positions.append(position_wert)
-            
-        
-
-     
             i += 1
 
         print(f"DEBUG: Anzahl Tokens: {len(cleaned_tokens)}")
@@ -264,4 +263,4 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             json.dump(json.loads(df.to_json(orient="records", force_ascii=False)), out_f, indent=2, ensure_ascii=False)
   
     if progress_callback:
-        progress_callback("Fertig", 1)
+        progress_callback("Fertig", 100)
