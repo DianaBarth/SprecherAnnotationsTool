@@ -18,6 +18,7 @@ def zu_Hex_farbe(rgb):
 def zu_PDF_farbe(rgb):
     return tuple(x / 255.0 for x in rgb)
 
+farben_dict = defaultdict(lambda: colors.black)
 
 class AnnotationRenderer:
     def __init__(self,ignorierte_annotationen=None, ignorier_ig=False, max_breite=300):
@@ -37,6 +38,30 @@ class AnnotationRenderer:
         self.group_tokens = []
         self.group_start_y = None
         self.group_width = 0
+
+    def get_person_color(self, person):
+        """Gibt je nach self.ist_PDF die Farbe zurück:
+        - für PDF: (r, g, b) als Floats 0..1
+        - für tkinter: Hex-Farbstring '#RRGGBB'
+        """
+        if not person:
+            if self.ist_PDF:
+                return tuple(x / 255.0 for x in config.FARBE_STANDARD)
+            else:
+                return zu_Hex_farbe(config.FARBE_STANDARD)
+
+        h = hashlib.md5(person.encode('utf-8')).hexdigest()
+        r = max(int(h[0:2], 16) / 255.0, 0.2)
+        g = max(int(h[2:4], 16) / 255.0, 0.2)
+        b = max(int(h[4:6], 16) / 255.0, 0.2)
+
+        if self.ist_PDF:
+            return (r, g, b)
+        else:
+            # Float 0..1 zu 0..255 Integer konvertieren und Hexstring bauen
+            return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+
+
 
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
         """
@@ -398,7 +423,6 @@ class AnnotationRenderer:
                 self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
 
-
     def verwende_hartkodiert_fuer_annotation(self, feldname, annotationswert):
         print(f"Prüfe verwende_hartkodiert_fuer_annotation: feldname={feldname}, annotationswert={annotationswert}")
         if not feldname or not annotationswert:
@@ -408,20 +432,22 @@ class AnnotationRenderer:
         annotationswert = annotationswert.lower()
         for aufgaben_id, annot_liste in config.AUFGABEN_ANNOTATIONEN.items():
             aufgabenname = config.KI_AUFGABEN.get(aufgaben_id)
-            if aufgabenname.lower() != feldname.lower():
+            if aufgabenname is None or aufgabenname.lower() != feldname.lower():
                 continue
             for annot in annot_liste:
-                name = annot.get("name").lower()
+                name = annot.get("name")
                 verwende = annot.get("VerwendeHartKodiert", False)
                 if name is None:
                     if verwende:
                         print(f"VerwendeHartKodiert=True für Feld {feldname} ohne Namen (allgemein) erkannt")
                         return True
-                elif name.lower() == annotationswert.lower() and verwende:
-                    print(f"VerwendeHartKodiert=True für Feld {feldname} mit Wert {annotationswert} erkannt")
-                    return True
+                else:
+                    if name.lower() == annotationswert and verwende:
+                        print(f"VerwendeHartKodiert=True für Feld {feldname} mit Wert {annotationswert} erkannt")
+                        return True
         print("Keine Hartkodierung aktiviert gefunden")
         return False
+
       
     def schrift_holen(self, element=None):
         importlib.reload(config)
@@ -469,6 +495,7 @@ class AnnotationRenderer:
         # Farbe bestimmen
         if verwende_person_farbe and person:
             farbe = self.get_person_color(person)
+            print(f"farbe = {farbe}")
         else:
             if self.ist_PDF:
                 farbe = zu_PDF_farbe(config.FARBE_STANDARD)

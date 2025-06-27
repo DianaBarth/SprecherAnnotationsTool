@@ -375,6 +375,7 @@ class DashBoard(ttk.Frame):
 
 
     def kapitel_annotation_editor_starten(self):
+        self.master.stoppe_progress_pruefung()
         tab_frame = ttk.Frame(self.notebook)
         editor = AnnotationenEditor(tab_frame, self.notebook, self.kapitel_config)
         editor.pack(expand=True, fill="both")

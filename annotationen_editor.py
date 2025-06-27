@@ -332,7 +332,7 @@ class AnnotationenEditor(ttk.Frame):
         basename = os.path.basename(self.dateipfad_json)
         print(f"Vor Annotation ändern, canvas_elemente_pro_token Keys: {list(self.renderer.canvas_elemente_pro_token.keys())}")
 
-        self.kapitel_name = basename.replace("_gesamt.json", "") 
+        self.kapitel_name = self.hauptkapitel_combo.get()
 
         print(f"Vor dem Löschen Widgets im annotation_frame: {[type(c) for c in self.annotation_frame.winfo_children()]}")
         # Alle Widgets außer default_label löschen
@@ -355,7 +355,11 @@ class AnnotationenEditor(ttk.Frame):
 
             if aufgabennr == 3:
                 zusatzinfo = self.kapitel_config.kapitel_daten.get(self.kapitel_name, {}).get("ZusatzInfo_3", "")
+                
+                zusatzinfo = zusatzinfo.replace("‘", "'").replace("’", "'")
+                print(f"zusatzinfo für {self.kapitel_name} = {zusatzinfo}")
                 werte = re.findall(r"'(.*?)'", zusatzinfo)
+                print(f"werte = {werte}")
             else:
                 werte = [e["name"] for e in config.AUFGABEN_ANNOTATIONEN.get(aufgabennr, []) if e["name"]]
 
