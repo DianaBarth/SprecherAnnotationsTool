@@ -158,6 +158,18 @@ class AnnotationenEditor(ttk.Frame):
         )
         zahlwoerter_checkbox.grid(row=0, column=0, sticky="w")
 
+        # Neue Variable für Personen-Auto-Checkbox
+        self.auto_person_bis_redeende_var = tk.BooleanVar(value=False)
+
+        personen_auto_checkbox = ttk.Checkbutton(
+            top_frame_2,
+            text="Personen automatisch bis zum Ende der wörtlichen Rede",
+            variable=self.auto_person_bis_redeende_var
+        )
+        personen_auto_checkbox.grid(row=0, column=1, sticky="w", padx=(10, 0))
+
+
+
         # 3. Zeile: Annotationen ausblenden für
         top_frame_3 = ttk.Frame(self)
         top_frame_3.grid(row=2, column=0, sticky="w", padx=5, pady=(10, 0))
@@ -409,9 +421,33 @@ class AnnotationenEditor(ttk.Frame):
                         self.neu_rendern_bereich(start_index, end_index)
                     else:
                         print("Kein vollständiges Start/Ende-Paar gefunden – kein Teilrendering möglich.")
-                else:
-                    # Alle anderen Annotationen werden einzeln neu gezeichnet
+
+                elif aufgabenname.lower() == "person":
+                    print(f"Person geändert bei Token {idx}: '{neuer_wert}'")
                     self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
+
+
+                    if self.auto_person_bis_redeende_var.get():
+                        # --- Erweiterung: automatische Personenzuweisung bei Start-/Endezeichen ---
+                        annot_def = next((a for a in config.AUFGABEN_ANNOTATIONEN.get(3, []) if a.get("name") is None), None)
+                        if annot_def:
+                            startzeichen = annot_def.get("StartZeichen")
+                            endezeichen = annot_def.get("EndeZeichen")
+
+                            if idx > 0 and self.json_dicts[idx - 1].get("token") == startzeichen:
+                                print(f"Startzeichen '{startzeichen}' erkannt vor Token {idx}, automatische Übertragung beginnt.")
+                                i = idx + 1
+                                while i < len(self.json_dicts):
+                                    token_text = self.json_dicts[i].get("token")
+                                    if token_text == endezeichen:
+                                        print(f"Endezeichen '{endezeichen}' bei Token {i} erkannt, automatische Übertragung endet.")
+                                        break
+                                    self.json_dicts[i]["person"] = neuer_wert
+                                    self.renderer.annotation_aendern(self.canvas, i, "person", self.json_dicts[i])
+                                    i += 1
+                    else:
+                        # Alle anderen Annotationen werden einzeln neu gezeichnet
+                        self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
