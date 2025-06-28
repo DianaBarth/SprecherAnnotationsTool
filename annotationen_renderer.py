@@ -200,11 +200,18 @@ class AnnotationRenderer:
 
         schrift = self.schrift_holen(element_kopie)
         text_breite, text_hoehe, schriftfarbe = self._berechne_textgroesse(canvas, schrift, token)
-
+        
+        # Standardabstand je nach Format
         extra_space = 10 if not self.ist_PDF else 2
-        if isinstance(naechstes_element, dict):
+
+        # Kein Space, wenn das aktuelle Token sich ohne Space an das nächste anschließen soll
+        if "satzzeichenOhneSpaceDanach" in annotation:
+            extra_space = 0
+
+        # Kein Space, wenn das nächste Token sich ohne Space an das aktuelle anschließen soll
+        elif isinstance(naechstes_element, dict):
             naechste_annotation = naechstes_element.get("annotation", {})
-            if "satzzeichenOhneSpace" in naechste_annotation:
+            if "satzzeichenOhneSpaceDavor" in naechste_annotation:
                 extra_space = 0
 
         self._handle_umbruch(canvas, text_breite, extra_space)
