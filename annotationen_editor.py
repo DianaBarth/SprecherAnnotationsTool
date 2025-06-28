@@ -445,9 +445,9 @@ class AnnotationenEditor(ttk.Frame):
                                     self.json_dicts[i]["person"] = neuer_wert
                                     self.renderer.annotation_aendern(self.canvas, i, "person", self.json_dicts[i])
                                     i += 1
-                    else:
-                        # Alle anderen Annotationen werden einzeln neu gezeichnet
-                        self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
+                else:
+                    # Alle anderen Annotationen werden einzeln neu gezeichnet
+                    self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
