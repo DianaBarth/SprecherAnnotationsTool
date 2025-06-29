@@ -35,9 +35,6 @@ class SprecherAnnotationsTool(tk.Tk):
         # Layout-Gewichtung für automatisches Vergrößern
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
-
-        self.starte_progress_pruefung()
-
         # KapitelConfig, Dashboard etc. anlegen
         self.kapitel_config = KapitelConfig(self, self.notebook)
         self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client)

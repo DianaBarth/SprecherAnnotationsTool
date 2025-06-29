@@ -1097,6 +1097,9 @@ class DashBoard(ttk.Frame):
 
 
     def start_tasks(self):
+        
+        self.master.starte_progress_pruefung()
+        
         with self.tasks_lock:
             if self.tasks_running:
                 print("[WARNUNG] Aufgabenverarbeitung läuft bereits.", flush=True)

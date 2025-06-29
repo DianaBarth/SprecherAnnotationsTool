@@ -2,11 +2,12 @@ import os
 import re
 import json
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox,simpledialog
 from reportlab.pdfgen import canvas as pdfcanvas
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 from config_editor import register_custom_font
+import Schritt2
 
 def _anzeige_name(wert: str) -> str:
     """
@@ -260,7 +261,9 @@ class AnnotationenEditor(ttk.Frame):
             self.renderer.rendern(index=idx, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=json_dict)
             tag = f'token_{idx}'
             self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
-
+        
+        self.canvas.update_idletasks()
+        
     def berechne_positionen_vor_rendern(self, bis_index):
         x_pos = config.LINKER_SEITENRAND
         y_pos = config.LINKER_SEITENRAND
@@ -360,7 +363,64 @@ class AnnotationenEditor(ttk.Frame):
             font=('Arial', 14, 'bold')
         ).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
         
-        row_index = 1
+        def bearbeite_token():
+            aktuelles_token = json_dict.get('token', '')
+            neues_token = simpledialog.askstring("Token bearbeiten", "Neues Token eingeben:", initialvalue=aktuelles_token)
+
+            if neues_token is not None and neues_token != aktuelles_token:
+                teile = neues_token.strip().split()
+
+                if teile:
+                    vorher_token = self.json_dicts[idx - 1]['token'] if idx > 0 else None
+                    naechstes_token = self.json_dicts[idx + 1]['token'] if idx + 1 < len(self.json_dicts) else None                 
+                    vorher_wortNr = self.json_dicts[idx - 1]['WortNr'] if idx > 0 else 1
+                    kapitelnummer = self.json_dicts[idx].get("KapitelNummer", "")
+
+                    # Alle Zusatzfelder auf leeren String setzen, wenn nicht vorhanden
+                    standardfelder = {                        
+                        "annotation": "",
+                    }
+
+                     # KI-Aufgaben-Felder dynamisch aus config ergänzen
+                    for feld in config.KI_AUFGABEN.values():
+                        standardfelder[feld] = ""
+
+                    ersetztes_token = Schritt2.ersetze_zahl_in_token(teile[0], vorher_token, naechstes_token)
+                    self.json_dicts[idx]['token'] = ersetztes_token
+
+                    for i, wort in enumerate(teile[1:], start=1):
+                        ersetztes_wort = Schritt2.ersetze_zahl_in_token(wort, vorher_token, naechstes_token)
+                        
+                        neues_token_dict = {
+                            "KapitelNummer": kapitelnummer,
+                            'WortNr': i + vorher_wortNr - 1,
+                            'token': wort,
+                            'tokenInklZahlwoerter': ersetztes_wort,
+                            **standardfelder
+                        }
+
+                        self.json_dicts.insert(idx + i, neues_token_dict)
+
+                # ⬇️ Alle folgenden WortNr aktualisieren (inkl. sich selbst und alle danach)
+                    for i in range(idx, len(self.json_dicts)):
+                        self.json_dicts[i]['WortNr'] = i + 1
+                        
+                    print("Tokens nach Bearbeitung:")
+                    for i, t in enumerate(self.json_dicts):
+                        print(i, t['token'])
+
+                    self._zeichne_alle_tokens()
+                    self.renderer.markiere_token_mit_rahmen(self.canvas, idx + len(teile) - 1)
+                    self._on_token_click(idx + len(teile) - 1)
+               
+        bearbeiten_button = tk.Button(
+            self.annotation_frame,
+            text="Token bearbeiten",
+            command=bearbeite_token
+        )
+        bearbeiten_button.grid(row=1, column=1, padx=5, pady=5, sticky='e')
+
+        row_index = 2
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
             label = ttk.Label(self.annotation_frame, text=aufgabenname)
             label.grid(row=row_index, column=0, sticky='w', padx=5, pady=2)
