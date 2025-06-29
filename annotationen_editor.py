@@ -160,7 +160,7 @@ class AnnotationenEditor(ttk.Frame):
         zahlwoerter_checkbox.grid(row=0, column=0, sticky="w")
 
         # Neue Variable für Personen-Auto-Checkbox
-        self.auto_person_bis_redeende_var = tk.BooleanVar(value=False)
+        self.auto_person_bis_redeende_var = tk.BooleanVar(value=True)
 
         personen_auto_checkbox = ttk.Checkbutton(
             top_frame_2,
@@ -404,7 +404,7 @@ class AnnotationenEditor(ttk.Frame):
                 # ⬇️ Alle folgenden WortNr aktualisieren (inkl. sich selbst und alle danach)
                     for i in range(idx, len(self.json_dicts)):
                         self.json_dicts[i]['WortNr'] = i + 1
-                        
+
                     print("Tokens nach Bearbeitung:")
                     for i, t in enumerate(self.json_dicts):
                         print(i, t['token'])
