@@ -2,39 +2,31 @@ import json
 import os
 import re
 import time
-import itertools
+import unicodedata
+import csv
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.opc.packuri import PackURI
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from lxml import etree
-import unicodedata
-import csv
 from Eingabe import config
 
 w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 def normalisiere(text):
-    """
-    Entfernt Sonderzeichen, ersetzt Bindestriche, normalisiert Unicode, reduziert Whitespace.
-    """
     text = unicodedata.normalize("NFKD", text)
-    text = text.replace("\u00A0", " ")     # geschütztes Leerzeichen
-    text = text.replace("–", "-")          # Gedankenstrich
-    text = text.replace("—", "-")          # Geviertstrich
-    text = text.replace("‐", "-")          # weicher Bindestrich
-    text = re.sub(r'\s+', ' ', text)       # Mehrfach-Whitespace
+    text = text.replace("\u00A0", " ")
+    text = text.replace("–", "-")
+    text = text.replace("—", "-")
+    text = text.replace("‐", "-")
+    text = re.sub(r'\s+', ' ', text)
     return text.strip().lower()
-
 
 def get_comments_part(part):
     for rel in part.rels.values():
         if rel.reltype == RT.COMMENTS:
-            print("🔍 comments.xml gefunden.")
             return rel._target
-
-    print("⚠️ Kein comments.xml gefunden, wird neu angelegt.")
     package = part.package
     partname = PackURI("/word/comments.xml")
     content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
@@ -44,22 +36,18 @@ def get_comments_part(part):
     )
     comments_part = package.create_part(partname, content_type, empty_comments_xml)
     part.relate_to(comments_part, RT.COMMENTS)
-    print("✅ comments.xml neu erstellt und verbunden.")
     return comments_part
 
 def add_comment(paragraph, text, author="Auto", initials="AU"):
     if paragraph is None:
-        print("⚠️ Kein Absatz zum Kommentieren vorhanden.")
         return
 
     part = paragraph.part
     comments_part = get_comments_part(part)
     if comments_part is None:
-        print("⚠️ Keine comments.xml vorhanden.")
         return
 
     root = etree.fromstring(comments_part.blob)
-
     existing_ids = [int(c.get(qn("w:id"))) for c in root.findall(f'{{{w_ns}}}comment') if c.get(qn("w:id"))]
     new_id = max(existing_ids, default=0) + 1
 
@@ -91,25 +79,67 @@ def add_comment(paragraph, text, author="Auto", initials="AU"):
     p.append(comment_reference)
 
     comments_part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    print(f"✅ Kommentar mit ID={new_id} erfolgreich hinzugefügt.")
 
 def entferne_spezifische_kommentare(doc):
     comments_part = get_comments_part(doc.part)
     root = etree.fromstring(comments_part.blob)
 
-    to_remove = []
-    for c in root.findall(f'{{{w_ns}}}comment'):
-        text = ''.join([t.text for t in c.findall(f'.//{{{w_ns}}}t') if t.text])
-        if re.match(r'\[[^\]]+\.\d+\]', text):
-            print(f"🗑 Entferne Kommentar mit Text: '{text}'")
-            to_remove.append(c)
-    for c in to_remove:
-        root.remove(c)
+    # IDs der zu entfernenden Kommentare sammeln
+    zu_entfernende_ids = set()
+    for comment in root.findall(f'{{{w_ns}}}comment'):
+        cid = comment.get(qn('w:id'))
+        texts = comment.findall(f'.//{{{w_ns}}}t')
+        inhalt = ''.join([t.text or '' for t in texts]).strip()
+        if re.match(r'\[[^\]]+\.\d+\]', inhalt) or not inhalt:
+            if cid is not None:
+                zu_entfernende_ids.add(cid)
 
+    # Kommentare aus comments.xml entfernen
+    neue_kommentare = [c for c in root.findall(f'{{{w_ns}}}comment')
+                       if c.get(qn('w:id')) not in zu_entfernende_ids]
+    root.clear()
+    root.extend(neue_kommentare)
     comments_part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    print(f"✅ {len(to_remove)} Kommentare entfernt.")
 
-def verarbeite_kapitel(doc, kapitel_config):
+    # IDs auch aus dem Haupttext entfernen
+    for para in doc.paragraphs:
+        p = para._p
+        remove = []
+        for el in list(p):
+            cid = el.get(qn('w:id'))
+            if el.tag in {qn('w:commentRangeStart'), qn('w:commentRangeEnd')} and cid in zu_entfernende_ids:
+                remove.append(el)
+            elif el.tag == qn('w:r'):
+                for child in el:
+                    if child.tag == qn('w:commentReference') and child.get(qn('w:id')) in zu_entfernende_ids:
+                        remove.append(el)
+        for el in remove:
+            p.remove(el)
+
+    print(f"✅ {len(zu_entfernende_ids)} Kommentare vollständig entfernt.")
+
+def speichere_csv_sicher(pfad, daten):
+    max_versuche = 3
+    for versuch in range(max_versuche):
+        if ist_datei_gesperrt(pfad):
+            print(f"⛔ CSV-Datei '{pfad}' ist geöffnet. Bitte schließen und mit [Enter] bestätigen.")
+            input()
+            time.sleep(1)
+        else:
+            try:
+                with open(pfad, mode='w', encoding='utf-8', newline='') as csvfile:
+                    writer = csv.writer(csvfile, delimiter=';')
+                    writer.writerow(["Kapitelname", "UnterkapitelNr", "Wortanzahl"])
+                    writer.writerows(daten)
+                print(f"✅ CSV-Datei gespeichert unter: {pfad}")
+                break
+            except Exception as e:
+                print(f"❌ Fehler beim Speichern der CSV-Datei: {e}")
+    else:
+        print("❌ CSV-Datei konnte nicht gespeichert werden. Bitte manuell schließen.")
+
+
+def verarbeite_kapitel(doc, kapitel_config, csv_pfad=None):
     kapitel_liste = kapitel_config["kapitel_liste"]
     kapitel_trenner = kapitel_config["Kapitel_trenner"]
 
@@ -117,47 +147,41 @@ def verarbeite_kapitel(doc, kapitel_config):
     unterkapitel_nr = 1
     wort_zaehler = 0
     start_absatz = None
-
     absatz_iter = iter(doc.paragraphs)
+    csv_daten = []
 
     for absatz in absatz_iter:
         text = absatz.text.strip()
-
-        # Kapitelanfang erkannt
         if text in kapitel_liste:
-            # Vorherigen Kommentar setzen, falls offen
             if aktuelles_kapitel_text is not None and start_absatz is not None:
                 kommentar_text = f"[{aktuelles_kapitel_text}.{unterkapitel_nr}] mit {wort_zaehler} Wörtern"
                 add_comment(start_absatz, kommentar_text)
-                print(f"💬 Kommentar gesetzt für Kapitel '{aktuelles_kapitel_text}': {kommentar_text}")
-
+                csv_daten.append([aktuelles_kapitel_text, unterkapitel_nr, wort_zaehler])
             aktuelles_kapitel_text = text
             unterkapitel_nr = 1
             wort_zaehler = 0
             start_absatz = absatz
             continue
 
-        # Kapiteltrenner erkannt
         if text == kapitel_trenner and aktuelles_kapitel_text is not None:
             kommentar_text = f"[{aktuelles_kapitel_text}.{unterkapitel_nr}] mit {wort_zaehler} Wörtern"
             add_comment(start_absatz, kommentar_text)
-            print(f"💬 Kommentar gesetzt für Unterkapitel '{aktuelles_kapitel_text}.{unterkapitel_nr}': {kommentar_text}")
-
+            csv_daten.append([aktuelles_kapitel_text, unterkapitel_nr, wort_zaehler])
             unterkapitel_nr += 1
             wort_zaehler = 0
-            start_absatz = absatz  # jetzt trenner als Startabsatz fürs nächste Unterkapitel
+            start_absatz = absatz
             continue
 
-        # Innerhalb Kapitel Wörter zählen
         if aktuelles_kapitel_text is not None:
             wort_zaehler += len(text.split())
 
-    # Am Ende letzten Kommentar setzen, falls offen
     if aktuelles_kapitel_text is not None and start_absatz is not None:
         kommentar_text = f"[{aktuelles_kapitel_text}.{unterkapitel_nr}] mit {wort_zaehler} Wörtern (final)"
         add_comment(start_absatz, kommentar_text)
-        print(f"💬 Letzter Kommentar für Kapitel '{aktuelles_kapitel_text}': {kommentar_text}")
+        csv_daten.append([aktuelles_kapitel_text, unterkapitel_nr, wort_zaehler])
 
+    if csv_pfad:
+        speichere_csv_sicher(csv_pfad, csv_daten)
 
 def ist_datei_gesperrt(pfad):
     try:
@@ -176,15 +200,17 @@ projekt_root = os.path.abspath(os.path.join(eingabe_ordner, "..", ".."))
 projektname = os.path.basename(parent_ordner)
 docx_path = os.path.join(os.path.dirname(projekt_root), f"{projektname}.docx")
 
-with open(kapitel_config_path, "r", encoding="utf-8") as f:
-    kapitel_config = json.load(f)
+zielpfad = docx_path.replace(".docx", "_kommentiert.docx")
+csv_path = docx_path.replace(".docx", "_wortzaehler.csv")
 
 print(f"📄 Öffne Dokument: {docx_path}")
 doc = Document(docx_path)
-entferne_spezifische_kommentare(doc)
-verarbeite_kapitel(doc, kapitel_config)
 
-zielpfad = docx_path.replace(".docx", "_kommentiert.docx")
+with open(kapitel_config_path, "r", encoding="utf-8") as f:
+    kapitel_config = json.load(f)
+
+entferne_spezifische_kommentare(doc)
+verarbeite_kapitel(doc, kapitel_config, csv_path)
 
 max_versuche = 3
 for versuch in range(max_versuche):
