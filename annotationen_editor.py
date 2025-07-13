@@ -1,5 +1,6 @@
 import os
 import re
+import regex
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox,simpledialog
@@ -377,31 +378,54 @@ class AnnotationenEditor(ttk.Frame):
                     kapitelnummer = self.json_dicts[idx].get("KapitelNummer", "")
 
                     # Alle Zusatzfelder auf leeren String setzen, wenn nicht vorhanden
-                    standardfelder = {                        
+                    standardfelder = {
                         "annotation": "",
                     }
 
-                     # KI-Aufgaben-Felder dynamisch aus config ergänzen
+                    # KI-Aufgaben-Felder dynamisch aus config ergänzen
                     for feld in config.KI_AUFGABEN.values():
                         standardfelder[feld] = ""
 
+                    # Haupttoken aktualisieren
                     ersetztes_token = Schritt2.ersetze_zahl_in_token(teile[0], vorher_token, naechstes_token)
-                    self.json_dicts[idx]['token'] = ersetztes_token
 
+                    # Annotation bestimmen
+                    annotationen = []
+                    if regex.match(r"[\p{P}]", teile[0]):
+                        if teile[0] in ['–', '(', ')', '{', '}', '[', ']']:
+                            annotationen.append("satzzeichenMitSpace")
+                        elif teile[0] in ['„']:
+                            annotationen.append("satzzeichenOhneSpaceDanach")
+                        else:
+                            annotationen.append("satzzeichenOhneSpaceDavor")
+
+                    self.json_dicts[idx]['token'] = teile[0]
+                    self.json_dicts[idx]['tokenInklZahlwoerter'] = ersetztes_token
+                    self.json_dicts[idx]['annotation'] = ",".join(annotationen)
+
+                    # Weitere Wörter einfügen, falls durch Split mehrere entstanden
                     for i, wort in enumerate(teile[1:], start=1):
+                        neues_annotationen = []
+                        if regex.match(r"[\p{P}]", wort):
+                            if wort in ['–', '(', ')', '{', '}', '[', ']']:
+                                neues_annotationen.append("satzzeichenMitSpace")
+                            elif wort in ['„']:
+                                neues_annotationen.append("satzzeichenOhneSpaceDanach")
+                            else:
+                                neues_annotationen.append("satzzeichenOhneSpaceDavor")
+
                         ersetztes_wort = Schritt2.ersetze_zahl_in_token(wort, vorher_token, naechstes_token)
-                        
                         neues_token_dict = {
                             "KapitelNummer": kapitelnummer,
                             'WortNr': i + vorher_wortNr - 1,
                             'token': wort,
                             'tokenInklZahlwoerter': ersetztes_wort,
+                            'annotation': ",".join(neues_annotationen),
                             **standardfelder
                         }
-
                         self.json_dicts.insert(idx + i, neues_token_dict)
 
-                # ⬇️ Alle folgenden WortNr aktualisieren (inkl. sich selbst und alle danach)
+                    # WortNr aller Tokens ab idx neu nummerieren
                     for i in range(idx, len(self.json_dicts)):
                         self.json_dicts[i]['WortNr'] = i + 1
 
@@ -412,13 +436,14 @@ class AnnotationenEditor(ttk.Frame):
                     self._zeichne_alle_tokens()
                     self.renderer.markiere_token_mit_rahmen(self.canvas, idx + len(teile) - 1)
                     self._on_token_click(idx + len(teile) - 1)
-               
+
         bearbeiten_button = tk.Button(
             self.annotation_frame,
             text="Token bearbeiten",
             command=bearbeite_token
         )
         bearbeiten_button.grid(row=1, column=1, padx=5, pady=5, sticky='e')
+
 
         row_index = 2
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
