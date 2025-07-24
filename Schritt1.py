@@ -4,9 +4,30 @@ from pathlib import Path
 from docx import Document
 from Eingabe.config import ANZAHL_ÜBERSCHRIFTENZEILEN, EINRUECKUNGSFORMAT
 
+def ist_kapitel_trenner(text, trenner_config):
+    text = text.strip()
+    trenner_config = trenner_config.strip()
+
+    if not trenner_config:
+        return False
+
+    # Fester Trennertext
+    if "{" not in trenner_config:
+        return text == trenner_config
+
+    # Baue Regex aus Template
+    regex = re.escape(trenner_config)
+
+    # Ersetze Platzhalter für arabische und römische Ziffern
+    regex = regex.replace(r"\{Nr\}", r"(?:(?:[IVXLCDM]+)|(?:\d+))")
+
+    # Nur genaues Match
+    return re.fullmatch(regex, text, re.IGNORECASE) is not None
+
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
     ausgabe_ordner = Path(ausgabe_ordner)
     ausgabe_ordner.mkdir(parents=True, exist_ok=True)
+    print(kapitel_trenner)
 
     if not os.path.isfile(docx_datei):
         print(f"[FEHLER] Docx-Datei existiert nicht: {docx_datei}")
@@ -113,7 +134,7 @@ def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, au
             
             for para in kapitel_paragraphs:
                 text = para.text.strip()
-                if kapitel_trenner and text == kapitel_trenner.strip():
+                if ist_kapitel_trenner(text, kapitel_trenner):
                     # Trenner gefunden → Abschnitt beenden
                     if aktueller_abschnitt:
                         abschnitts_liste.append(aktueller_abschnitt)

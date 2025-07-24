@@ -2,6 +2,7 @@ import os
 import re
 import regex
 import json
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox,simpledialog
 from reportlab.pdfgen import canvas as pdfcanvas
@@ -32,6 +33,10 @@ class AnnotationenEditor(ttk.Frame):
         super().__init__(parent)
         self.notebook = notebook
         self.kapitel_config = kapitel_config
+        self.master_window = self.winfo_toplevel()
+        self.master_window.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self.ist_geaendert = False
 
         # Kapitel-Liste aus config_editor holen
         if not kapitel_config.kapitel_liste and kapitel_config.kapitel_daten:
@@ -54,7 +59,18 @@ class AnnotationenEditor(ttk.Frame):
     
         # Widgets bauen
         self._erstelle_widgets()
+    
+    def _on_close(self):
+        if self.ist_geaendert:
+            if messagebox.askyesno("Änderungen speichern", "Es gibt ungespeicherte Änderungen. Möchtest du sie speichern?"):
+                self._json_speichern()
+        
 
+        if messagebox.askyesno("Wirklich beenden", "Willst du wirklich alles beenden?"):        
+            # Anwendung komplett schließen
+            self.master_window.quit()  # Bricht mainloop ab
+            self.master_window.destroy()  # Zerstört Fenster
+            sys.exit()  # Beendet das Script vollständig
 
     def _lade_json_daten(self):
         aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
@@ -148,6 +164,11 @@ class AnnotationenEditor(ttk.Frame):
         export_button = ttk.Button(top_frame, text="Exportiere als PDF", command=self._exportiere_pdf)
         export_button.grid(row=0, column=4, padx=(10, 0))
 
+        # Wortanzahl-label
+        self.wortanzahl_label = ttk.Label(top_frame, text="Wörter: 0")
+        self.wortanzahl_label.grid(row=0, column=5, padx=10, pady=5, sticky='w')
+
+
         # 2. Zeile: zahlwoerter_checkbox
         top_frame_2 = ttk.Frame(self)
         top_frame_2.grid(row=1, column=0, sticky="w", padx=5, pady=(5, 0))
@@ -169,8 +190,6 @@ class AnnotationenEditor(ttk.Frame):
             variable=self.auto_person_bis_redeende_var
         )
         personen_auto_checkbox.grid(row=0, column=1, sticky="w", padx=(10, 0))
-
-
 
         # 3. Zeile: Annotationen ausblenden für
         top_frame_3 = ttk.Frame(self)
@@ -248,6 +267,15 @@ class AnnotationenEditor(ttk.Frame):
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
 
+    def aktualisiere_wortanzahl_label(self):
+        if not self.json_dicts:
+            self.wortanzahl_label.config(text="Wörter: 0")
+            return
+
+        letzte_wortnr = max(eintrag.get("WortNr", 0) for eintrag in self.json_dicts)
+        self.wortanzahl_label.config(text=f"Wörter: {letzte_wortnr}")
+
+
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
         self.renderer.positionen_zuruecksetzen()
@@ -262,7 +290,8 @@ class AnnotationenEditor(ttk.Frame):
             self.renderer.rendern(index=idx, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=json_dict)
             tag = f'token_{idx}'
             self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
-        
+
+        self.aktualisiere_wortanzahl_label()
         self.canvas.update_idletasks()
         
     def berechne_positionen_vor_rendern(self, bis_index):
@@ -340,6 +369,7 @@ class AnnotationenEditor(ttk.Frame):
     
     def _on_token_click(self, idx):
         print(f"Token {idx} wurde angeklickt.")
+        self.ist_geaendert = True
         self.default_annotation_label.grid_forget()
 
         json_dict = self.json_dicts[idx]
@@ -365,6 +395,7 @@ class AnnotationenEditor(ttk.Frame):
         ).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
         
         def bearbeite_token():
+            
             aktuelles_token = json_dict.get('token', '')
             neues_token = simpledialog.askstring("Token bearbeiten", "Neues Token eingeben:", initialvalue=aktuelles_token)
 
@@ -436,6 +467,9 @@ class AnnotationenEditor(ttk.Frame):
                     self._zeichne_alle_tokens()
                     self.renderer.markiere_token_mit_rahmen(self.canvas, idx + len(teile) - 1)
                     self._on_token_click(idx + len(teile) - 1)
+                    self.aktualisiere_wortanzahl_label()
+                
+
 
         bearbeiten_button = tk.Button(
             self.annotation_frame,
@@ -548,6 +582,7 @@ class AnnotationenEditor(ttk.Frame):
             zielpfad = os.path.join(config.GLOBALORDNER["manuell"], os.path.basename(self.dateipfad_json))
             with open(zielpfad, 'w', encoding='utf-8') as f:
                 json.dump(self.json_dicts, f, ensure_ascii=False, indent=2)
+                self.ist_geaendert = False
             messagebox.showinfo("Erfolg", f"JSON erfolgreich gespeichert nach:\n{zielpfad}")
         except Exception as e:
             messagebox.showerror("Fehler", f"Fehler beim Speichern:\n{str(e)}")
@@ -583,6 +618,11 @@ class AnnotationenEditor(ttk.Frame):
         self._zeichne_alle_tokens()
 
     def _hauptkapitel_gewechselt(self, event):
+
+        if self.ist_geaendert:
+            if messagebox.askyesno("Änderungen speichern", "Es gibt ungespeicherte Änderungen. Möchtest du sie speichern?"):
+                self._json_speichern()
+
         self.current_hauptkapitel_index = self.hauptkapitel_combo.current()
         self.current_abschnitt_index = None
 
@@ -607,9 +647,15 @@ class AnnotationenEditor(ttk.Frame):
             self.default_annotation_label.grid()
             return
 
+        if self.ist_geaendert:
+            if messagebox.askyesno("Änderungen speichern", "Es gibt ungespeicherte Änderungen. Möchtest du sie speichern?"):
+                self._json_speichern()
+
         self.current_abschnitt_index = idx
         self._lade_json_daten()
         self._zeichne_alle_tokens()
+  
+ 
 
     def _exportiere_pdf(self):
       
