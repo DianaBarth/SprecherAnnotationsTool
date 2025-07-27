@@ -20,14 +20,14 @@ def ist_kapitel_trenner(text, trenner_config):
 
     # Ersetze Platzhalter für arabische und römische Ziffern
     regex = regex.replace(r"\{Nr\}", r"(?:(?:[IVXLCDM]+)|(?:\d+))")
-
+    print(f"Kapiteltrenner erkannt: {text}")
     # Nur genaues Match
     return re.fullmatch(regex, text, re.IGNORECASE) is not None
 
 def extrahiere_kapitel_mit_config(docx_datei, kapitel_namen, kapitel_trenner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
     ausgabe_ordner = Path(ausgabe_ordner)
     ausgabe_ordner.mkdir(parents=True, exist_ok=True)
-    print(kapitel_trenner)
+    print(f"kapitel_trenner : {kapitel_trenner}")
 
     if not os.path.isfile(docx_datei):
         print(f"[FEHLER] Docx-Datei existiert nicht: {docx_datei}")

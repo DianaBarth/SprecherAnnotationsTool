@@ -210,7 +210,7 @@ with open(kapitel_config_path, "r", encoding="utf-8") as f:
     kapitel_config = json.load(f)
 
 entferne_spezifische_kommentare(doc)
-verarbeite_kapitel(doc, kapitel_config, csv_path)
+#verarbeite_kapitel(doc, kapitel_config, csv_path)
 
 max_versuche = 3
 for versuch in range(max_versuche):

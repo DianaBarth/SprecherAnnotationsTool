@@ -931,7 +931,7 @@ class DashBoard(ttk.Frame):
                 self.kapitel_config_datei = self.output_folder / "kapitel_config.json"
                 if self.kapitel_config_datei.is_file():
                     try:
-                        self.kapitel_config.load_from_file(str(self.kapitel_config_datei))
+                        self.kapitel_config.lade_KonfigurationAusPfad(str(self.kapitel_config_datei))
                         print(f"[INFO] Kapitel-Konfiguration geladen aus {self.kapitel_config_datei}")
                     except Exception as e:
                         messagebox.showerror("Fehler", f"Konnte Kapitel-Konfiguration nicht laden: {e}")
@@ -976,23 +976,7 @@ class DashBoard(ttk.Frame):
         self.output_folder = ergebnisse_ordner  # als Path speichern, nicht str
         self.kapitel_config.output_folder = str(self.output_folder)
 
-        # 4. Kapitel-Konfigurationsdatei laden
-        self.kapitel_config_datei = ergebnisse_ordner / "kapitel_config.json"
-        print(f"[DEBUG] Kapitel-Konfigurationsdatei Pfad: {repr(self.kapitel_config_datei)}")
-
-        if self.kapitel_config_datei.is_file():
-            try:
-                self.kapitel_config.load_from_file(str(self.kapitel_config_datei))
-                print(f"[INFO] Kapitel-Konfiguration aus {self.kapitel_config_datei} geladen.")
-                print("[DEBUG] geladene kapitel_config:", self.kapitel_config.kapitel_daten)
-            except Exception as e:
-                messagebox.showerror("Fehler", f"Konnte Kapitel-Konfiguration nicht laden: {e}")
-                self.kapitel_config_datei = None
-        else:
-            messagebox.showwarning("Bitte Kapitel-Konfiguration laden oder erzeugen!")
-            self.kapitel_config_datei = None
-
-        # Weitere Ausgabe-Unterordner anlegen
+        # 4. Weitere Ausgabe-Unterordner anlegen
         self.ordner = {
             "Eingabe":  ergebnisse_ordner / "Eingabe",
             "txt":    ergebnisse_ordner / "txt",
@@ -1010,7 +994,24 @@ class DashBoard(ttk.Frame):
             print(f"[DEBUG] Ordner erstellt: {repr(pfad)}")
  
         self.update_globalordner_in_config(self.ordner)
-       
+
+
+        # 5. Kapitel-Konfigurationsdatei laden
+        self.kapitel_config_datei = ergebnisse_ordner / "kapitel_config.json"
+        print(f"[DEBUG] Kapitel-Konfigurationsdatei Pfad: {repr(self.kapitel_config_datei)}")
+
+        if self.kapitel_config_datei.is_file():
+            try:
+                self.kapitel_config.lade_KonfigurationAusPfad(str(self.kapitel_config_datei))
+                print(f"[INFO] Kapitel-Konfiguration aus {self.kapitel_config_datei} geladen.")
+                print("[DEBUG] geladene kapitel_config:", self.kapitel_config.kapitel_daten)
+            except Exception as e:
+                messagebox.showerror("Fehler", f"Konnte Kapitel-Konfiguration nicht laden: {e}")
+                self.kapitel_config_datei = None
+        else:
+            messagebox.showwarning("Bitte Kapitel-Konfiguration laden oder erzeugen!")
+            self.kapitel_config_datei = None
+  
         self.lade_kapitel_checkboxes()
       
     def lade_kapitel_checkboxes(self):
@@ -1122,6 +1123,7 @@ class DashBoard(ttk.Frame):
         kapitel_liste = list(self.kapitel_config.kapitel_liste)
         kapitel_daten = copy.deepcopy(self.kapitel_config.kapitel_daten)
         kapitel_trenner = copy.deepcopy(self.kapitel_config.kapitel_trenner)
+
         ordner_nur_str = {k: str(v) for k, v in self.ordner.items()}
         max_workers = self.max_workers
         abort_flag = self.abort_flag

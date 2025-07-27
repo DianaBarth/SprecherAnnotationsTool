@@ -33,6 +33,8 @@ class KapitelConfig(ttk.Frame):
         self._update_current_label()
 
         self.notebook.hide(self)  # Versteckt den Tab
+
+        
         
     def kapitel_manuell_bearbeiten(self):     
         
@@ -41,12 +43,15 @@ class KapitelConfig(ttk.Frame):
         self._load_current_kapitel()
         self._update_current_label()
         self.show()
-
+    
     def lade_konfiguration(self):        
         dateipfad = filedialog.askopenfilename(
             title="Konfiguration laden",
             filetypes=[("JSON‑Dateien", "*.json"), ("Alle Dateien", "*.*")]
         )
+        self.lade_KonfigurationAusPfad(dateipfad, True)
+
+    def lade_KonfigurationAusPfad(self, dateipfad, GUIzeigen = False):
         if not dateipfad:
             return
         try:
@@ -67,11 +72,13 @@ class KapitelConfig(ttk.Frame):
             # Neues: Kapitel-Trenner separat auslesen, falls vorhanden
             self.kapitel_trenner = daten.get("kapitel_trenner", "–")  # Standard: Gedankenstrich
 
+        if GUIzeigen:
             self.index = 0
             self._load_current_kapitel()
             self._update_current_label()
             self.show()
             messagebox.showinfo("Erfolg", "Kapitel-Konfiguration erfolgreich geladen.")
+
         except Exception as e:
             messagebox.showerror("Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
 
@@ -211,8 +218,8 @@ class KapitelConfig(ttk.Frame):
             # Abbruch beim Trenner-Dialog
             return
 
-        # Beispiel: Trenner speichern
-        self.kapitel_trenner = trenner
+        # trenner speichern
+        self.setze_und_speichere_trenner(trenner)
 
         # Kapitel-Liste mit Trenner zusammenbauen
         self.kapitel_daten = {}
@@ -223,39 +230,56 @@ class KapitelConfig(ttk.Frame):
         self._update_current_label()
         self.show()
 
+    def setze_und_speichere_trenner(self, trenner):
+        try:
+            # Datei lesen
+            with open(self.kapitel_config_datei, "r", encoding="utf-8") as f:
+                daten = json.load(f)
 
+            # Trenner setzen
+            daten["kapitel_trenner"] = trenner
+
+            # Datei schreiben
+            with open(self.kapitel_config_datei, "w", encoding="utf-8") as f:
+                json.dump(daten, f, indent=4, ensure_ascii=False)
+
+            # 🔄 Jetzt neu laden!
+            self.lade_KonfigurationAusPfad(self.kapitel_config_datei)
+
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Fehler beim Speichern des Trenners:\n{e}")
     
-    def load_from_file(self, dateiname):
-        if os.path.exists(dateiname):
-            self.index = 0
-            try:
-                with open(dateiname, "r", encoding="utf-8") as f:
-                    daten = json.load(f)
+    # def load_from_file(self, dateiname):
+    #     if os.path.exists(dateiname):
+    #         self.index = 0
+    #         try:
+    #             with open(dateiname, "r", encoding="utf-8") as f:
+    #                 daten = json.load(f)
 
-                if "kapitel_liste" in daten and "kapitel_daten" in daten:
-                    self.kapitel_liste = daten["kapitel_liste"]
-                    self.kapitel_daten = daten["kapitel_daten"]
-                elif "kapitel_daten" in daten:
-                    self.kapitel_daten = daten["kapitel_daten"]
-                    # Reihenfolge aus dict nicht garantiert → nach dem Namen sortieren
-                    self.kapitel_liste = list(self.kapitel_daten.keys())
-                else:
-                    # Fallback
-                    self.kapitel_daten = daten
-                    self.kapitel_liste = list(daten.keys())
+    #             if "kapitel_liste" in daten and "kapitel_daten" in daten:
+    #                 self.kapitel_liste = daten["kapitel_liste"]
+    #                 self.kapitel_daten = daten["kapitel_daten"]
+    #             elif "kapitel_daten" in daten:
+    #                 self.kapitel_daten = daten["kapitel_daten"]
+    #                 # Reihenfolge aus dict nicht garantiert → nach dem Namen sortieren
+    #                 self.kapitel_liste = list(self.kapitel_daten.keys())
+    #             else:
+    #                 # Fallback
+    #                 self.kapitel_daten = daten
+    #                 self.kapitel_liste = list(daten.keys())
 
-                self.index = 0  # <— sicher zurücksetzen!
-                self._load_current_kapitel()
-                self._update_current_label()
+    #             self.index = 0  # <— sicher zurücksetzen!
+    #             self._load_current_kapitel()
+    #             self._update_current_label()
 
 
-                print("Geladene Reihenfolge:", self.kapitel_liste)
-                print("Aktueller Index:", self.index)
-                print("Erstes Kapitel:", self.kapitel_liste[0])
+    #             print("Geladene Reihenfolge:", self.kapitel_liste)
+    #             print("Aktueller Index:", self.index)
+    #             print("Erstes Kapitel:", self.kapitel_liste[0])
 
-                print("[DEBUG] geladene nicht_notwendige_unterschritte:", self.kapitel_daten.get(self.kapitel_liste[0], {}).get("nicht_notwendige_unterschritte"))
-            except Exception as e:
-                messagebox.showerror("Fehler", f"Laden der Konfiguration fehlgeschlagen:\n{e}")
+    #             print("[DEBUG] geladene nicht_notwendige_unterschritte:", self.kapitel_daten.get(self.kapitel_liste[0], {}).get("nicht_notwendige_unterschritte"))
+    #         except Exception as e:
+    #             messagebox.showerror("Fehler", f"Laden der Konfiguration fehlgeschlagen:\n{e}")
 
     def _build_widgets(self):
         # Spalten konfigurieren: 0=Label, 1=Entry, 2=Checkbox, 3=Spacer, 4=X-Button (rechts)

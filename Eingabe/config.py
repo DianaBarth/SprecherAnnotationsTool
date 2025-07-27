@@ -1,14 +1,6 @@
 # ---------------------------------------------
-
-
-
-# Konfigurationsdatei (config.py), Automatisch generiert am 2025-07-12T08:20:47.440415
-
-
-
+# Konfigurationsdatei (config.py), Automatisch generiert am 2025-07-27T16:26:07.489878
 # ---------------------------------------------
-
-
 
 GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation - Director´s Cut/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
 

@@ -3,6 +3,7 @@ import re
 import tkinter as tk
 from tkinter import ttk
 from collections import defaultdict
+import csv
 
 # ✅ config.py einbinden
 try:
@@ -125,6 +126,26 @@ def export_to_txt(table_rows, chapters, chapter_files):
 
     print(f"Exportiert nach {filepath}")
 
+def export_to_csv(table_rows, chapters, chapter_files):
+    export_dir = os.path.dirname(TEXT_DIR)
+    filepath = os.path.join(export_dir, "wortzaehlung_export.csv")
+
+    with open(filepath, "w", newline='', encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+
+        # Kopfzeile
+        writer.writerow(["Nr."] + chapters)
+
+        # Datenzeilen
+        for idx, row in enumerate(table_rows, 1):
+            writer.writerow([idx] + [row[chap] for chap in chapters])
+
+        # Summenzeile
+        sum_row = ["→ Summe"] + [sum(chapter_files[chap]) for chap in chapters]
+        writer.writerow(sum_row)
+
+    print(f"Exportiert nach {filepath}")
+
 def create_gui(table_rows, chapters, chapter_files):
     root = tk.Tk()
     root.title("Wortanzahl pro Datei (Kapitel = Spalten)")
@@ -160,6 +181,18 @@ def create_gui(table_rows, chapters, chapter_files):
         bg="#d9ead3",
         font=("Arial", 10, "bold")
     )
+
+    # CSV-Export-Button
+    export_csv_button = tk.Button(
+        root,
+        text="Als CSV exportieren",
+        command=lambda: export_to_csv(table_rows, chapters, chapter_files),
+        bg="#cfe2f3",
+        font=("Arial", 10, "bold")
+    )
+    export_csv_button.pack(pady=5)
+
+
     export_button.pack(pady=10)
 
     root.mainloop()
