@@ -104,6 +104,9 @@ def auto_git_commit():
         print(f"❌ Git-Auto-Commit fehlgeschlagen: {e}")
 
 if __name__ == "__main__":
+
+    print("Logger wird initialisiert")
+
     # Haupttool
     logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 

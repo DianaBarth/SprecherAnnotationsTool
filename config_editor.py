@@ -834,8 +834,10 @@ class ConfigEditor(ttk.Frame):
   
     def on_nutzeKI_changed(self, *args):
         if self.ki_aufgaben_editor:
-            if self.nutzeKI_var.get():
+            if self.nutzeKI_var.get():                
                 self.ki_aufgaben_editor.show_prompt_buttons()
+                messagebox.showinfo("Hinweis", "Um die KI im nächsten Durchgang nutzen zu können, bitte SprecherAnnotationsTool (nach abgeschlossener Konfiguration) beenden und neu starten.")
+
             else:
                 self.ki_aufgaben_editor.hide_prompt_buttons()
 
@@ -868,7 +870,7 @@ class ConfigEditor(ttk.Frame):
         Aufgabenframe = ttk.Frame(self)
         Aufgabenframe.grid(row=1, column=0, sticky="w", padx=10, pady=2)
 
-        self.nutzeKI_var = tk.BooleanVar(value=getattr(config, "NUTZE_KI", True))
+        self.nutzeKI_var = tk.BooleanVar(value=getattr(config, "NUTZE_KI", False))
         self.nutzeKI_var.trace_add("write", self.on_nutzeKI_changed)
 
         ttk.Label(Aufgabenframe, text="ANNOTATIONS-AUFGABEN").grid(row=0, column=0, sticky="w")

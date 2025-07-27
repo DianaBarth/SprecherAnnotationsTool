@@ -38,7 +38,10 @@ class SprecherAnnotationsTool(tk.Tk):
         # KapitelConfig, Dashboard etc. anlegen
         self.kapitel_config = KapitelConfig(self, self.notebook)
         self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client)
-        InstallationModellwahl(self, self.notebook, self.client)
+
+        if config.NUTZE_KI == True:
+            InstallationModellwahl(self, self.notebook, self.client)
+            
         self.kapitel_config.dashboard = self.dashboard
         self.config_editor = ConfigEditor(self, self.notebook, self.dashboard)
 

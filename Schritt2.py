@@ -46,7 +46,6 @@ def ersetze_zahl_in_token(token, vorher_token=None, naechstes_token=None):
     
     match = re.match(r"([A-Za-z]?)(\d+)([.,:;!?\-]*)$", token)
     if not match:
-        print("DEBUG: Kein Zahlmuster erkannt, Token wird unverändert zurückgegeben.")
         return token
 
     prefix, zahl_str, endzeichen = match.groups()

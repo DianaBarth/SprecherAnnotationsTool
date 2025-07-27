@@ -54,34 +54,36 @@ class KapitelConfig(ttk.Frame):
     def lade_KonfigurationAusPfad(self, dateipfad, GUIzeigen = False):
         if not dateipfad:
             return
-        try:
-            with open(dateipfad, "r", encoding="utf-8") as f:
-                daten = json.load(f)
+        else:
+            try:
+                with open(dateipfad, "r", encoding="utf-8") as f:
+                    daten = json.load(f)
 
-            # Kapitel-Liste und Daten wie gehabt laden
-            if "kapitel_liste" in daten and "kapitel_daten" in daten:
-                self.kapitel_liste = daten["kapitel_liste"]
-                self.kapitel_daten = daten["kapitel_daten"]
-            elif "kapitel_daten" in daten:
-                self.kapitel_daten = daten["kapitel_daten"]
-                self.kapitel_liste = list(daten["kapitel_daten"].keys())
-            else:
-                self.kapitel_daten = daten
-                self.kapitel_liste = list(daten.keys())
+                # Kapitel-Liste und Daten wie gehabt laden
+                if "kapitel_liste" in daten and "kapitel_daten" in daten:
+                    self.kapitel_liste = daten["kapitel_liste"]
+                    self.kapitel_daten = daten["kapitel_daten"]
+                elif "kapitel_daten" in daten:
+                    self.kapitel_daten = daten["kapitel_daten"]
+                    self.kapitel_liste = list(daten["kapitel_daten"].keys())
+                else:
+                    self.kapitel_daten = daten
+                    self.kapitel_liste = list(daten.keys())
 
-            # Neues: Kapitel-Trenner separat auslesen, falls vorhanden
-            self.kapitel_trenner = daten.get("kapitel_trenner", "–")  # Standard: Gedankenstrich
+                # Neues: Kapitel-Trenner separat auslesen, falls vorhanden
+                self.kapitel_trenner = daten.get("kapitel_trenner", "–")  # Standard: Gedankenstrich
+            except Exception as e:
+                 messagebox.showerror("Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
 
-        if GUIzeigen:
-            self.index = 0
-            self._load_current_kapitel()
-            self._update_current_label()
-            self.show()
-            messagebox.showinfo("Erfolg", "Kapitel-Konfiguration erfolgreich geladen.")
+            if GUIzeigen:
+                self.index = 0
+                self._load_current_kapitel()
+                self._update_current_label()
+                self.show()
+                messagebox.showinfo("Erfolg", "Kapitel-Konfiguration erfolgreich geladen.")
 
-        except Exception as e:
-            messagebox.showerror("Fehler", f"Fehler beim Laden der Konfiguration:\n{e}")
-
+    
+       
 
     def _create_from_word(self, stilname, pfad, nummerierung="nein", praefix=None, aufsteigend=False, kapitel_trenner="* * *"):
         print(f"Starte Kapitel-Erkennung aus Word-Datei: {pfad}")
