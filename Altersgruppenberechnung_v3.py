@@ -230,6 +230,28 @@ def berechne_haueser(FLAECHE_SEITE,speicherordner, printPlots=True, printJahr = 
 def dist(a, b):
     return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
 
+
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import matplotlib.cm as cm
+from sklearn.cluster import KMeans
+
+def dist(p1, p2):
+    return np.linalg.norm(np.array(p1) - np.array(p2))
+
+import os
+import numpy as np
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import matplotlib.cm as cm
+import datetime
+
+def dist(a, b):
+    return np.linalg.norm(np.array(a) - np.array(b))
+
 def simuliere_busfahrten(
     koordinaten,
     anzahl_busse,
@@ -238,14 +260,16 @@ def simuliere_busfahrten(
     rueckfahrt_kmh_schnell,
     rueckfahrt_schwelle_min,
     flaeche_seite,
-    beobachtetes_haus=None, 
-    plotte_Route = True,
-    speicherordner ="bus"
+    beobachtetes_haus=None,
+    plotte_Route=True,
+    speicherordner="bus",
+    endzeit_str=None,
+    abbremszeit_sek=10  # Sekunden Abbremsen+Anfahren pro Halt
 ):
     zentrum = (flaeche_seite / 2, flaeche_seite / 2)
 
     bus_routen = []
-    
+
     # In numpy umwandeln für KMeans
     koordinaten_np = np.array(koordinaten)
     kmeans = KMeans(n_clusters=anzahl_busse, n_init=10)
@@ -254,6 +278,8 @@ def simuliere_busfahrten(
     zeiten_pro_bus = []
     zeiten_beobachtet = []
 
+    alle_ankunftszeiten = []  # Für CSV: Liste mit Dicts
+
     for bus_index in range(anzahl_busse):
         route = koordinaten_np[labels == bus_index].tolist()
 
@@ -261,26 +287,45 @@ def simuliere_busfahrten(
         route.sort(key=lambda x: dist(x, zentrum))
 
         bus_routen.append(route)
-        total_dist_hin = 0
-        total_dist_zurueck = 0
-        zeit_bis_beobachtet = None
-        zeit_ab_beobachtet = None
         zeit_gesamt_min = 0
-
-        aktuelle_position = zentrum
+        zeit_bis_beobachtet = None
         beobachtetes_haus_erreicht = False
         zeitsumme_bis_beobachtet = 0
+        aktuelle_position = zentrum
 
-        for haus in route:
+        for haltestellen_nummer, haus in enumerate(route):
+            # Fahrtstrecke zum nächsten Haus
             strecke_hin = dist(aktuelle_position, haus)
-            zeit_hin_min = (strecke_hin / hinfahrt_kmh) * 60
-            total_dist_hin += strecke_hin
-            warte_min = wartezeit_pro_haus_sek / 60
-            zeit_gesamt_min += zeit_hin_min + warte_min
 
-            zeitsumme_bis_beobachtet += zeit_hin_min + warte_min
+            # Zeit für Fahrt bei 40 km/h (langsamer bei abbremsen)
+            # Geschwindigkeit reduziert wegen abbremsen/anfahren:
+            effektive_geschwindigkeit_kmh = 40 * (60 / (60 + abbremszeit_sek))  # ca. langsamer um Abbremszeit
+            zeit_hin_min = (strecke_hin / effektive_geschwindigkeit_kmh) * 60
 
-            if beobachtetes_haus and not beobachtetes_haus_erreicht and np.allclose(haus, beobachtetes_haus):
+            # Wartezeit + Abbremszeit
+            warte_min = (wartezeit_pro_haus_sek + abbremszeit_sek) / 60
+
+            # Summe Zeit zum nächsten Halt inkl. Warte- und Abbremszeit
+            min_dauer = zeit_hin_min + warte_min
+            zeit_gesamt_min += min_dauer
+            zeitsumme_bis_beobachtet += min_dauer
+             
+            #beobachtetes haus?
+            ist_beobachtet = (
+                beobachtetes_haus is not None and
+                np.allclose(haus, beobachtetes_haus)
+            )
+
+            alle_ankunftszeiten.append({
+                "Bus": bus_index,
+                "HaltestellenNummer": haltestellen_nummer,
+                "X": round(haus[0], 4),
+                "Y": round(haus[1], 4),
+                "Ankunftszeit_min": round(zeit_gesamt_min, 2),
+                "Beobachtet": ist_beobachtet
+            })
+
+            if beobachtetes_haus is not None and not beobachtetes_haus_erreicht and np.allclose(haus, beobachtetes_haus):
                 zeit_bis_beobachtet = zeitsumme_bis_beobachtet
                 beobachtetes_haus_erreicht = True
 
@@ -302,15 +347,44 @@ def simuliere_busfahrten(
 
     max_zeit = round(max(zeiten_pro_bus), 2)
 
-    plt.figure(figsize=(8, 8))
-    ax = plt.gca()
+    # Berechne Startzeit, wenn Endzeit übergeben wurde
+    if endzeit_str is not None:
+        heute = datetime.date.today()
+        h, m = map(int, endzeit_str.split(":"))
+        endzeit_dt = datetime.datetime.combine(heute, datetime.time(h, m))
+        startzeit_dt = endzeit_dt - datetime.timedelta(minutes=max_zeit)
+    else:
+        startzeit_dt = None
 
+    # Konvertiere relative Minuten in absolute Uhrzeiten
+    if startzeit_dt is not None:
+        for eintrag in alle_ankunftszeiten:
+            ankunfts_min = eintrag["Ankunftszeit_min"]
+            ankunftszeit_dt = startzeit_dt + datetime.timedelta(minutes=ankunfts_min)
+            eintrag["Ankunftszeit_Uhrzeit"] = ankunftszeit_dt.strftime("%H:%M:%S")
+    else:
+        for eintrag in alle_ankunftszeiten:
+            eintrag["Ankunftszeit_Uhrzeit"] = None
+
+    # CSV speichern
+    if speicherordner:
+        import csv
+        os.makedirs(speicherordner, exist_ok=True)
+        csv_pfad = os.path.join(speicherordner, "bus_ankunftszeiten.csv")
+        feldnamen = ["Bus", "HaltestellenNummer", "X", "Y", "Ankunftszeit_min", "Ankunftszeit_Uhrzeit", "Beobachtet"]
+        with open(csv_pfad, mode='w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=feldnamen)
+            writer.writeheader()
+            for eintrag in alle_ankunftszeiten:
+                writer.writerow(eintrag)
+
+    # Plotten
     if plotte_Route:
+        plt.figure(figsize=(8, 8))
+        ax = plt.gca()
 
-        # Farbskala je Bus
         farben = cm.get_cmap('tab10', len(bus_routen))
 
-        # Routen
         for i, route in enumerate(bus_routen):
             farbe = farben(i)
             x = [zentrum[0]] + [p[0] for p in route] + [zentrum[0]]
@@ -318,7 +392,6 @@ def simuliere_busfahrten(
 
             plt.plot(x, y, marker='o', color=farbe, label=f'Bus {i}', linewidth=2, markersize=4)
 
-        # Zentrum
         MITTE_SIZE = 4.5
         MITTE_START = (flaeche_seite - MITTE_SIZE) / 2
         quadrat = patches.Rectangle(
@@ -329,16 +402,13 @@ def simuliere_busfahrten(
         ax.add_patch(quadrat)
         plt.scatter(*zentrum, c='red', s=100, zorder=5)
 
-        # Beobachtetes Haus (falls vorhanden)
         if beobachtetes_haus is not None:
             plt.scatter(*beobachtetes_haus, c='magenta', s=80, marker='*', label='Beobachtetes Haus', zorder=6)
 
-    
-    titel =  f"Max-Zeit (Minuten): {max_zeit} \n"
-
-    if zeiten_beobachtet:
-        for bus_index, hin_min, rueck_min in zeiten_beobachtet:
-            titel+= f"Beobachtetes Haus: \n  vorher {hin_min} min, nachher {rueck_min} min"
+        titel = f"Max-Zeit (Minuten): {max_zeit}\n"
+        if zeiten_beobachtet:
+            for bus_index, hin_min, rueck_min in zeiten_beobachtet:
+                titel += f"Beobachtetes Haus (Bus {bus_index}): vorher {hin_min} min, nachher {rueck_min} min\n"
 
         plt.title(titel)
         plt.xlabel("X [km]")
@@ -347,24 +417,21 @@ def simuliere_busfahrten(
         plt.ylim(0, flaeche_seite)
         plt.gca().set_aspect('equal')
         plt.grid(True)
- #       plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3)
+        plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3)
+
         plt.tight_layout()
         if speicherordner:
-            os.makedirs(speicherordner, exist_ok=True)
-            dateipfad = os.path.join(speicherordner, f"Busrouten vorher {hin_min} min, nachher {rueck_min} min.png")
+            dateipfad = os.path.join(speicherordner, f"Busrouten.png")
             plt.savefig(dateipfad)
             plt.close()
         else:
             plt.show()
 
+    return max_zeit, zeiten_pro_bus, zeiten_beobachtet, alle_ankunftszeiten
 
 
 
-
-    return max_zeit, zeiten_pro_bus, zeiten_beobachtet
-
-
-def (jahres_dict):
+def konvertiere_jahresdict_zu_range_dict(jahres_dict):
     if not jahres_dict:
         return {}
 
@@ -1126,18 +1193,20 @@ def main():
         2000,
     )
 
-    max_zeit, zeiten_pro_bus, zeiten_beobachtet = simuliere_busfahrten(
+    max_zeit, zeiten_pro_bus, zeiten_beobachtet ,alle_ankunftszeiten = simuliere_busfahrten(
         koordinaten=aktiveHaeuserKoordinaten[2000],
-        anzahl_busse=16,
+        anzahl_busse=4,
         wartezeit_pro_haus_sek=30,
         hinfahrt_kmh=40,
         rueckfahrt_kmh_schnell=100,
         rueckfahrt_schwelle_min=5,
         flaeche_seite=SEITENLÄNGE,
         beobachtetes_haus=beobachtetes_haus,
-        plotte_Route = True,
-        speicherordner=ordnerpfad_haeuser,
-)
+        brems_anfahr_zeit_sek=20,
+        speicherordner="busdaten",
+        plotte_Route=True,
+        endzeit_str="19:17",
+    )
 
 
     print(f"Max-Zeit (Minuten): {max_zeit}")
