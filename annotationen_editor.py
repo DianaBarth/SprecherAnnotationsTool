@@ -55,6 +55,9 @@ class AnnotationenEditor(ttk.Frame):
         self.json_dicts = []
         self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)
+        self.personen_bereich_start_idx = None
+        self.aktuell_gewaehlter_token_idx = None
+        self.personen_bereich_ende_idx = None
     
         # Widgets bauen
         self._erstelle_widgets()
@@ -276,6 +279,21 @@ class AnnotationenEditor(ttk.Frame):
 
     def _on_token_click(self, idx):
         print(f"Token {idx} wurde angeklickt.")
+
+        # Bereichslogik für sprechende Person:
+        # 1. Klick = Start merken
+        # 2. Klick = Ende setzen
+        if self.personen_bereich_start_idx is None:
+            self.personen_bereich_start_idx = idx
+            self.personen_bereich_ende_idx = None
+        elif self.personen_bereich_ende_idx is None:
+            self.personen_bereich_ende_idx = idx
+        else:
+            # Neuer Bereich beginnt
+            self.personen_bereich_start_idx = idx
+            self.personen_bereich_ende_idx = None
+
+        self.aktuell_gewaehlter_token_idx = idx
         self.default_annotation_label.grid_forget()
 
         json_dict = self.json_dicts[idx]
@@ -284,21 +302,46 @@ class AnnotationenEditor(ttk.Frame):
         self.kapitel_name = self.kapitel_liste[self.current_hauptkapitel_index]
 
         print(f"Vor dem Löschen Widgets im annotation_frame: {[type(c) for c in self.annotation_frame.winfo_children()]}")
-        # Alle Widgets außer default_label löschen
         for child in self.annotation_frame.winfo_children():
             if child != self.default_annotation_label:
                 child.destroy()
         self.annotation_frame.update_idletasks()
         print(f"Nach dem Löschen Widgets: {[type(c) for c in self.annotation_frame.winfo_children()]}")
 
-        wort_nr = json_dict.get("WortNr", idx)  # Falls kein WortNr, dann idx als Fallback
+        wort_nr = json_dict.get("WortNr", idx)
+
         tk.Label(
             self.annotation_frame,
             text=f"Annotationen für WortNr {wort_nr}: \n '{json_dict.get('token','')}'",
             font=('Arial', 14, 'bold')
         ).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
-        
+
+        # Statuszeile für Personenbereich
+        status_text = None
+        if self.personen_bereich_start_idx is not None and self.personen_bereich_ende_idx is None:
+            status_text = (
+                f"Sprecherbereich: Start bei Token {self.personen_bereich_start_idx}. "
+                f"Jetzt anderes Wort anklicken und dann Person auswählen."
+            )
+        elif (
+            self.personen_bereich_start_idx is not None
+            and self.personen_bereich_ende_idx is not None
+        ):
+            a = self.personen_bereich_start_idx
+            b = self.personen_bereich_ende_idx
+            status_text = f"Sprecherbereich gewählt: Token {min(a,b)} bis {max(a,b)}. Jetzt Person auswählen."
+
         row_index = 1
+        if status_text:
+            ttk.Label(
+                self.annotation_frame,
+                text=status_text,
+                foreground="gray",
+                wraplength=260,
+                justify='left'
+            ).grid(row=row_index, column=0, columnspan=2, sticky='w', padx=5, pady=(0, 8))
+            row_index += 1
+
         personen_werte = self._lade_personen_fuer_aktuellen_abschnitt()
 
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
@@ -316,7 +359,6 @@ class AnnotationenEditor(ttk.Frame):
             werte = werte or ['']
             aktueller_wert = json_dict.get(aufgabenname, "")
 
-            # Anzeige-Werte in der Combobox (mit Umlauten, nur für Anzeige)
             anzeige_werte = [_anzeige_name(w) for w in werte]
             anzeige_aktueller_wert = _anzeige_name(aktueller_wert)
 
@@ -326,9 +368,22 @@ class AnnotationenEditor(ttk.Frame):
 
             def on_combobox_change(event, aufgabennr=aufgabennr, combobox=combobox, aufgabenname=aufgabenname):
                 neuer_wert = combobox.get()
-                # Rückkonvertierung für Speicherung
                 neuer_wert = _interner_name(neuer_wert)
-                
+
+                # Aufgabe 3 = sprechende Person -> Bereich anwenden
+                if aufgabennr == 3:
+                    start_idx = self.personen_bereich_start_idx
+                    end_idx = self.personen_bereich_ende_idx
+
+                    if start_idx is None:
+                        start_idx = idx
+                    if end_idx is None:
+                        end_idx = idx
+
+                    self._setze_person_im_bereich(start_idx, end_idx, neuer_wert)
+                    return
+
+                # Standardverhalten für alle anderen Aufgaben
                 if neuer_wert:
                     json_dict[aufgabenname] = neuer_wert
                 elif aufgabenname in json_dict:
@@ -337,7 +392,6 @@ class AnnotationenEditor(ttk.Frame):
                 if aufgabenname.lower() == "position":
                     print(f"Position geändert bei Token {idx}: '{neuer_wert}'")
 
-                    # Finde Start- und Endindex der aktuellen Gruppe (zentriert oder rechtsbuendig)
                     start_index = None
                     end_index = None
                     typ = None
@@ -351,14 +405,11 @@ class AnnotationenEditor(ttk.Frame):
                             end_index = i
                             break
 
-                    # Wenn beides vorhanden, dann nur diesen Bereich rendern
                     if start_index is not None and end_index is not None and start_index <= end_index:
                         self.neu_rendern_bereich(start_index, end_index)
                     else:
                         print("Kein vollständiges Start/Ende-Paar gefunden – kein Teilrendering möglich.")
                 else:
-                    # Vollständig neu zeichnen, weil Teil-Update bei dynamischen Personen
-                    # zu inkonsistenten / verschwundenen Tokens führen kann.
                     self._zeichne_alle_tokens()
                     self._on_token_click(idx)
 
@@ -369,7 +420,6 @@ class AnnotationenEditor(ttk.Frame):
 
         self.annotation_canvas.update_idletasks()
         self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
-
 
     def _json_speichern(self):
         try:
@@ -678,3 +728,33 @@ class AnnotationenEditor(ttk.Frame):
         text = re.sub(r"\s+", " ", text).strip()
 
         return text
+    
+    def _get_personen_feldname(self):
+        return config.KI_AUFGABEN.get(3, "person")
+
+    def _setze_person_im_bereich(self, start_idx, end_idx, personenname):
+        if start_idx is None:
+            return
+
+        if end_idx is None:
+            end_idx = start_idx
+
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        personen_feldname = self._get_personen_feldname()
+
+        print(f"[AnnotationenEditor] Setze Person '{personenname}' im Bereich {start_idx} bis {end_idx}")
+
+        for i in range(start_idx, end_idx + 1):
+            if personenname:
+                self.json_dicts[i][personen_feldname] = personenname
+            else:
+                self.json_dicts[i].pop(personen_feldname, None)
+
+        self.personen_bereich_start_idx = None
+        self.personen_bereich_ende_idx = None
+
+        self._zeichne_alle_tokens()
+        self._on_token_click(end_idx)
+       
