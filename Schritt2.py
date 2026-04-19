@@ -5,169 +5,265 @@ import pandas as pd
 
 from pathlib import Path
 from num2words import num2words
+import locale
+import calendar
 
-import Eingabe.config as config # Importiere das komplette config-Modul
+import Eingabe.config as config  # Importiere das komplette config-Modul
+
+def get_monatsnamen(sprache_code):
+    """Gibt Monatsnamen gemäß Sprachcode via locale zurück."""
+    try:
+        # Mapping für Sprachcode zu Locale (falls nötig anpassen)
+        locale_map = {
+            "de": "de_DE.UTF-8",
+            "en": "en_US.UTF-8",
+            "fr": "fr_FR.UTF-8"
+        }
+        loc = locale_map.get(sprache_code, "de_DE.UTF-8")
+        locale.setlocale(locale.LC_TIME, loc)
+        return [calendar.month_name[i] for i in range(1, 13)]
+    
+    except Exception as e:
+        print(f"Warnung: locale konnte nicht gesetzt werden ({e})")
+        # Fallback auf deutsche Monatsnamen
+        return ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                "Juli", "August", "September", "Oktober", "November", "Dezember"]
 
 def roemisch_zu_int(roemisch):
-    roemisch = roemisch.upper()
     roem_map = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
-    ergebnis = 0
-    vorher = 0
-    for buchstabe in reversed(roemisch):
+    ergebnis, vorher = 0, 0
+    for buchstabe in reversed(roemisch.upper()):
         wert = roem_map.get(buchstabe, 0)
-        if wert < vorher:
-            ergebnis -= wert
-        else:
-            ergebnis += wert
+        ergebnis = ergebnis - wert if wert < vorher else ergebnis + wert
         vorher = wert
     return ergebnis
 
 def ist_roemisch(token):
-    # Regex für römische Zahlen (grob)
     return re.fullmatch(r'M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})', token.upper()) is not None
 
-def ersetze_zahl_in_token(token):
-    token_clean = token.rstrip('.:,;!?')
-
-    if ist_roemisch(token_clean):
-        zahl = roemisch_zu_int(token_clean)
-        if zahl > 0:
-            wort = num2words(zahl, lang='de')
-            return token.replace(token_clean, wort)
-
-    zahlen = re.findall(r'\d+', token)
-    if not zahlen:
+def ersetze_zahl_in_token(token, vorher_token=None, naechstes_token=None):
+    print(f"DEBUG: Verarbeite Token='{token}', vorher_token='{vorher_token}', naechstes_token='{naechstes_token}'")
+    
+    match = re.match(r"([A-Za-z]?)(\d+)([.,:;!?\-]*)$", token)
+    if not match:
         return token
-    
-    if token.isdigit():
-        return num2words(int(token), lang='de')
-    
-    for zahl_str in zahlen:
-        wort = num2words(int(zahl_str), lang='de')
-        token = token.replace(zahl_str, "_" + wort)
-    return token
+
+    prefix, zahl_str, endzeichen = match.groups()
+    zahl = int(zahl_str)
+    print(f"DEBUG: Gefundene Zahl='{zahl}', Präfix='{prefix}', Endzeichen='{endzeichen}'")
+
+    monate = get_monatsnamen(config.SPRACHE)
+
+    # Sonderfall: Buchstabe + Zahl (z. B. "J1")
+    if prefix and prefix.isalpha():
+        wort = num2words(zahl, lang=config.SPRACHE)
+        print(f"DEBUG: Sonderfall Buchstabe+Zahl -> '{prefix}_{wort}'")
+        return f"{prefix}_{wort}"
+
+    # Ordinalzahl-Kontext
+    if endzeichen == '.' and (
+        (vorher_token and vorher_token.lower() in ['am', 'zum']) or
+        (naechstes_token and naechstes_token.lower() in monate)
+    ):
+        print("DEBUG: Kontext für Ordnungszahl erkannt.")
+        wort = num2words(zahl, lang='de', to='ordinal')
+        if wort.endswith('ste'):
+            wort = wort[:-3] + 'sten'
+        elif wort.endswith('te'):
+            wort = wort[:-2] + 'ten'
+        return wort
+    else:
+        wort = num2words(zahl, lang=config.SPRACHE)
+        print(f"DEBUG: Normale Kardinalzahl='{wort}'")
+        return wort
 
 def extrahiere_kapitelname(kapitelname):
     match_arabisch = regex.match(r"^(\d+)", kapitelname)
     if match_arabisch:
         return match_arabisch.group(1)
-
-    match_roemisch = regex.match(r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))", kapitelname, flags=re.IGNORECASE)
+    match_roemisch = regex.match(
+        r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))",
+        kapitelname,
+        flags=re.IGNORECASE,
+    )
     if match_roemisch and match_roemisch.group(1):
         return str(roemisch_zu_int(match_roemisch.group(1)))
-
     if "Prolog" in kapitelname:
-        return 0
-    
+        return "0"
     return kapitelname
 
 def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewaehlte_kapitel=None, progress_callback=None):
-
-    print(f"[DEBUG ------------------------- STARTE Schritt 2 für {ausgewaehlte_kapitel}]")
+    START_TAGS = {
+        "Ueberschrift": "|UeberschriftStart|",
+        "Einrueckung": "|EinrueckungStart|",
+        "Zentriert": "|ZentriertStart|",
+        "Rechtsbuendig": "|RechtsbuendigStart|",
+    }
+    END_TAGS = {
+        "Ueberschrift": "|UeberschriftEnde|",
+        "Einrueckung": "|EinrueckungEnde|",
+        "Zentriert": "|ZentriertEnde|",
+        "Rechtsbuendig": "|RechtsbuendigEnde|",
+    }
 
     eingabeordner = Path(eingabeordner)
     ausgabeordner = Path(ausgabeordner)
-    
     ausgabeordner.mkdir(parents=True, exist_ok=True)
-
     textdateien = list(eingabeordner.glob("*.txt"))
-    print(f"[DEBUG] Gefundene Textdateien: {[datei.name for datei in textdateien]}")
 
     if ausgewaehlte_kapitel is not None:
-        erweiterte_kapitel = set()
-        for kapitel in ausgewaehlte_kapitel:
-            erweiterte_kapitel.add(kapitel)
-            for idx in range(1, 1000):
-                erweiterte_kapitel.add(f"{kapitel}_{idx}")
+        gefilterte_dateien = []
+        for d in textdateien:
+            stem = d.stem
+            for kapitel in ausgewaehlte_kapitel:
+                if stem == kapitel or re.fullmatch(rf"{re.escape(kapitel)}_\d+", stem):
+                    gefilterte_dateien.append(d)
+                    break
 
-        print(f"[DEBUG] Ausgewählte Kapitel inklusive Indizes: {erweiterte_kapitel}")
+        textdateien = gefilterte_dateien
+        print(f"[DEBUG] Gefilterte Textdateien nach Auswahl: {[d.name for d in textdateien]}")
 
-        textdateien = [datei for datei in textdateien if datei.stem in erweiterte_kapitel]
-        print(f"[DEBUG] Gefilterte Textdateien nach Auswahl: {[datei.name for datei in textdateien]}")
-
-    anzahl_ueberschriften = config.ANZAHL_ÜBERSCHRIFTENZEILEN
-
-    for i, datei in enumerate(textdateien):
+    for datei in textdateien:
         kapitelname_original = datei.stem
         kapitelname = extrahiere_kapitelname(kapitelname_original)
-        step_count = 6  # Anzahl der Verarbeitungsschritte
-        current_step = 0
 
-        def report_step():
-            if progress_callback:
-                progress = round((current_step + 1) / step_count, 3)
-                progress_callback(kapitelname_original, progress)
-
-        print(f"[DEBUG] Verarbeite Datei {i+1}/{len(textdateien)}: {datei.name} (Kapitelname extrahiert: {kapitelname})")
-
-        # Schritt 1: Datei einlesen
         with open(datei, "r", encoding="utf-8") as f:
             text = f.read()
-        current_step += 1
-        report_step()
 
-        # Schritt 2: Zeilenumbrüche durch Platzhalter ersetzen
-        text = regex.sub(r"\r\n|\r|\n", " _BREAK_BREAKY ", text)
-        text = regex.sub(r"(_BREAK__BREAKY)+", " _BREAK__BREAKY ", text)
-        current_step += 1
-        report_step()
+        for tag in list(START_TAGS.values()) + list(END_TAGS.values()):
+            text = text.replace(tag, f" {tag} ")
 
-        # Schritt 3: Tokenisierung (inkl. _BREAK_ erhalten)
-        woerter_und_satzzeichen = regex.split(r"\s+|(?<=\p{P})|(?=\p{P})|_BREAK_", text, flags=re.UNICODE)
-        woerter_und_satzzeichen = [token for token in woerter_und_satzzeichen if token.strip()]
-        current_step += 1
-        report_step()
+        text = regex.sub(r"\r\n|\r|\n", " |BREAK| ", text)
+        text = regex.sub(r"(_BREAK_)+", " |BREAK| ", text)
 
-        # Schritt 4: Annotation
-        annotationen = []
-        zeilen_nr = 0
+        # Alle Zahlen mit folgendem Punkt als Einheit behandeln
+        # (Ersetze '3.' durch '3.' als ein Token)
+        pattern = r"[|]\w+[|]|\d+\.(?!\d)|\d+|[\w-]+|[^\w\s-]"
+        woerter_und_satzzeichen = regex.findall(pattern, text, flags=regex.UNICODE)
+        woerter_und_satzzeichen = [w for w in woerter_und_satzzeichen if w.strip()]
 
-        for idx, token in enumerate(woerter_und_satzzeichen):
-            token_annotationen = []
+        cleaned_tokens = []
+        cleaned_annotations = []
+        positions = []
 
-            if zeilen_nr < anzahl_ueberschriften:
-                token_annotationen.append("Überschrift")
+        pending_position_start = None  # Typ, z.B. "Zentriert"
+        last_token_idx = {}            # Dict für letzte Token-Position je Typ
+        in_ueberschrift = False
 
-            if token == "BREAKY":
-                woerter_und_satzzeichen[idx] = ""
-                token_annotationen.append("zeilenumbruch")
-                zeilen_nr += 1
-            else:
-                if regex.match(r"[\p{P}]", token):
-                    if token == '–' or token in ['(', ')', '{', '}', '[', ']']:
-                        token_annotationen.append("satzzeichenMitSpace")
-                    elif token in ['.', '!', '?', ':', ';']:
-                        token_annotationen.append("satzzeichenOhneSpace")
+        i = 0
+        while i < len(woerter_und_satzzeichen):
+            token = woerter_und_satzzeichen[i]
+
+            # START-TAG erkennen
+            if token in START_TAGS.values():
+                typ = [k for k, v in START_TAGS.items() if v == token][0]
+                print(f"DEBUG: START-TAG '{token}' erkannt, pending_position_start gesetzt auf '{typ}'")
+                if typ == "Ueberschrift":
+                    in_ueberschrift = True
+                    typ = "Zentriert"
+                pending_position_start = typ
+                i += 1
+                continue
+
+            # END-TAG erkennen
+            elif token in END_TAGS.values():
+                typ = [k for k, v in END_TAGS.items() if v == token][0]
+                print(f"DEBUG: END-TAG '{token}' erkannt")
+                if typ == "Ueberschrift":
+                    in_ueberschrift = False
+                    typ = "Zentriert"
+
+                # Position des letzten echten Tokens vor dem End-Tag mit Ende-Annotation versehen
+                if typ in last_token_idx and last_token_idx[typ] is not None:
+                    idx = last_token_idx[typ]
+                    if positions[idx]:
+                        positions[idx] += f",{typ}Ende"
                     else:
-                        token_annotationen.append("satzzeichenOhneSpace")
+                        positions[idx] = f"{typ}Ende"
+                    print(f"DEBUG: Position an Index {idx} ergänzt mit '{typ}Ende'")
+                    last_token_idx[typ] = None  # Reset
 
-            annotationen.append(",".join(token_annotationen))
+                i += 1
+                continue
 
-        current_step += 1
-        report_step()
+            # Zeilenumbruch |BREAK|
+            elif token == "|BREAK|":
+                print(f"DEBUG: Zeilenumbruch erkannt an Position {len(positions)}")
+                cleaned_tokens.append("")
+                cleaned_annotations.append("zeilenumbruch")
+                positions.append("")
+                i += 1
+                continue
 
-        if len(woerter_und_satzzeichen) != len(annotationen):
-            raise ValueError(f"Längen von Tokens und Annotationen stimmen nicht überein.")
+            # Annotationen und Position bestimmen
+            annotationen = []
+            position_wert = ""
 
-        tokenInklZahlwoerter = [ersetze_zahl_in_token(t) for t in woerter_und_satzzeichen]
+            # Satzzeichen erkennen und annotieren
+            if regex.match(r"[\p{P}]", token):
+                if token in ['–', '(', ')', '{', '}', '[', ']']:
+                    annotationen.append("satzzeichenMitSpace")
+                elif token in ['„']:
+                    annotationen.append("satzzeichenOhneSpaceDanach")
+                else:
+                    annotationen.append("satzzeichenOhneSpaceDavor")
 
-        # Schritt 5: DataFrame erstellen und als JSON speichern
+            # Überschrift-Annotation hinzufügen, wenn aktiv
+            if in_ueberschrift:
+                annotationen.append("Überschrift")
+
+            if token.strip():  # nur wenn echtes Token
+                if pending_position_start:
+                    position_wert = f"{pending_position_start}Start"
+                    last_token_idx[pending_position_start] = len(positions)
+                    print(f"DEBUG: Token '{token}' bekommt Position '{position_wert}' (pending_position_start='{pending_position_start}')")
+                    pending_position_start = None
+                else:
+                    for typ in last_token_idx:
+                        last_token_idx[typ] = len(positions)
+                    print(f"DEBUG: Token '{token}' aktualisiert letzte Positionen: {last_token_idx}")
+
+            else:
+                print(f"DEBUG: Leer-Token an Position {len(positions)}")
+            
+            
+            print(f"DEBUG: Token '{token}': Annotationen = {annotationen}, position_wert = {position_wert}")
+
+            cleaned_tokens.append(token)
+            cleaned_annotations.append(",".join(annotationen))
+            positions.append(position_wert)
+            i += 1
+
+        print(f"DEBUG: Anzahl Tokens: {len(cleaned_tokens)}")
+        print(f"DEBUG: Anzahl Annotationen: {len(cleaned_annotations)}")
+        print(f"DEBUG: Beispiel Annotationen (erste 40): {cleaned_annotations[:40]}")
+        print(f"DEBUG: Beispiel Positions (erste 40): {positions[:40]}")
+
+        if not (len(cleaned_tokens) == len(cleaned_annotations) == len(positions)):
+            raise ValueError("Längen von Tokens, Annotationen und Positionen stimmen nicht überein.")
+
+        tokenInklZahlwoerter = []
+        for idx, token in enumerate(cleaned_tokens):
+            vorher_token = cleaned_tokens[idx-1] if idx > 0 else None
+            naechstes_token = cleaned_tokens[idx+1] if idx+1 < len(cleaned_tokens) else None
+            tokenInklZahlwoerter.append(ersetze_zahl_in_token(token, vorher_token, naechstes_token))
+
         df = pd.DataFrame({
             "KapitelNummer": kapitelname,
-            "WortNr": range(1, len(woerter_und_satzzeichen) + 1),
-            "token": woerter_und_satzzeichen,
-            "tokenInklZahlwoerter": tokenInklZahlwoerter,            
-            "annotation": annotationen, 
-            })
+            "WortNr": range(1, len(cleaned_tokens) + 1),
+            "token": cleaned_tokens,
+            "tokenInklZahlwoerter": tokenInklZahlwoerter,
+            "annotation": cleaned_annotations,
+            "position": positions,
+        })
 
         for typ_name in config.KI_AUFGABEN.values():
-            df[typ_name] = ""
+            if typ_name not in df.columns:
+                df[typ_name] = ""
 
         json_filename = ausgabeordner / f"{kapitelname_original}_annotierungen.json"
         with open(json_filename, "w", encoding="utf-8") as out_f:
             json.dump(json.loads(df.to_json(orient="records", force_ascii=False)), out_f, indent=2, ensure_ascii=False)
-
-        current_step += 1
-        report_step()
-
-        print(f"[DEBUG] Schritt 2 abgeschlossen und Datei erzeugt: {json_filename}")
+  
+    if progress_callback:
+        progress_callback("Fertig", 100)

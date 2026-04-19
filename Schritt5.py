@@ -2,23 +2,26 @@ import os
 import json
 import glob
 import traceback
-import shutil
+import re
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
-import Eingabe.config as config # Importiere das komplette config-Modul
 
-# Personen aus ZusatzInfo_2 der kapitel_config.json extrahieren
+import Eingabe.config as config
+
+
 def lade_personen(kapitel_name):
     config_datei = "Eingabe/kapitel_config.json"
     try:
         with open(config_datei, "r", encoding="utf-8") as f:
             config_data = json.load(f)
-        # Annahme: ZusatzInfo_2 enthält eine Liste von Personen
+
         zusatzinfo_2 = config_data.get(kapitel_name, {}).get("ZusatzInfo_2", [])
         return zusatzinfo_2
     except Exception as e:
         print(f"[FEHLER] Personen aus ZusatzInfo_2 konnten nicht geladen werden: {e}")
         return []
+
 
 def baue_annotationstypen(kapitel_name):
     personen = lade_personen(kapitel_name)
@@ -34,13 +37,14 @@ def baue_annotationstypen(kapitel_name):
 
     return annotationstypen
 
-schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
 
 def parse_bereich(bereich):
     if not bereich:
         print("[WARNUNG] 'WortNr' fehlt oder ist leer – Eintrag wird übersprungen.")
         return []
+
     bereich = str(bereich)
+
     if ":" in bereich:
         try:
             start, ende = map(int, bereich.split(":"))
@@ -55,21 +59,194 @@ def parse_bereich(bereich):
             print(f"[FEHLER] Ungültiger Einzelwert für WortNr: {bereich}")
             return []
 
+
 def baue_index(liste, schluessel):
     index = {}
     for eintrag in liste:
         wortnrs = parse_bereich(eintrag.get("WortNr"))
         for nr in wortnrs:
-            index.setdefault(nr, []).append(eintrag.get(schluessel, ""))
+            wert = eintrag.get(schluessel, "")
+            if wert not in (None, "", []):
+                index.setdefault(nr, []).append(wert)
     return index
 
-def ermittele_kapitel_namen(quellordner_kapitel):
-    dateien = glob.glob(os.path.join(quellordner_kapitel, "*_annotierungen.json"))
+
+def ist_abschnittsdatei(dateiname):
+    """
+    Erwartet z. B.:
+    Prolog_001_annotierungen.json
+    Kapitel 1_002_annotierungen.json
+    """
+    return re.fullmatch(r".+_\d+_annotierungen\.json", dateiname) is not None
+
+
+def extrahiere_hauptkapitel_und_index(dateiname_ohne_endung):
+    """
+    Aus 'Kapitel 1_001_annotierungen' -> ('Kapitel 1', 1)
+    """
+    match = re.fullmatch(r"(.+)_(\d+)_annotierungen", dateiname_ohne_endung)
+    if not match:
+        return None, None
+    hauptkapitel = match.group(1)
+    idx = int(match.group(2))
+    return hauptkapitel, idx
+
+
+def ermittle_abschnittsdateien(quellordner_kapitel, ausgewaehlte_kapitel=None):
+    quellordner_kapitel = Path(quellordner_kapitel)
+
+    dateien = sorted(quellordner_kapitel.glob("*_annotierungen.json"))
     if not dateien:
         print("[FEHLER] Keine '_annotierungen.json'-Dateien im Quellordner gefunden.")
         return []
-    kapitel_namen = [os.path.basename(datei).replace("_annotierungen.json", "") for datei in dateien]
-    return kapitel_namen
+
+    gefundene = []
+    for datei in dateien:
+        if not ist_abschnittsdatei(datei.name):
+            print(f"[DEBUG] Überspringe Nicht-Abschnittsdatei: {datei.name}")
+            continue
+
+        hauptkapitel, idx = extrahiere_hauptkapitel_und_index(datei.stem)
+        if hauptkapitel is None:
+            print(f"[WARNUNG] Dateiname konnte nicht ausgewertet werden: {datei.name}")
+            continue
+
+        if ausgewaehlte_kapitel is not None and hauptkapitel not in ausgewaehlte_kapitel:
+            continue
+
+        gefundene.append({
+            "pfad": datei,
+            "dateiname": datei.name,
+            "stem": datei.stem,
+            "hauptkapitel": hauptkapitel,
+            "index": idx,
+        })
+
+    print(f"[DEBUG] Erkannte Abschnittsdateien: {[d['dateiname'] for d in gefundene]}")
+    return gefundene
+
+
+def finde_annotationsdateien_fuer_abschnitt(quellordner_annotationen, abschnitts_dateiname):
+    """
+    Sucht KI-Dateien passend zu einem Abschnitt.
+    Erwartete Muster z. B.:
+    sprecher_Kapitel 1_001_annotierungen_001.json
+    emotion_Kapitel 1_001_annotierungen_002.json
+
+    Also allgemein:
+    <typ>_<abschnittsdatei ohne .json>_*.json
+    """
+    quellordner_annotationen = Path(quellordner_annotationen)
+    abschnitts_stem = Path(abschnitts_dateiname).stem
+
+    muster = f"*_{abschnitts_stem}_*.json"
+    dateien = sorted(quellordner_annotationen.glob(muster))
+
+    print(f"[DEBUG] Suche KI-Dateien mit Muster: {muster}")
+    print(f"[DEBUG] Gefundene KI-Dateien: {[d.name for d in dateien]}")
+    return dateien
+
+
+def extrahiere_typ_aus_ki_dateiname(dateiname, abschnitts_dateiname):
+    """
+    Extrahiert aus z. B.
+    'sprecher_Kapitel 1_001_annotierungen_001.json'
+    den Typ 'sprecher'
+    """
+    abschnitts_stem = Path(abschnitts_dateiname).stem
+    suffix = f"_{abschnitts_stem}_"
+
+    if suffix not in dateiname:
+        return None
+
+    typ = dateiname.split(suffix, 1)[0].lower().strip("_")
+    return typ or None
+
+
+def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateiname):
+    annotationen_daten = defaultdict(list)
+    schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
+
+    print(f"[DEBUG] Schlüssel-Mapping: {schluessel_mapping}")
+
+    for dateipfad in annotationsdateien:
+        dateiname = dateipfad.name
+        typ = extrahiere_typ_aus_ki_dateiname(dateiname, abschnitts_dateiname)
+
+        print(f"[DEBUG] Prüfe KI-Datei: {dateiname}")
+        print(f"[DEBUG] Erkannter Typ: {typ}")
+
+        if not typ:
+            print(f"[WARNUNG] Konnte Typ nicht aus Dateiname ableiten: {dateiname}")
+            continue
+
+        try:
+            with open(dateipfad, encoding="utf-8") as f:
+                daten = json.load(f)
+
+            if not isinstance(daten, list) or not all(isinstance(e, dict) for e in daten):
+                print(f"[FEHLER] Datei hat ungültiges Format: {dateipfad}")
+                continue
+
+            annotationen_daten[typ].extend(daten)
+
+        except Exception as e:
+            print(f"[FEHLER] Fehler beim Laden der Datei {dateiname}: {e}")
+            continue
+
+    indizes = {}
+    for typ, daten in annotationen_daten.items():
+        if typ in schluessel_mapping:
+            schluessel = schluessel_mapping[typ]
+            print(f"[DEBUG] Erstelle Index für Typ '{typ}' -> Schlüssel '{schluessel}'")
+            indizes[typ] = baue_index(daten, schluessel)
+        else:
+            print(f"[WARNUNG] Typ '{typ}' ist nicht in KI_AUFGABEN enthalten und wird ignoriert.")
+
+    zusammengefuehrt = []
+
+    for eintrag in original_daten:
+        wortnr = eintrag.get("WortNr")
+        if wortnr is None:
+            continue
+
+        try:
+            wortnr = int(wortnr)
+        except (ValueError, TypeError):
+            continue
+
+        neuer_eintrag = dict(eintrag)
+
+        for typ, index in indizes.items():
+            schluessel = schluessel_mapping[typ]
+            werte = index.get(wortnr, [])
+
+            if not werte:
+                if schluessel not in neuer_eintrag:
+                    neuer_eintrag[schluessel] = ""
+            else:
+                # Falls mehrere Werte für dasselbe Wort vorkommen:
+                # leere entfernen, Duplikate entfernen, dann String oder Liste
+                bereinigt = []
+                for wert in werte:
+                    if isinstance(wert, list):
+                        for v in wert:
+                            if v not in ("", None) and v not in bereinigt:
+                                bereinigt.append(v)
+                    else:
+                        if wert not in ("", None) and wert not in bereinigt:
+                            bereinigt.append(wert)
+
+                if len(bereinigt) == 0:
+                    neuer_eintrag[schluessel] = ""
+                elif len(bereinigt) == 1:
+                    neuer_eintrag[schluessel] = bereinigt[0]
+                else:
+                    neuer_eintrag[schluessel] = bereinigt
+
+        zusammengefuehrt.append(neuer_eintrag)
+
+    return zusammengefuehrt
 
 
 def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
@@ -80,215 +257,366 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
     print(f"[DEBUG] ausgewaehlte_kapitel: {ausgewaehlte_kapitel}")
 
     quellordner_kapitel = Path(quellordner_kapitel)
-    quellordner_annotationen =Path(quellordner_annotationen)   
-    ziel_ordner = Path( ziel_ordner)
+    quellordner_annotationen = Path(quellordner_annotationen)
+    ziel_ordner = Path(ziel_ordner)
+    ziel_ordner.mkdir(parents=True, exist_ok=True)
 
     try:
-        kapitel_namen = ermittele_kapitel_namen(quellordner_kapitel)
-        print(f"[DEBUG] Erkannte Kapitel: {kapitel_namen}")
-        if not kapitel_namen:
-            print("[WARNUNG] Keine Kapitel erkannt.")
+        abschnittsdateien = ermittle_abschnittsdateien(quellordner_kapitel, ausgewaehlte_kapitel)
+
+        if not abschnittsdateien:
+            print("[WARNUNG] Keine passenden Abschnittsdateien gefunden.")
             return
 
-        if ausgewaehlte_kapitel is not None:
-            kapitel_namen = [k for k in kapitel_namen if k in ausgewaehlte_kapitel]
-            print(f"[DEBUG] Gefilterte Kapitel: {kapitel_namen}")
+        gesamt = len(abschnittsdateien)
 
-        for kapitel_name in kapitel_namen:
-            print(f"[DEBUG] Verarbeite Kapitel: {kapitel_name}")
+        for pos, info in enumerate(abschnittsdateien, start=1):
+            abschnittspfad = info["pfad"]
+            dateiname = info["dateiname"]
+
+            print(f"[DEBUG] Verarbeite Abschnitt {pos}/{gesamt}: {dateiname}")
+
             if progress_callback:
-                progress_callback(0)
+                progress_callback(round(((pos - 1) / max(gesamt, 1)) * 100, 1))
 
-            datei_original = os.path.join(quellordner_kapitel, f"{kapitel_name}_annotierungen.json")
-            print(f"[DEBUG] Lade Originaldatei: {datei_original}")
-            with open(datei_original, encoding="utf-8") as f:
+            with open(abschnittspfad, encoding="utf-8") as f:
                 original_daten = json.load(f)
 
-            muster = os.path.join(quellordner_annotationen, f"*{kapitel_name}_annotierungen_*.json")
-            dateien = glob.glob(muster)
-            print(f"[DEBUG] Gefundene Annotationsdateien ({len(dateien)}): {dateien}")
+            annotationsdateien = finde_annotationsdateien_fuer_abschnitt(
+                quellordner_annotationen,
+                dateiname
+            )
 
-            if not dateien:
-                os.makedirs(ziel_ordner, exist_ok=True)
-                datei_ziel = os.path.join(ziel_ordner, f"{kapitel_name}_gesamt.json")
-                with open(datei_ziel, "w", encoding="utf-8") as f:
+            if not annotationsdateien:
+                zielpfad = ziel_ordner / dateiname
+                with open(zielpfad, "w", encoding="utf-8") as f:
                     json.dump(original_daten, f, ensure_ascii=False, indent=2)
-                print(f"[INFO] Keine Annotationen gefunden – Originaldatei kopiert: {datei_ziel}")
+
+                print(f"[INFO] Keine KI-Annotationen gefunden – Originaldatei kopiert: {zielpfad}")
+
                 if progress_callback:
-                    progress_callback(100)
+                    progress_callback(round((pos / max(gesamt, 1)) * 100, 1))
                 continue
 
-            annotationen_daten = defaultdict(list)
-            anzahl = len(dateien)
+            zusammengefuehrt = merge_einen_abschnitt(
+                original_daten=original_daten,
+                annotationsdateien=annotationsdateien,
+                abschnitts_dateiname=dateiname,
+            )
 
-            for i, dateipfad in enumerate(dateien):
-                dateiname = os.path.basename(dateipfad)
-                teile = dateiname.split("_")
-                print(f"[DEBUG] Prüfe Datei: {dateiname}")
-                if len(teile) < 3:
-                    print(f"[WARNUNG] Datei übersprungen (ungültiger Name): {dateiname}")
-                    continue
+            zielpfad = ziel_ordner / dateiname
+            with open(zielpfad, "w", encoding="utf-8") as f:
+                json.dump(zusammengefuehrt, f, ensure_ascii=False, indent=2)
 
-                typ = teile[0].lower()
-                print(f"[DEBUG] Annotations-Typ erkannt: {typ}")
-                try:
-                    with open(dateipfad, encoding="utf-8") as f:
-                        daten = json.load(f)
-                    if not isinstance(daten, list) or not all(isinstance(e, dict) for e in daten):
-                        print(f"[FEHLER] Datei hat ungültiges Format: {dateipfad}")
-                        continue
-                    annotationen_daten[typ].extend(daten)
-                except Exception as e:
-                    print(f"[FEHLER] Fehler beim Laden der Datei {dateiname}: {e}")
-                    continue
-
-                if progress_callback:
-                    progress_callback(round((i + 1) / (anzahl + 3), 3) * 100)
-
-            schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
-            print(f"[DEBUG] Schlüssel-Mapping: {schluessel_mapping}")
-
-            indizes = {}
-            for typ, daten in annotationen_daten.items():
-                if typ in schluessel_mapping:
-                    print(f"[DEBUG] Erstelle Index für Typ: {typ}")
-                    indizes[typ] = baue_index(daten, schluessel_mapping[typ])
+            print(f"[✓] Datei erfolgreich gespeichert: {zielpfad}")
 
             if progress_callback:
-                progress_callback(round((anzahl + 1) / (anzahl + 3), 3) * 100)
-
-            zusammengeführt = []
-            for eintrag in original_daten:
-                wortnr = eintrag.get("WortNr")
-                if wortnr is None:
-                    continue
-                try:
-                    wortnr = int(wortnr)
-                except ValueError:
-                    continue
-
-                neuer_eintrag = {
-                    "KapitelName": eintrag.get("KapitelName"),
-                    "WortNr": wortnr,
-                    "token": eintrag.get("token"),
-                    "annotation": eintrag.get("annotation", [])
-                }
-
-                for typ, index in indizes.items():
-                    schluessel = schluessel_mapping[typ]
-                    neuer_eintrag[schluessel] = index.get(wortnr, "")
-
-                zusammengeführt.append(neuer_eintrag)
-
-            os.makedirs(ziel_ordner, exist_ok=True)
-            datei_ziel = os.path.join(ziel_ordner, f"{kapitel_name}_gesamt.json")
-            with open(datei_ziel, "w", encoding="utf-8") as f:
-                json.dump(zusammengeführt, f, ensure_ascii=False, indent=2)
-
-            print(f"[✓] Datei erfolgreich gespeichert: {datei_ziel}")
-
-            if progress_callback:
-                progress_callback(100)
+                progress_callback(round((pos / max(gesamt, 1)) * 100, 1))
 
     except Exception as e:
-        print(f"[FEHLER] Schritt 8.1 fehlgeschlagen: {e}")
+        print(f"[FEHLER] Merge_annotationen fehlgeschlagen: {e}")
         traceback.print_exc()
 
-    
-    try:
-        kapitel_namen = ermittele_kapitel_namen(quellordner_kapitel)
-        if not kapitel_namen:
-            return
 
-        if ausgewaehlte_kapitel is not None:
-            kapitel_namen = [k for k in kapitel_namen if k in ausgewaehlte_kapitel]
+# ----------------------------------------------------
+# IG-Update
+# ----------------------------------------------------
 
-        for kapitel_name in kapitel_namen:
-            if progress_callback:
-                progress_callback(0)
+def lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname):
+    satz_ordner = Path(satz_ordner)
+    ig_ordner = Path(ig_ordner)
 
-            # Originaltext laden
-            datei_original = os.path.join(quellordner_kapitel, f"{kapitel_name}_annotierungen.json")
-            with open(datei_original, encoding="utf-8") as f:
-                original_daten = json.load(f)
+    pattern = re.compile(re.escape(kapitelname) + r"_ig_abschnitt_\d{3}\.txt$")
+    ig_mapping = {}
 
-            # Alle passenden Annotationen-Dateien
-            muster = os.path.join(quellordner_annotationen, f"*{kapitel_name}_annotierungen_*.json")
-            dateien = glob.glob(muster)
+    satz_dateien = sorted([f for f in satz_ordner.iterdir() if pattern.match(f.name)])
 
-            # NEU: Wenn keine Annotationen vorhanden -> Originaldatei kopieren
-            if not dateien:
-                os.makedirs(ziel_ordner, exist_ok=True)
-                datei_ziel = os.path.join(ziel_ordner, f"{kapitel_name}_gesamt.json")
-                with open(datei_ziel, "w", encoding="utf-8") as f:
-                    json.dump(original_daten, f, ensure_ascii=False, indent=2)
-                print(f"[INFO] Keine Annotationen gefunden – Originaldatei kopiert: {datei_ziel}")
-                if progress_callback:
-                    progress_callback(100)
+    for satz_datei in satz_dateien:
+        ig_datei = ig_ordner / satz_datei.name
+        if not ig_datei.exists():
+            print(f"[WARNUNG] Keine IG-Datei gefunden für {satz_datei.name}, überspringe.")
+            continue
+
+        with open(satz_datei, "r", encoding="utf-8") as f:
+            tokens = [t.strip() for t in f.read().split(";") if t.strip()]
+
+        with open(ig_datei, "r", encoding="utf-8") as f:
+            ig_werte = [i.strip() for i in f.read().split(";") if i.strip()]
+
+        if len(tokens) != len(ig_werte):
+            print(
+                f"[WARNUNG] Ungleiche Anzahl Tokens ({len(tokens)}) und IG-Werte ({len(ig_werte)}) "
+                f"in Datei {satz_datei.name}"
+            )
+
+        for token, ig_wert in zip(tokens, ig_werte):
+            ig_mapping[token] = ig_wert
+
+    print(f"[INFO] {len(ig_mapping)} Token-IG-Paare geladen für Kapitel {kapitelname}")
+    return ig_mapping
+
+
+def update_json_with_ig_annotations(json_ordner, ausgabe_ordner, satz_ordner, ig_ordner, kapitelname):
+    json_ordner = Path(json_ordner)
+    ausgabe_ordner = Path(ausgabe_ordner)
+    ausgabe_ordner.mkdir(parents=True, exist_ok=True)
+
+    ig_mapping = lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname)
+    kein_ig_set = lade_kein_ig_liste(ig_ordner)
+
+    for json_datei in json_ordner.glob(f"{kapitelname}_*_annotierungen.json"):
+        with open(json_datei, "r", encoding="utf-8") as f:
+            daten = json.load(f)
+
+        for eintrag in daten:
+            token = eintrag.get("tokenInklZahlwoerter", "") or ""
+            basis = bestimme_flexions_basis(normalisiere_ig_token(token, lowercase=True))
+
+            # 1. Falls es schon einen expliziten IG-Wert aus Dateien gibt, diesen bevorzugen
+            expliziter_ig_wert = ig_mapping.get(token, "")
+
+            if expliziter_ig_wert:
+                eintrag["ig"] = expliziter_ig_wert
                 continue
 
-            anzahl = len(dateien)
-            annotationen_daten = defaultdict(list)
+            # 2. Automatisch auf "ich" setzen, außer wenn in keinIG.txt
+            if "ig" in basis and basis not in kein_ig_set:
+                eintrag["ig"] = "ich"
+            else:
+                eintrag["ig"] = ""
 
-            for i, dateipfad in enumerate(dateien):
-                dateiname = os.path.basename(dateipfad)
-                teile = dateiname.split("_")
-                if len(teile) < 3:
-                    print(f"[WARNUNG] Datei übersprungen (ungültiger Name): {dateiname}")
+        ausgabe_datei = ausgabe_ordner / json_datei.name
+        with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
+            json.dump(daten, f_out, ensure_ascii=False, indent=2)
+
+        print(f"[INFO] Aktualisierte Datei gespeichert: {ausgabe_datei}")
+
+def normalisiere_ig_token(token, lowercase=True):
+    """
+    Vereinheitlicht Token für IG-Listen:
+    - trimmt Leerzeichen
+    - optional alles klein
+    - Unicode normalisieren
+    """
+    token = (token or "").strip()
+    token = unicodedata.normalize("NFC", token)
+
+    if lowercase:
+        token = token.lower()
+
+    return token
+
+
+def extrahiere_ig_woerter_aus_json(
+    json_ordner,
+    ausgabe_datei,
+    lowercase=True,
+    sort_case_insensitive=True,
+    min_len=1,
+    verwende_tokenInklZahlwoerter=True,
+    ignoriere_spezialtokens=True,
+    nur_tokens_mit_ig=True,
+):
+    """
+    Extrahiert IG-Wörter aus *_annotierungen.json-Dateien,
+    zählt Häufigkeiten und bündelt einfache Flexionen.
+
+    Ausgabeformat pro Zeile:
+        basiswort | haeufigkeit | flexion1, flexion2, ...
+
+    Beispiel:
+        wichtig | 37 | wichtige, wichtigem, wichtigen, wichtiger, wichtiges
+    """
+    from collections import defaultdict, Counter
+
+    json_ordner = Path(json_ordner)
+    ausgabe_datei = Path(ausgabe_datei)
+
+    if not json_ordner.exists():
+        print(f"[FEHLER] JSON-Ordner existiert nicht: {json_ordner}")
+        return
+
+    json_dateien = sorted(json_ordner.glob("*_annotierungen.json"))
+    if not json_dateien:
+        print(f"[WARNUNG] Keine *_annotierungen.json-Dateien gefunden in: {json_ordner}")
+        return
+
+    print(f"[INFO] Starte IG-Extraktion aus {len(json_dateien)} JSON-Dateien ...")
+
+    # basis -> Counter aller konkreten Formen
+    basis_zu_formen = defaultdict(Counter)
+
+    for datei in json_dateien:
+        try:
+            with open(datei, "r", encoding="utf-8") as f:
+                daten = json.load(f)
+
+            if not isinstance(daten, list):
+                print(f"[WARNUNG] Datei hat kein Listenformat, überspringe: {datei.name}")
+                continue
+
+            for eintrag in daten:
+                if not isinstance(eintrag, dict):
                     continue
 
-                typ = teile[0].lower()
-                with open(dateipfad, encoding="utf-8") as f:
-                    daten = json.load(f)
-                    if not isinstance(daten, list) or not all(isinstance(e, dict) for e in daten):
-                        print(f"[FEHLER] Datei hat ungültiges Format: {dateipfad}")
+                if verwende_tokenInklZahlwoerter:
+                    token = eintrag.get("tokenInklZahlwoerter") or eintrag.get("token") or ""
+                else:
+                    token = eintrag.get("token") or ""
+
+                token = normalisiere_ig_token(token, lowercase=lowercase)
+
+                if not token:
+                    continue
+
+                if ignoriere_spezialtokens:
+                    if token.startswith("|") and token.endswith("|"):
                         continue
-                    annotationen_daten[typ].extend(daten)
+                    if token in {"", "_", "__"}:
+                        continue
 
-                if progress_callback:
-                    progress_callback(round((i + 1) / (anzahl + 3), 3)*100)
+                # Satzzeichen entfernen
+                clean_token = re.sub(r"[^\wäöüÄÖÜß]", "", token).strip()
 
-            schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
-            indizes = {}
-            for typ, daten in annotationen_daten.items():
-                if typ in schluessel_mapping:
-                    indizes[typ] = baue_index(daten, schluessel_mapping[typ])
-            if progress_callback:
-                progress_callback(round((anzahl + 1) / (anzahl + 3), 3)*100)
-
-            zusammengeführt = []
-            for eintrag in original_daten:
-                wortnr = eintrag.get("WortNr")
-                if wortnr is None:
-                    continue
-                try:
-                    wortnr = int(wortnr)
-                except ValueError:
+                if not clean_token:
                     continue
 
-                neuer_eintrag = {
-                    "KapitelName": eintrag.get("KapitelName"),
-                    "WortNr": wortnr,
-                    "token": eintrag.get("token"),
-                    "annotation": eintrag.get("annotation", [])
-                }
+                if len(clean_token) < min_len:
+                    continue
 
-                for typ, index in indizes.items():
-                    schluessel = schluessel_mapping[typ]
-                    neuer_eintrag[schluessel] = index.get(wortnr, "")
+                if nur_tokens_mit_ig and "ig" not in clean_token.lower():
+                    continue
 
-                zusammengeführt.append(neuer_eintrag)
+                basis = bestimme_flexions_basis(clean_token)
+                basis_zu_formen[basis][clean_token] += 1
 
-            os.makedirs(ziel_ordner, exist_ok=True)
-            datei_ziel = os.path.join(ziel_ordner, f"{kapitel_name}_gesamt.json")
-            with open(datei_ziel, "w", encoding="utf-8") as f:
-                json.dump(zusammengeführt, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[FEHLER] Fehler beim Lesen von {datei.name}: {e}")
 
-            print(f"[✓] Datei erfolgreich gespeichert: {datei_ziel}")
+    if not basis_zu_formen:
+        print("[WARNUNG] Keine passenden IG-Wörter gefunden.")
+        return
 
-            if progress_callback:
-                progress_callback(100)
+    # Sortierung: zuerst nach Häufigkeit absteigend, dann alphabetisch
+    basiswoerter = list(basis_zu_formen.keys())
 
-    except Exception as e:
-        print(f"[FEHLER] Schritt 8.1 fehlgeschlagen: {e}")
-        traceback.print_exc()
+    def sortierschluessel(basis):
+        gesamt = sum(basis_zu_formen[basis].values())
+        if sort_case_insensitive:
+            return (-gesamt, basis.lower())
+        return (-gesamt, basis)
+
+    basiswoerter = sorted(basiswoerter, key=sortierschluessel)
+
+    ausgabe_datei.parent.mkdir(parents=True, exist_ok=True)
+
+    anzahl_basiswoerter = 0
+    anzahl_token_vorkommen = 0
+
+    with open(ausgabe_datei, "w", encoding="utf-8") as f:
+        for basis in basiswoerter:
+            formen_counter = basis_zu_formen[basis]
+            gesamt = sum(formen_counter.values())
+            anzahl_token_vorkommen += gesamt
+            anzahl_basiswoerter += 1
+
+            # Varianten außer der Basis
+            flexionen = sorted(
+                [form for form in formen_counter.keys() if form != basis],
+                key=lambda x: x.lower()
+            )
+
+            flexionen_text = ", ".join(flexionen)
+
+            # Format: basis | anzahl | flexionen
+            f.write(f"{basis} | {gesamt} | {flexionen_text}\n")
+
+    print(f"[INFO] IG-Basiswörter extrahiert: {anzahl_basiswoerter}")
+    print(f"[INFO] Gesamte IG-Vorkommen: {anzahl_token_vorkommen}")
+    print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
+
+def bestimme_flexions_basis(token: str) -> str:
+    """
+    Heuristische Basisform für einfache Flexionsbündelung.
+    Beispiel:
+    wichtig, wichtige, wichtigem, wichtigen -> wichtig
+    König, Könige, Königen -> könig
+
+    Achtung: bewusst einfach gehalten, kein echtes Lemmatizing.
+    """
+    token = token.strip().lower()
+
+    # Nur einfache, häufige Flexionsendungen
+    endungen = [
+        "eren", "erem", "erer", "eres",
+        "sten", "stem", "ster", "stes",
+        "ern",
+        "en", "em", "er", "es", "e", "n", "s"
+    ]
+
+    for endung in endungen:
+        if token.endswith(endung) and len(token) > len(endung) + 2:
+            kandidat = token[:-len(endung)]
+
+            # Nur dann kürzen, wenn die gekürzte Form noch sinnvoll wirkt
+            if "ig" in kandidat:
+                return kandidat
+
+    return token
+
+
+
+
+def lade_kein_ig_liste(ig_ordner):
+    """
+    Lädt Ausnahmen aus 'keinIG.txt'.
+    Pro Zeile ein Eintrag, alles links vom ersten '|' wird als Basiswort genommen.
+    Leere Zeilen werden ignoriert.
+    """
+    ig_ordner = Path(ig_ordner)
+    datei = ig_ordner / "keinIG.txt"
+
+    if not datei.exists():
+        print(f"[WARNUNG] keine keinIG.txt gefunden: {datei}")
+        return set()
+
+    kein_ig = set()
+
+    with open(datei, "r", encoding="utf-8") as f:
+        for zeile in f:
+            zeile = zeile.strip()
+            if not zeile:
+                continue
+
+            # Falls du später wieder Listen im Format
+            # basis | haeufigkeit | flexionen
+            # verwendest, wird nur die erste Spalte genommen.
+            basis = zeile.split("|", 1)[0].strip().lower()
+
+            if basis:
+                kein_ig.add(basis)
+
+    print(f"[INFO] {len(kein_ig)} Ausnahmen aus keinIG.txt geladen.")
+    return kein_ig
+
+
+from pathlib import Path
+
+
+
+if __name__ == "__main__":
+    print("[DEBUG] Starte IG-Extraktion...")
+
+    extrahiere_ig_woerter_aus_json(
+        json_ordner=config.GLOBALORDNER["json"],
+        ausgabe_datei=Path(config.GLOBALORDNER["ki"]) / "ig_woerter.txt",
+        lowercase=True,
+        sort_case_insensitive=True,
+        min_len=2,
+        verwende_tokenInklZahlwoerter=True,
+        ignoriere_spezialtokens=True,
+        nur_tokens_mit_ig=True,
+    )
+
+    print("[DEBUG] IG-Extraktion beendet.")
+ 

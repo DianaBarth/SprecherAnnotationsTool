@@ -1156,6 +1156,29 @@ class DashBoard(ttk.Frame):
         ausgewaehlte_kapitel = [name for name, var in self.chapter_vars.items() if var.get()]
         selected_file_path = self.selected_file.get()
         task_flags = {key: var.get() for key, var in self.task_vars.items()}
+
+        # >>> HIER EINFÜGEN: Schutzabfragen
+        if not ausgewaehlte_kapitel:
+            messagebox.showwarning(
+                "Keine Kapitel ausgewählt",
+                "Bitte wähle mindestens ein Kapitel aus."
+            )
+            self.enable_controls()
+            with self.tasks_lock:
+                self.tasks_running = False
+            return
+
+        if not any(task_flags.values()):
+            messagebox.showwarning(
+                "Keine Aufgaben ausgewählt",
+                "Bitte wähle mindestens eine Aufgabe aus."
+            )
+            self.enable_controls()
+            with self.tasks_lock:
+                self.tasks_running = False
+            return
+        # <<< ENDE EINFÜGESTELLE
+
         model_selection_boxes = getattr(self, "model_selection_boxes", None)
         kapitel_liste = list(self.kapitel_config.kapitel_liste)
         kapitel_daten = copy.deepcopy(self.kapitel_config.kapitel_daten)
@@ -1184,6 +1207,7 @@ class DashBoard(ttk.Frame):
         
         kapitel_anzahl = len(ausgewaehlte_kapitel)
         max_threads = min(self.max_workers, kapitel_anzahl)
+        max_threads = max(1, max_threads)  # zusätzliche Absicherung
 
         try:
             with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
@@ -1219,7 +1243,6 @@ class DashBoard(ttk.Frame):
             self.progress_queue_active = False
             self.master.stoppe_progress_pruefung()
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
-
 
     def _thread_worker(self,
                     selected_file_path,
