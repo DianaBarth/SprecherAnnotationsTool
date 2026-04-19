@@ -1436,7 +1436,7 @@ class DashBoard(ttk.Frame):
                     ordner_nur_str["ki"],
                     ordner_nur_str["merge"],
                     [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, next_key + ".1", w))
+                    lambda w: progress_queue.put((kapitel_name, f"{next_key}.1", w))
                 )
 
                 if abort_flag.is_set():
@@ -1444,7 +1444,7 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, next_key + ".2", 0.1))
+                progress_queue.put((kapitel_name, f"{next_key}.2", 0.1))
 
                 visualisiere_annotationen(
                     ordner_nur_str["merge"],

@@ -1,0 +1,574 @@
+version: 1
+
+children:
+children:
+
+  - forehead_code: J1
+    name: Jott
+    course: leader
+    gender: male
+    group_periods:
+      - entry: "2000-04-25"
+        exit: "2013-01-15"
+    external_periods:
+      - entry: "2013-01-15"
+        exit: "2013-01-16"
+    orga_periods:
+      - entry: "2000-04-25"
+        exit: "2013-01-16"
+    hair_color: blonde
+    eye_color: blue
+    birthdate:
+      date: "1995-01-16"
+    height_rel: 1.5
+    width_rel: 1.0
+
+  - forehead_code: U1
+    name: Uh
+    course: medicine
+    gender: female
+    group_periods:
+      - entry: "2000-04-25"
+    orga_periods:
+      - entry: "2000-04-25"
+        exit: "2014-07-23"
+    hair_color: blonde
+    eye_color: blue
+    birthdate:
+      date: "1996-07-24"
+    height_rel: 1.0
+    width_rel: 1.0
+
+  - forehead_code: M1
+    name: Em
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2000-04-25"
+        exit: "2010-10-17"
+      - entry: "2011-01-16"
+    orga_periods:
+      - entry: "2000-04-25"
+        exit: "2014-10-23"
+    hair_color: brown
+    eye_color: brown
+
+    birthdate:
+      date: "1996-10-24"
+    height_rel: 1.25
+    width_rel: 1.0
+
+  - forehead_code: R1
+    name: Err
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2000-04-25"
+    orga_periods:
+      - entry: "2000-04-25"
+        exit: "2014-07-24"
+    hair_color: brown
+    eye_color: brown
+
+    birthdate:
+      date: "1996-07-25"
+    image_status: null
+    height_rel: 1.3
+    width_rel: 1.0
+
+  - forehead_code: P1
+    name: Pe
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2000-11-27"
+        exit: "2010-10-17"
+      - entry: "2012-01-17"
+    orga_periods:
+      - entry: "2000-11-27"
+        exit: "2015-05-22"
+    hair_color: red
+    eye_color: green
+    birthdate:
+      date: "1997-05-23"
+    height_rel: 0.8
+    width_rel: 1.0
+
+  - forehead_code: C1
+    name: Ce
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2010-10-17"
+      - entry: "2011-01-16"
+    orga_periods:
+      - entry: "2000-04-26"
+        exit: "2013-07-15"
+    hair_color: dark blonde
+    birthdate:
+      date: "1995-07-16"
+    height_rel: 1.0
+    width_rel: 1.5
+
+  - forehead_code: F1
+    name: Eff
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2003-12-01"
+    orga_periods:
+      - entry: "2001-04-18"
+        exit: "2014-07-09"
+    hair_color: blonde
+
+    birthdate:
+      date: "1996-07-10"
+    height_rel: 0.9
+    width_rel: 0.95
+
+  - forehead_code: H1
+    name: Ha
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2002-04-03"
+        exit: "2015-12-18"
+    hair_color: brown
+
+    birthdate:
+      date: "1997-12-19"
+    height_rel: 1.4
+    width_rel: 1.0
+
+  - forehead_code: J2
+    name: Jott_Zwei
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2011-01-16"
+      - entry: "2013-01-09"
+    external_periods:
+      - entry: "2012-04-10"
+        exit: "2013-01-09"
+    orga_periods:
+      - entry: "2000-04-26"
+        exit: "2013-12-21"
+    hair_color: dark blonde
+
+    birthdate:
+      date: "1995-12-22"
+    image_note: krank
+    height_rel: 0.7
+    width_rel: 0.85
+
+  - forehead_code: J3
+    name: Jott_Drei
+    course: medicine
+    gender: female
+    group_periods:
+      - entry: "2003-12-01"
+    orga_periods:
+      - entry: "2000-04-26"
+        exit: "2013-04-24"
+    hair_color: blonde
+
+    birthdate:
+      date: "1995-04-25"
+    image_status: null
+    height_rel: 1.25
+    width_rel: 0.9
+
+  - forehead_code: K1
+    name: Ka
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2010-10-17"
+      - entry: "2011-03-20"
+    orga_periods:
+      - entry: "2000-04-26"
+        exit: "2013-04-25"
+    hair_color: brown
+
+    birthdate:
+      date: "1995-04-26"
+    height_rel: 1.1
+    width_rel: 0.95
+
+  - forehead_code: K2
+    name: Ka_Zwei
+    course: medicine
+    gender: female
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2000-04-26"
+        exit: "2013-04-27"
+    hair_color: black
+
+    birthdate:
+      date: "1995-04-28"
+    height_rel: 1.35
+    width_rel: 1.1
+
+  - forehead_code: S2
+    name: Ess_Zwei
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2010-10-17"
+      - entry: "2011-03-20"
+    orga_periods:
+      - entry: "2002-04-03"
+        exit: "2015-04-22"
+    hair_color: brown
+
+    birthdate:
+      date: "1997-04-23"
+    height_rel: 1.4
+    width_rel: 1.15
+
+  - forehead_code: T1
+    name: Te
+    course: medicine
+   
+    gender: female
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2008-02-23"
+      - entry: "2013-01-14"
+    external_periods:
+      - entry: "2008-02-23"
+        exit: "2013-01-14"
+    orga_periods:
+      - entry: "2002-04-03"
+        exit: "2015-11-25"
+    hair_color: dark blonde
+
+    birthdate:
+      date: "1997-11-26"
+    height_rel: 1.2
+    width_rel: 0.9
+
+  - forehead_code: D1
+    name: De
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2002-04-01"
+        exit: "2010-10-17"
+      - entry: "2013-01-15"
+    orga_periods:
+      - entry: "2002-04-01"
+        exit: "2017-04-12"
+    hair_color: blonde
+    eye_color: blue
+
+    birthdate:
+      date: "1999-04-13"
+    height_rel: 0.5
+    width_rel: 0.5
+
+  - forehead_code: E1
+    name: Eh
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2002-04-25"
+    orga_periods:
+      - entry: "2002-04-25"
+        exit: "2014-06-14"
+    hair_color: dark blonde
+    birthdate:
+      date: "1996-06-15"
+    height_rel: 1.1
+    width_rel: 1.4
+
+  - forehead_code: M2
+    name: Em_Zwei
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2002-04-23"
+    orga_periods:
+      - entry: "2002-04-23"
+        exit: "2013-01-19"
+    hair_color: "blonde with red speckles"
+
+    birthdate:
+      date: "1995-01-20"
+    height_rel: 1.1
+    width_rel: 1.0
+
+  - forehead_code: S1
+    name: Ess
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2003-12-01"
+        exit: "2008-03-01"
+      - entry: "2013-01-14"
+    external_periods:
+      - entry: "2008-02-23"
+        exit: "2013-01-14"
+    orga_periods:
+      - entry: "2003-04-23"
+        exit: "2017-03-13"
+    hair_color: black
+
+    birthdate:
+      date: "1999-03-14"
+    height_rel: 0.85
+    width_rel: 0.7
+
+  - forehead_code: H2
+    name: Ha_Zwei
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2005-05-01"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2005-05-01"
+        exit: "2014-04-22"
+    hair_color: red
+
+    birthdate:
+      date: "1996-04-23"
+    height_rel: 1.35
+    width_rel: 1.1
+
+  - forehead_code: T2
+    name: Te_Zwei
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2005-03-29"
+    orga_periods:
+      - entry: "2005-03-29"
+        exit: "2017-03-07"
+    hair_color: blonde
+
+    birthdate:
+      date: "1999-03-08"
+    height_rel: 0.55
+    width_rel: 0.75
+
+  - forehead_code: F2
+    name: Eff_Zwei
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2004-04-14"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2004-04-14"
+        exit: "2016-03-07"
+    hair_color: black
+    eye_color: brown
+
+    birthdate:
+      date: "1998-03-08"
+    height_rel: 0.85
+    width_rel: 0.85
+
+  - forehead_code: N1
+    name: En
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2004-04-14"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2004-04-14"
+        exit: "2014-04-22"
+    hair_color: black
+    eye_color: brown
+
+    birthdate:
+      date: "1996-04-23"
+    height_rel: 0.95
+    width_rel: 1.0
+
+  - forehead_code: C2
+    name: Ce_Zwei
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2006-04-18"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2006-04-18"
+        exit: "2015-04-20"
+    hair_color: black
+
+    ethnicity_hint: Vietnamese
+    birthdate:
+      date: "1997-04-21"
+    height_rel: 0.95
+    width_rel: 1.0
+
+  - forehead_code: F3
+    name: Eff_Drei
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2006-04-18"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2006-04-18"
+        exit: "2015-04-20"
+    hair_color: black
+
+    ethnicity_hint: Vietnamese
+    birthdate:
+      date: "1997-04-21"
+    height_rel: 0.95
+    width_rel: 1.0
+
+  - forehead_code: R2
+    name: Err_Zwei
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2007-04-10"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2007-04-10"
+        exit: "2016-11-07"
+    hair_color: brown
+
+    birthdate:
+      date: "1998-11-08"
+    height_rel: 1.0
+    width_rel: 1.0
+
+  - forehead_code: S3
+    name: Ess_Drei
+    course: medicine
+    gender: female
+    group_periods:
+      - entry: "2007-04-11"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2007-04-11"
+        exit: "2013-12-08"
+    hair_color: red
+
+    birthdate:
+      date: "1995-12-09"
+    height_rel: 1.0
+    width_rel: 1.0
+
+  - forehead_code: A1
+    name: Ah
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2008-03-25"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2008-03-25"
+        exit: "2013-10-08"
+    hair_color: black
+
+    birthdate:
+      date: "1995-10-09"
+
+  - forehead_code: B1
+    name: Be
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2008-03-28"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2008-03-28"
+        exit: "2014-09-08"
+    hair_color: black
+
+    birthdate:
+      date: "1996-09-09"
+
+  - forehead_code: G1
+    name: Ge
+    course: technician
+    gender: female
+    group_periods:
+      - entry: "2009-04-13"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2009-04-13"
+        exit: "2015-08-07"
+    hair_color: brown
+
+    birthdate:
+      date: "1997-08-08"
+
+  - forehead_code: L1
+    name: El
+    course: medicine
+    gender: male
+    group_periods:
+      - entry: "2009-04-15"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2009-04-15"
+        exit: "2014-07-06"
+    hair_color: brown
+
+    birthdate:
+      date: "1996-07-07"
+
+  - forehead_code: O1
+    name: Oh
+    course: medicine
+    gender: female
+    group_periods:
+      - entry: "2010-04-06"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2010-04-06"
+        exit: "2013-06-05"
+    hair_color: blonde
+
+    birthdate:
+      date: "1995-06-06"
+
+  - forehead_code: O2
+    name: Oh_Zwei
+    course: technician
+    gender: male
+    group_periods:
+      - entry: "2010-04-08"
+        exit: "2010-10-17"
+    orga_periods:
+      - entry: "2010-04-08"
+        exit: "2013-06-07"
+    hair_color: black
+
+    birthdate:
+      date: "1995-06-08"
+
+
+  - forehead_code: "UNKNOWN"
+    name: "DU"
+    course: "unknown"
+    gender: "unknown"
+    group_periods:
+      - entry: "2002-04-05"
+    orga_periods:
+    - entry: "2010-04-05"
+      exit: "2016-01-04"
+    hair_color: "unknown"
+
+    birthdate:
+      date: "1998-01-05"

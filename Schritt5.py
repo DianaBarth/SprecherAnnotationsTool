@@ -162,8 +162,7 @@ def extrahiere_typ_aus_ki_dateiname(dateiname, abschnitts_dateiname):
     typ = dateiname.split(suffix, 1)[0].lower().strip("_")
     return typ or None
 
-
-def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateiname):
+def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateiname, kein_ig_set=None):
     annotationen_daten = defaultdict(list)
     schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
 
@@ -205,6 +204,9 @@ def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateina
 
     zusammengefuehrt = []
 
+    anzahl_ig_ich = 0
+    anzahl_ig_leer = 0
+
     for eintrag in original_daten:
         wortnr = eintrag.get("WortNr")
         if wortnr is None:
@@ -217,6 +219,19 @@ def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateina
 
         neuer_eintrag = dict(eintrag)
 
+        # IG immer direkt im Merge setzen
+        ig_wert = bestimme_ig_wert_fuer_eintrag(
+            neuer_eintrag,
+            kein_ig_set or set()
+        )
+        neuer_eintrag["ig"] = ig_wert
+
+        if ig_wert == "ich":
+            anzahl_ig_ich += 1
+        else:
+            anzahl_ig_leer += 1
+
+        # Andere KI-Annotationen zusätzlich mergen
         for typ, index in indizes.items():
             schluessel = schluessel_mapping[typ]
             werte = index.get(wortnr, [])
@@ -225,8 +240,6 @@ def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateina
                 if schluessel not in neuer_eintrag:
                     neuer_eintrag[schluessel] = ""
             else:
-                # Falls mehrere Werte für dasselbe Wort vorkommen:
-                # leere entfernen, Duplikate entfernen, dann String oder Liste
                 bereinigt = []
                 for wert in werte:
                     if isinstance(wert, list):
@@ -246,6 +259,10 @@ def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateina
 
         zusammengefuehrt.append(neuer_eintrag)
 
+    print(f"[INFO] Merge Abschnitt abgeschlossen: {abschnitts_dateiname}")
+    print(f"[INFO]   ig='ich': {anzahl_ig_ich}")
+    print(f"[INFO]   ig='':   {anzahl_ig_leer}")
+
     return zusammengefuehrt
 
 
@@ -260,6 +277,8 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
     quellordner_annotationen = Path(quellordner_annotationen)
     ziel_ordner = Path(ziel_ordner)
     ziel_ordner.mkdir(parents=True, exist_ok=True)
+
+    kein_ig_set = lade_kein_ig_liste(quellordner_annotationen)
 
     try:
         abschnittsdateien = ermittle_abschnittsdateien(quellordner_kapitel, ausgewaehlte_kapitel)
@@ -288,20 +307,15 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
             )
 
             if not annotationsdateien:
-                zielpfad = ziel_ordner / dateiname
-                with open(zielpfad, "w", encoding="utf-8") as f:
-                    json.dump(original_daten, f, ensure_ascii=False, indent=2)
-
-                print(f"[INFO] Keine KI-Annotationen gefunden – Originaldatei kopiert: {zielpfad}")
-
-                if progress_callback:
-                    progress_callback(round((pos / max(gesamt, 1)) * 100, 1))
-                continue
+                print(f"[INFO] Keine KI-Annotationen gefunden – setze nur IG automatisch für: {dateiname}")
+            else:
+                print(f"[INFO] {len(annotationsdateien)} KI-Dateien gefunden für: {dateiname}")
 
             zusammengefuehrt = merge_einen_abschnitt(
                 original_daten=original_daten,
                 annotationsdateien=annotationsdateien,
                 abschnitts_dateiname=dateiname,
+                kein_ig_set=kein_ig_set,
             )
 
             zielpfad = ziel_ordner / dateiname
@@ -310,15 +324,17 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
 
             print(f"[✓] Datei erfolgreich gespeichert: {zielpfad}")
 
+            # Optional: kurzer IG-Check
+            anzahl_ich = sum(1 for e in zusammengefuehrt if e.get("ig") == "ich")
+            print(f"[INFO]   ig='ich': {anzahl_ich}")
+
             if progress_callback:
                 progress_callback(round((pos / max(gesamt, 1)) * 100, 1))
 
     except Exception as e:
         print(f"[FEHLER] Merge_annotationen fehlgeschlagen: {e}")
         traceback.print_exc()
-
-
-# ----------------------------------------------------
+        # ----------------------------------------------------
 # IG-Update
 # ----------------------------------------------------
 
@@ -356,40 +372,109 @@ def lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname):
     return ig_mapping
 
 
+def lade_kein_ig_liste(ig_ordner):
+    ig_ordner = Path(ig_ordner)
+    datei = ig_ordner / "keinIG.txt"
+
+    if not datei.exists():
+        print(f"[WARNUNG] keine keinIG.txt gefunden: {datei}")
+        return set()
+
+    kein_ig = set()
+
+    with open(datei, "r", encoding="utf-8") as f:
+        for zeile in f:
+            wort = zeile.strip().lower()
+            if wort:
+                kein_ig.add(wort)
+
+    print(f"[INFO] {len(kein_ig)} Einträge aus keinIG.txt geladen.")
+    return kein_ig
+
+
+def bereinige_token_fuer_ig(token):
+    token = normalisiere_ig_token(token, lowercase=True)
+    token = re.sub(r"[^\wäöüß]", "", token).strip()
+    return token
+
+
 def update_json_with_ig_annotations(json_ordner, ausgabe_ordner, satz_ordner, ig_ordner, kapitelname):
+    """
+    Neues, vereinfachtes IG-System:
+    - alles mit 'ig' bekommt standardmäßig 'ich'
+    - Ausnahmen aus keinIG.txt bleiben leer
+    """
     json_ordner = Path(json_ordner)
     ausgabe_ordner = Path(ausgabe_ordner)
     ausgabe_ordner.mkdir(parents=True, exist_ok=True)
 
-    ig_mapping = lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname)
     kein_ig_set = lade_kein_ig_liste(ig_ordner)
 
-    for json_datei in json_ordner.glob(f"{kapitelname}_*_annotierungen.json"):
+    dateien = sorted(json_ordner.glob(f"{kapitelname}_*_annotierungen.json"))
+    if not dateien:
+        print(f"[WARNUNG] Keine JSON-Dateien gefunden für Kapitel {kapitelname}")
+        return
+
+    for json_datei in dateien:
         with open(json_datei, "r", encoding="utf-8") as f:
             daten = json.load(f)
 
+        anzahl_ich = 0
+        anzahl_leer = 0
+
         for eintrag in daten:
-            token = eintrag.get("tokenInklZahlwoerter", "") or ""
-            basis = bestimme_flexions_basis(normalisiere_ig_token(token, lowercase=True))
+            token = (
+                eintrag.get("tokenInklZahlwoerter")
+                or eintrag.get("token")
+                or ""
+            )
 
-            # 1. Falls es schon einen expliziten IG-Wert aus Dateien gibt, diesen bevorzugen
-            expliziter_ig_wert = ig_mapping.get(token, "")
+            token_clean = bereinige_token_fuer_ig(token)
 
-            if expliziter_ig_wert:
-                eintrag["ig"] = expliziter_ig_wert
+            if not token_clean:
+                eintrag["ig"] = ""
+                anzahl_leer += 1
                 continue
 
-            # 2. Automatisch auf "ich" setzen, außer wenn in keinIG.txt
-            if "ig" in basis and basis not in kein_ig_set:
+            if "ig" in token_clean and token_clean not in kein_ig_set:
                 eintrag["ig"] = "ich"
+                anzahl_ich += 1
             else:
                 eintrag["ig"] = ""
+                anzahl_leer += 1
 
         ausgabe_datei = ausgabe_ordner / json_datei.name
         with open(ausgabe_datei, "w", encoding="utf-8") as f_out:
             json.dump(daten, f_out, ensure_ascii=False, indent=2)
 
         print(f"[INFO] Aktualisierte Datei gespeichert: {ausgabe_datei}")
+        print(f"[INFO]   ig='ich': {anzahl_ich}")
+        print(f"[INFO]   ig='':   {anzahl_leer}")
+
+def bestimme_ig_wert_fuer_eintrag(eintrag, kein_ig_set):
+    """
+    Bestimmt den IG-Wert für einen JSON-Eintrag.
+    Standard:
+    - enthält das Token 'ig'
+    - und steht nicht in keinIG.txt
+    => 'ich'
+    Sonst leer.
+    """
+    token = (
+        eintrag.get("tokenInklZahlwoerter")
+        or eintrag.get("token")
+        or ""
+    )
+
+    token_clean = bereinige_token_fuer_ig(token)
+
+    if not token_clean:
+        return ""
+
+    if "ig" in token_clean and token_clean not in kein_ig_set:
+        return "ich"
+
+    return ""
 
 def normalisiere_ig_token(token, lowercase=True):
     """
@@ -567,40 +652,6 @@ def bestimme_flexions_basis(token: str) -> str:
 
 
 
-def lade_kein_ig_liste(ig_ordner):
-    """
-    Lädt Ausnahmen aus 'keinIG.txt'.
-    Pro Zeile ein Eintrag, alles links vom ersten '|' wird als Basiswort genommen.
-    Leere Zeilen werden ignoriert.
-    """
-    ig_ordner = Path(ig_ordner)
-    datei = ig_ordner / "keinIG.txt"
-
-    if not datei.exists():
-        print(f"[WARNUNG] keine keinIG.txt gefunden: {datei}")
-        return set()
-
-    kein_ig = set()
-
-    with open(datei, "r", encoding="utf-8") as f:
-        for zeile in f:
-            zeile = zeile.strip()
-            if not zeile:
-                continue
-
-            # Falls du später wieder Listen im Format
-            # basis | haeufigkeit | flexionen
-            # verwendest, wird nur die erste Spalte genommen.
-            basis = zeile.split("|", 1)[0].strip().lower()
-
-            if basis:
-                kein_ig.add(basis)
-
-    print(f"[INFO] {len(kein_ig)} Ausnahmen aus keinIG.txt geladen.")
-    return kein_ig
-
-
-from pathlib import Path
 
 
 

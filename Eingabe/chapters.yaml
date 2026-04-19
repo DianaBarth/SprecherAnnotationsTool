@@ -1,0 +1,873 @@
+version: 1externalk
+chapters:
+  - chapter_id: K00
+    title: "Prolog - Finis Post Portam:"
+    subchapters:
+      - sub_id: K00_01
+        raw: "16.01.2012"
+        dates:
+          - "2012-01-16"
+        anchor_date: "2012-01-16"
+  - chapter_id: K01
+    title: "scelus sapiens matris�"
+    subchapters:
+      - sub_id: K01_01
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_02
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_03
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_04
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_05
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_06
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_07
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_08
+        raw: "25.04.2000"
+        dates:
+          - "2000-04-25"
+        anchor_date: "2000-04-25"
+      - sub_id: K01_09
+        raw: "26.04.2000"
+        dates:
+          - "2000-04-26"
+        anchor_date: "2000-04-26"
+      - sub_id: K01_10
+        raw: "26.04.2000"
+        dates:
+          - "2000-04-26"
+        anchor_date: "2000-04-26"
+  - chapter_id: K02
+    title: "Discipuli Vitae et Laetitia Cotidiana"
+    subchapters:
+      - sub_id: K02_01
+        raw: "02.05.2000"
+        dates:
+          - "2000-05-02"
+        anchor_date: "2000-05-02"
+      - sub_id: K02_02
+        raw: "02.05.2000"
+        dates:
+          - "2000-05-02"
+        anchor_date: "2000-05-02"
+      - sub_id: K02_03
+        raw: "02.05.2000"
+        dates:
+          - "2000-05-02"
+        anchor_date: "2000-05-02"
+      - sub_id: K02_04
+        raw: "02.05.2000"
+        dates:
+          - "2000-05-02"
+        anchor_date: "2000-05-02"
+      - sub_id: K02_05
+        raw: "04.05.2000"
+        dates:
+          - "2000-05-04"
+        anchor_date: "2000-05-04"
+      - sub_id: K02_06
+        raw: "04.05.2000"
+        dates:
+          - "2000-05-04"
+        anchor_date: "2000-05-04"
+      - sub_id: K02_07
+        raw: "09.05.2000"
+        dates:
+          - "2000-05-09"
+        anchor_date: "2000-05-09"
+      - sub_id: K02_08
+        raw: "09.05.2000"
+        dates:
+          - "2000-05-09"
+        anchor_date: "2000-05-09"
+      - sub_id: K02_09
+        raw: "09.05.2000"
+        dates:
+          - "2000-05-09"
+        anchor_date: "2000-05-09"
+      - sub_id: K02_10
+        raw: "Mittwoch 10.52000 bis Sonntag 4.6.2000"
+        dates:
+          - "2000-06-04"
+        anchor_date: "2000-06-04"
+  - chapter_id: K03
+    title: "De advenis recentibus"
+    subchapters:
+      - sub_id: K03_01
+        raw: "Montage 05.06.2000 und 04.09.2000 und 27.11.2000"
+        dates:
+          - "2000-06-05"
+          - "2000-09-04"
+          - "2000-11-27"
+        anchor_date: "2000-06-05"
+      - sub_id: K03_02
+        raw: "28.11.2000"
+        dates:
+          - "2000-11-28"
+        anchor_date: "2000-11-28"
+      - sub_id: K03_03
+        raw: "28.11.2000"
+        dates:
+          - "2000-11-28"
+        anchor_date: "2000-11-28"
+      - sub_id: K03_04
+        raw: "Montage 4.12.2000 und Freitrag 11.12.2000"
+        dates:
+          - "2000-12-04"
+          - "2000-12-11"
+        anchor_date: "2000-12-04"
+      - sub_id: K03_05
+        raw: "Karfreitag 29.3.20002, Dienstag 01.04.2002"
+        dates:
+          - "2002-04-01"
+        anchor_date: "2002-04-01"
+      - sub_id: K03_06
+        raw: "05.04.2002"
+        dates:
+          - "2002-04-05"
+        anchor_date: "2002-04-05"
+      - sub_id: K03_07
+        raw: "Karfreitag 18.4.2003, Dienstag 22.4.2003 , Freitag 25.4.2003, Mittwoch 29.10.2003, samstag 29.11.2003 , sonntag 30.11.2003,Montag 1.12.2003 3:33 Uhr"
+        dates:
+          - "2003-04-18"
+          - "2003-04-22"
+          - "2003-04-25"
+          - "2003-10-29"
+          - "2003-11-29"
+          - "2003-11-30"
+          - "2003-12-01"
+        anchor_date: "2003-04-18"
+      - sub_id: K03_08
+        raw: "01.12.2003"
+        dates:
+          - "2003-12-01"
+        anchor_date: "2003-12-01"
+      - sub_id: K03_09
+        raw: "01.12.2003"
+        dates:
+          - "2003-12-01"
+        anchor_date: "2003-12-01"
+      - sub_id: K03_10
+        raw: "01.12.2003"
+        dates:
+          - "2003-12-01"
+        anchor_date: "2003-12-01"
+  - chapter_id: K04
+    title: "De Campamento Gaudii et Operis"
+    subchapters:
+      - sub_id: K04_01
+        raw: "01.12.2003"
+        dates:
+          - "2003-12-01"
+        anchor_date: "2003-12-01"
+      - sub_id: K04_02
+        raw: "Dienstag 02.12.2003 bis Sonntag 01.02.2004"
+        dates:
+          - "2003-12-02"
+          - "2004-02-01"
+        anchor_date: "2003-12-02"
+      - sub_id: K04_03
+        raw: "Sonntag 01.02.2004 und Mittwoch 14.04.2004 und Dienstrag 03.08.2004"
+        dates:
+          - "2004-02-01"
+          - "2004-04-14"
+          - "2004-08-03"
+        anchor_date: "2004-02-01"
+      - sub_id: K04_04
+        raw: "03.08.2004"
+        dates:
+          - "2004-08-03"
+        anchor_date: "2004-08-03"
+      - sub_id: K04_05
+        raw: "03.08.2004"
+        dates:
+          - "2004-08-03"
+        anchor_date: "2004-08-03"
+      - sub_id: K04_06
+        raw: "04.08.2004"
+        dates:
+          - "2004-08-04"
+        anchor_date: "2004-08-04"
+      - sub_id: K04_07
+        raw: "04.08.2004"
+        dates:
+          - "2004-08-04"
+        anchor_date: "2004-08-04"
+      - sub_id: K04_08
+        raw: "04.08.2004"
+        dates:
+          - "2004-08-04"
+        anchor_date: "2004-08-04"
+      - sub_id: K04_09
+        raw: "Mittwoch 4.08.2004 bis Sonntag 8.8.2004"
+        dates:
+          - "2004-08-04"
+          - "2004-08-08"
+        anchor_date: "2004-08-04"
+      - sub_id: K04_10
+        raw: "Montag 22.11.2004 bis Karfreitag 25.3.2005, Dienstag 29.3.2005, Freitag 01.04.2005"
+        dates:
+          - "2004-11-22"
+          - "2005-03-25"
+          - "2005-03-29"
+          - "2005-04-01"
+        anchor_date: "2004-11-22"
+  - chapter_id: K05
+    title: "Munera pro Elevatione Explorationum Subterraneorum"
+    subchapters:
+      - sub_id: K05_01
+        raw: "29.03.2005"
+        dates:
+          - "2005-03-29"
+        anchor_date: "2005-03-29"
+      - sub_id: K05_02
+        raw: "27.06.2005"
+        dates:
+          - "2005-06-27"
+        anchor_date: "2005-06-27"
+      - sub_id: K05_03
+        raw: "27.06.2005"
+        dates:
+          - "2005-06-27"
+        anchor_date: "2005-06-27"
+      - sub_id: K05_04
+        raw: "01.07.2005"
+        dates:
+          - "2005-07-01"
+        anchor_date: "2005-07-01"
+      - sub_id: K05_05
+        raw: "04.07.2005"
+        dates:
+          - "2005-07-04"
+        anchor_date: "2005-07-04"
+      - sub_id: K05_06
+        raw: "04.07.2005"
+        dates:
+          - "2005-07-04"
+        anchor_date: "2005-07-04"
+      - sub_id: K05_07
+        raw: "04.07.2005"
+        dates:
+          - "2005-07-04"
+        anchor_date: "2005-07-04"
+      - sub_id: K05_08
+        raw: "04.07.2005"
+        dates:
+          - "2005-07-04"
+        anchor_date: "2005-07-04"
+      - sub_id: K05_09
+        raw: "04.07.2005"
+        dates:
+          - "2005-07-04"
+        anchor_date: "2005-07-04"
+      - sub_id: K05_10
+        raw: "04.07.2005"
+        dates:
+          - "2005-07-04"
+        anchor_date: "2005-07-04"
+  - chapter_id: K06
+    title: "sine ludo nulla lex"
+    subchapters:
+      - sub_id: K06_01
+        raw: "20.04.2006"
+        dates:
+          - "2006-04-20"
+        anchor_date: "2006-04-20"
+      - sub_id: K06_02
+        raw: "Freitag 21.04.2006 bis Karfreitag 6.4.2007"
+        dates:
+          - "2006-04-21"
+          - "2007-04-06"
+        anchor_date: "2006-04-21"
+      - sub_id: K06_03
+        raw: "Dienstag 10.4.2007, Mittwoch 11.04.2007, Samstag 26.05.2007"
+        dates:
+          - "2007-04-10"
+          - "2007-04-11"
+          - "2007-05-26"
+        anchor_date: "2007-04-10"
+      - sub_id: K06_04
+        raw: "Sonntag 27.5.2007"
+        dates:
+          - "2007-05-27"
+        anchor_date: "2007-05-27"
+      - sub_id: K06_05
+        raw: "Sonntag 27.5.2007"
+        dates:
+          - "2007-05-27"
+        anchor_date: "2007-05-27"
+      - sub_id: K06_06
+        raw: "Sonntag 27.5.2007 und Montag 28.05.2007"
+        dates:
+          - "2007-05-27"
+          - "2007-05-28"
+        anchor_date: "2007-05-27"
+      - sub_id: K06_07
+        raw: "Dienstag 29.05.2007"
+        dates:
+          - "2007-05-29"
+        anchor_date: "2007-05-29"
+      - sub_id: K06_08
+        raw: "Mittwoch 30.5.2007 bis Freitag 1.6.2007"
+        dates:
+          - "2007-05-30"
+          - "2007-06-01"
+        anchor_date: "2007-05-30"
+      - sub_id: K06_09
+        raw: "02.06.2007"
+        dates:
+          - "2007-06-02"
+        anchor_date: "2007-06-02"
+      - sub_id: K06_10
+        raw: "02.06.2007"
+        dates:
+          - "2007-06-02"
+        anchor_date: "2007-06-02"
+  - chapter_id: K07
+    title: "De immanibus creaturis femineis"
+    subchapters:
+      - sub_id: K07_01
+        raw: "Freitag 28.12.2007 bis Sonntag 27.01.2008"
+        dates:
+          - "2007-12-28"
+          - "2008-01-27"
+        anchor_date: "2007-12-28"
+      - sub_id: K07_02
+        raw: "28.01.2008"
+        dates:
+          - "2008-01-28"
+        anchor_date: "2008-01-28"
+      - sub_id: K07_03
+        raw: "28.01.2008"
+        dates:
+          - "2008-01-28"
+        anchor_date: "2008-01-28"
+        focus: external
+      - sub_id: K07_04
+        raw: "29.01.2008"
+        dates:
+          - "2008-01-29"
+        anchor_date: "2008-01-29"
+      - sub_id: K07_05
+        raw: "Mittwoch 30.01.2008 bis Montag 11.02.2008"
+        dates:
+          - "2008-01-30"
+          - "2008-02-11"
+        anchor_date: "2008-01-30"
+      - sub_id: K07_06
+        raw: "18.02.2008"
+        dates:
+          - "2008-02-18"
+        anchor_date: "2008-02-18"
+      - sub_id: K07_07
+        raw: "21.02.2008"
+        dates:
+          - "2008-02-21"
+        anchor_date: "2008-02-21"
+      - sub_id: K07_08
+        raw: "22.02.2008"
+        dates:
+          - "2008-02-22"
+        anchor_date: "2008-02-22"
+      - sub_id: K07_09
+        raw: "22.02.2008"
+        dates:
+          - "2008-02-22"
+        anchor_date: "2008-02-22"
+      - sub_id: K07_10
+        raw: "23.02.2008"
+        dates:
+          - "2008-02-23"
+        anchor_date: "2008-02-23"
+  - chapter_id: K08
+    title: "Athletica coacta coniugum sub nocte"
+    subchapters:
+      - sub_id: K08_01
+        raw: "01.03.2008"
+        dates:
+          - "2008-03-01"
+        anchor_date: "2008-03-01"
+        focus: external
+      - sub_id: K08_02
+        raw: "02.03.2008"
+        dates:
+          - "2008-03-02"
+        anchor_date: "2008-03-02"
+        focus: external
+      - sub_id: K08_03
+        raw: "Sonntag 02.03.2008 bis Freiag 7.03.2008"
+        dates:
+          - "2008-03-02"
+          - "2008-03-07"
+        anchor_date: "2008-03-02"
+        focus: external
+      - sub_id: K08_04
+        raw: "07.03.2008"
+        dates:
+          - "2008-03-07"
+        anchor_date: "2008-03-07"
+      - sub_id: K08_05
+        raw: "07.03.2008"
+        dates:
+          - "2008-03-07"
+        anchor_date: "2008-03-07"
+        focus: external
+      - sub_id: K08_06
+        raw: "07.03.2008"
+        dates:
+          - "2008-03-07"
+        anchor_date: "2008-03-07"
+        focus: external
+      - sub_id: K08_07
+        raw: "Freitag 07.03.2008 bis Samstag 08.03.2008"
+        dates:
+          - "2008-03-07"
+          - "2008-03-08"
+        anchor_date: "2008-03-07"
+        focus: external
+      - sub_id: K08_08
+        raw: "Dienstag 11.03.2008 , Freitag 14.03.20008, Samstag 15.3.2008"
+        dates:
+          - "2008-03-11"
+          - "2008-03-15"
+        anchor_date: "2008-03-11"
+        focus: external
+      - sub_id: K08_09
+        raw: "Samstag 15.3.2008 bis Sonntag 16.03.2008"
+        dates:
+          - "2008-03-15"
+          - "2008-03-16"
+        anchor_date: "2008-03-15"
+        focus: external
+      - sub_id: K08_10
+        raw: "01.12.2008"
+        dates:
+          - "2008-12-01"
+        anchor_date: "2008-12-01"
+        focus: external
+  - chapter_id: K09
+    title: "Per caerimonias"
+    subchapters:
+      - sub_id: K09_01
+        raw: "05.05.2009"
+        dates:
+          - "2009-05-05"
+        anchor_date: "2009-05-05"
+        focus: group+external
+      - sub_id: K09_02
+        raw: "05.05.2009"
+        dates:
+          - "2009-05-05"
+        anchor_date: "2009-05-05"
+        focus: group+external
+      - sub_id: K09_03
+        raw: "05.05.2009"
+        dates:
+          - "2009-05-05"
+        anchor_date: "2009-05-05"
+      - sub_id: K09_04
+        raw: "Samstag 30.05.2009 bis Samstag 06.06.2009"
+        dates:
+          - "2009-05-30"
+          - "2009-06-06"
+        anchor_date: "2009-05-30"
+        focus: group+external
+      - sub_id: K09_05
+        raw: "06.06.2009"
+        dates:
+          - "2009-06-06"
+        anchor_date: "2009-06-06"
+        focus: external
+      - sub_id: K09_06
+        raw: "06.06.2009"
+        dates:
+          - "2009-06-06"
+        anchor_date: "2009-06-06"
+        focus: external
+      - sub_id: K09_07
+        raw: "06.06.2009"
+        dates:
+          - "2009-06-06"
+        anchor_date: "2009-06-06"
+        focus: external
+      - sub_id: K09_08
+        raw: "06.06.2009"
+        dates:
+          - "2009-06-06"
+        anchor_date: "2009-06-06"
+        focus: external
+      - sub_id: K09_09
+        raw: "06.06.2009"
+        dates:
+          - "2009-06-06"
+        anchor_date: "2009-06-06"
+        focus: external
+      - sub_id: K09_10
+        raw: "20.06.2009"
+        dates:
+          - "2009-06-20"
+        anchor_date: "2009-06-20"
+        focus: external
+  - chapter_id: K10
+    title: "Permutatio triplex intra Gyrum Comarum"
+    subchapters:
+      - sub_id: K10_01
+        raw: "27.09.2010"
+        dates:
+          - "2010-09-27"
+        anchor_date: "2010-09-27"
+      - sub_id: K10_02
+        raw: "Montag 27.09.2010 bis Dienstag 28.09.2010"
+        dates:
+          - "2010-09-27"
+          - "2010-09-28"
+        anchor_date: "2010-09-27"
+      - sub_id: K10_03
+        raw: "28.09.2010"
+        dates:
+          - "2010-09-28"
+        anchor_date: "2010-09-28"
+      - sub_id: K10_04
+        raw: "28.09.2010"
+        dates:
+          - "2010-09-28"
+        anchor_date: "2010-09-28"
+      - sub_id: K10_05
+        raw: "Dienstag 28.09.2010, 1.10.2010"
+        dates:
+          - "2010-09-28"
+          - "2010-10-01"
+        anchor_date: "2010-09-28"
+      - sub_id: K10_06
+        raw: "Montag 04.10.2010, Dienstag 5.10.2010"
+        dates:
+          - "2010-10-04"
+          - "2010-10-05"
+        anchor_date: "2010-10-04"
+      - sub_id: K10_07
+        raw: "10.10.2010"
+        dates:
+          - "2010-10-10"
+        anchor_date: "2010-10-10"
+      - sub_id: K10_08
+        raw: "10.10.2010"
+        dates:
+          - "2010-10-10"
+        anchor_date: "2010-10-10"
+      - sub_id: K10_09
+        raw: "10.10.2010"
+        dates:
+          - "2010-10-10"
+        anchor_date: "2010-10-10"
+      - sub_id: K10_10
+        raw: "10.10.2010"
+        dates:
+          - "2010-10-10"
+        anchor_date: "2010-10-10"
+  - chapter_id: K11
+    title: "Spatiantes perierunt"
+    subchapters:
+      - sub_id: K11_01
+        raw: "11.10.2010"
+        dates:
+          - "2010-10-11"
+        anchor_date: "2010-10-11"
+      - sub_id: K11_02
+        raw: "Montag 11.10.2010 bis Sonntag 17.10.2010"
+        dates:
+          - "2010-10-11"
+          - "2010-10-17"
+        anchor_date: "2010-10-11"
+      - sub_id: K11_03
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_04
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_05
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_06
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_07
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_08
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_09
+        raw: "17.10.2010"
+        dates:
+          - "2010-10-17"
+        anchor_date: "2010-10-17"
+      - sub_id: K11_10
+        raw: "Sonntag 17.10.2010 bis Montag 16.1.2011"
+        dates:
+          - "2010-10-17"
+          - "2011-01-16"
+        anchor_date: "2010-10-17"
+  - chapter_id: K12
+    title: "Salvatio ab Insula Amoris Aeterni"
+    subchapters:
+      - sub_id: K12_01
+        raw: "06.03.2011"
+        dates:
+          - "2011-03-06"
+        anchor_date: "2011-03-06"
+      - sub_id: K12_02
+        raw: "06.03.2011"
+        dates:
+          - "2011-03-06"
+        anchor_date: "2011-03-06"
+      - sub_id: K12_03
+        raw: "Faschingssonntag 6.3.2011 bis Mittwoch 16.3.2011"
+        dates:
+          - "2011-03-06"
+          - "2011-03-16"
+        anchor_date: "2011-03-06"
+      - sub_id: K12_04
+        raw: "20.03.2011"
+        dates:
+          - "2011-03-20"
+        anchor_date: "2011-03-20"
+      - sub_id: K12_05
+        raw: "20.03.2011"
+        dates:
+          - "2011-03-20"
+        anchor_date: "2011-03-20"
+      - sub_id: K12_06
+        raw: "20.03.2011"
+        dates:
+          - "2011-03-20"
+        anchor_date: "2011-03-20"
+      - sub_id: K12_07
+        raw: "20.03.2011"
+        dates:
+          - "2011-03-20"
+        anchor_date: "2011-03-20"
+      - sub_id: K12_08
+        raw: "20.03.2011"
+        dates:
+          - "2011-03-20"
+        anchor_date: "2011-03-20"
+      - sub_id: K12_09
+        raw: "20.03.2011"
+        dates:
+          - "2011-03-20"
+        anchor_date: "2011-03-20"
+      - sub_id: K12_10
+        raw: "Karfreitag 22.4.2011 , Ostersamstag 23.4.2011"
+        dates:
+          - "2011-04-22"
+          - "2011-04-23"
+        anchor_date: "2011-04-22"
+  - chapter_id: K13
+    title: "Finis Post Portam"
+    subchapters:
+      - sub_id: K13_01
+        raw: "14.01.2012"
+        dates:
+          - "2012-01-14"
+        anchor_date: "2012-01-14"
+      - sub_id: K13_02
+        raw: "15.01.2012"
+        dates:
+          - "2012-01-15"
+        anchor_date: "2012-01-15"
+      - sub_id: K13_03
+        raw: "15.01.2012"
+        dates:
+          - "2012-01-15"
+        anchor_date: "2012-01-15"
+      - sub_id: K13_04
+        raw: "15.01.2012"
+        dates:
+          - "2012-01-15"
+        anchor_date: "2012-01-15"
+      - sub_id: K13_05
+        raw: "16.01.2012"
+        dates:
+          - "2012-01-16"
+        anchor_date: "2012-01-16"
+      - sub_id: K13_06
+        raw: "16.01.2012"
+        dates:
+          - "2012-01-16"
+        anchor_date: "2012-01-16"
+      - sub_id: K13_07
+        raw: "16.01.2012"
+        dates:
+          - "2012-01-16"
+        anchor_date: "2012-01-16"
+      - sub_id: K13_08
+        raw: "17.01.2012"
+        dates:
+          - "2012-01-17"
+        anchor_date: "2012-01-17"
+      - sub_id: K13_09
+        raw: "18.1.2012 bis 9.4.2012"
+        dates:
+          - "2012-01-18"
+          - "2012-04-09"
+        anchor_date: "2012-01-18"
+      - sub_id: K13_10
+        raw: "10.04.2012"
+        dates:
+          - "2012-04-10"
+        anchor_date: "2012-04-10"
+  - chapter_id: K14
+    title: "De Fuga et pugna"
+    subchapters:
+      - sub_id: K14_01
+        raw: "10.04.2012"
+        dates:
+          - "2012-04-10"
+        anchor_date: "2012-04-10"
+        focus: external
+      - sub_id: K14_02
+        raw: "Dienstag 24.4.2012 bis Mittwoch 9.1.2013"
+        dates:
+          - "2012-04-24"
+          - "2013-01-09"
+        anchor_date: "2012-04-24"
+        focus: group+external
+      - sub_id: K14_03
+        raw: "Donnerstag 10.1.2013 bis Sonntag 13.1.2013"
+        dates:
+          - "2013-01-10"
+          - "2013-01-13"
+        anchor_date: "2013-01-10"
+      - sub_id: K14_04
+        raw: "14.01.2013"
+        dates:
+          - "2013-01-14"
+        anchor_date: "2013-01-14"
+      - sub_id: K14_05
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+      - sub_id: K14_06
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+      - sub_id: K14_07
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+      - sub_id: K14_08
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+      - sub_id: K14_09
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+      - sub_id: K14_10
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+  - chapter_id: K15
+    title: "Clausula et Transcessio"
+    subchapters:
+      - sub_id: K15_01
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+      - sub_id: K15_02
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_03
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_04
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_05
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_06
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_07
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_08
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_09
+        raw: "15.01.2013"
+        dates:
+          - "2013-01-15"
+        anchor_date: "2013-01-15"
+        focus: external
+      - sub_id: K15_10
+        raw: "16.01.2013"
+        dates:
+          - "2013-01-16"
+        anchor_date: "2013-01-16"
+        focus: external
