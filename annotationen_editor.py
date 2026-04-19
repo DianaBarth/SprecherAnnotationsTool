@@ -2,11 +2,16 @@ import os
 import re
 import json
 import tkinter as tk
+import ast
+import yaml
+import unicodedata
+from datetime import date
 from tkinter import ttk, messagebox
 from reportlab.pdfgen import canvas as pdfcanvas
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
 from config_editor import register_custom_font
+
 
 def _anzeige_name(wert: str) -> str:
     """
@@ -239,16 +244,35 @@ class AnnotationenEditor(ttk.Frame):
         self.canvas.delete('all')
         self.renderer.positionen_zuruecksetzen()
 
-        # 🧠 Filter-Status an Renderer übergeben
         aktive_filter = [name for name, var in self.filter_vars.items() if var.get()]
         self.renderer.ignorierte_annotationen = set(a.lower() for a in aktive_filter)
         self.renderer.use_number_words = self.use_number_words_var.get()
-        
+
         for idx, json_dict in enumerate(self.json_dicts):
             naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
-            self.renderer.rendern(index=idx, gui_canvas=self.canvas, naechstes_dict_element=naechstes_element, dict_element=json_dict)
-            tag = f'token_{idx}'
-            self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
+            try:
+                print(
+                    f"[Editor] render token idx={idx} "
+                    f"token='{json_dict.get('token', '')}' "
+                    f"person='{json_dict.get(config.KI_AUFGABEN.get(3, ''), '')}'"
+                )
+
+                self.renderer.rendern(
+                    index=idx,
+                    gui_canvas=self.canvas,
+                    naechstes_dict_element=naechstes_element,
+                    dict_element=json_dict
+                )
+
+                tag = f'token_{idx}'
+                self.canvas.tag_bind(tag, '<Button-1>', lambda e, i=idx: self._on_token_click(i))
+
+            except Exception as e:
+                print(f"[Editor] FEHLER beim Rendern von Token idx={idx} token='{json_dict.get('token', '')}': {e}")
+                import traceback
+                traceback.print_exc()
+                break
+
 
     def _on_token_click(self, idx):
         print(f"Token {idx} wurde angeklickt.")
@@ -257,8 +281,7 @@ class AnnotationenEditor(ttk.Frame):
         json_dict = self.json_dicts[idx]
         self.renderer.markiere_token_mit_rahmen(self.canvas, idx)
 
-        basename = os.path.basename(self.dateipfad_json)
-        self.kapitel_name = basename.replace("_gesamt.json", "") 
+        self.kapitel_name = self.kapitel_liste[self.current_hauptkapitel_index]
 
         print(f"Vor dem Löschen Widgets im annotation_frame: {[type(c) for c in self.annotation_frame.winfo_children()]}")
         # Alle Widgets außer default_label löschen
@@ -276,13 +299,14 @@ class AnnotationenEditor(ttk.Frame):
         ).grid(row=0, column=0, sticky='w', pady=5, padx=5, columnspan=2)
         
         row_index = 1
+        personen_werte = self._lade_personen_fuer_aktuellen_abschnitt()
+
         for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
             label = ttk.Label(self.annotation_frame, text=aufgabenname)
             label.grid(row=row_index, column=0, sticky='w', padx=5, pady=2)
 
             if aufgabennr == 3:
-                zusatzinfo = self.kapitel_config.kapitel_daten.get(self.kapitel_name, {}).get("ZusatzInfo_3", "")
-                werte = re.findall(r"'(.*?)'", zusatzinfo)
+                werte = personen_werte[:]
             else:
                 werte = [e["name"] for e in config.AUFGABEN_ANNOTATIONEN.get(aufgabennr, []) if e["name"]]
 
@@ -333,8 +357,10 @@ class AnnotationenEditor(ttk.Frame):
                     else:
                         print("Kein vollständiges Start/Ende-Paar gefunden – kein Teilrendering möglich.")
                 else:
-                    # Alle anderen Annotationen werden einzeln neu gezeichnet
-                    self.renderer.annotation_aendern(self.canvas, idx, aufgabenname, json_dict)
+                    # Vollständig neu zeichnen, weil Teil-Update bei dynamischen Personen
+                    # zu inkonsistenten / verschwundenen Tokens führen kann.
+                    self._zeichne_alle_tokens()
+                    self._on_token_click(idx)
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
@@ -421,3 +447,234 @@ class AnnotationenEditor(ttk.Frame):
             )
         c.save()
         print(f"[PDF Export] gespeichert unter: {pfad}")
+
+
+    def _parse_iso_date(self, value):
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(str(value))
+        except Exception:
+            return None
+
+    def _datum_in_perioden(self, stichtag, perioden):
+        if not stichtag or not perioden:
+            return False
+
+        for p in perioden:
+            start = self._parse_iso_date(p.get("entry"))
+            ende = self._parse_iso_date(p.get("exit"))
+
+            if start and stichtag < start:
+                continue
+            if ende and stichtag > ende:
+                continue
+            return True
+
+        return False
+
+
+    def _lade_yaml_datei(self, pfad):
+        print(f"[AnnotationenEditor] Lade YAML: {pfad}")
+
+        if not pfad:
+            print("[AnnotationenEditor] YAML-Pfad ist leer.")
+            return {}
+
+        if not os.path.exists(pfad):
+            print(f"[AnnotationenEditor] YAML-Datei existiert nicht: {pfad}")
+            return {}
+
+        try:
+            with open(pfad, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            print(f"[AnnotationenEditor] YAML geladen. Top-Level-Keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+            return data
+        except Exception as e:
+            print(f"[AnnotationenEditor] YAML konnte nicht geladen werden: {pfad} -> {e}")
+            return {}#
+        
+    def _hole_personen_mapping(self):
+        mapping = getattr(config, "PERSONEN_YAML_MAPPING", {})
+        if isinstance(mapping, dict):
+            return mapping
+
+        # Falls config.py den Wert als String enthält
+        try:
+            return ast.literal_eval(mapping)
+        except Exception:
+            print("[AnnotationenEditor] PERSONEN_YAML_MAPPING konnte nicht geparst werden.")
+            return {}
+
+    def _lade_personen_aus_kapitel_config(self, kapitelname):
+        zusatzinfo = self.kapitel_config.kapitel_daten.get(kapitelname, {}).get("ZusatzInfo_3", "")
+        if not zusatzinfo:
+            return []
+
+        if isinstance(zusatzinfo, list):
+            return [str(x).strip() for x in zusatzinfo if str(x).strip()]
+
+        if isinstance(zusatzinfo, str):
+            werte = re.findall(r"'(.*?)'", zusatzinfo)
+            if werte:
+                return [w.strip() for w in werte if w.strip()]
+
+            # Fallback: komma-/semicolon-getrennte Werte
+            teile = re.split(r"[;,]", zusatzinfo)
+            return [t.strip() for t in teile if t.strip()]
+
+        return []
+
+    def _hole_anchor_date_fuer_aktuellen_abschnitt(self):
+        chapters_pfad = getattr(config, "PERSONEN_CHAPTERS_DATEI", "")
+        chapters_data = self._lade_yaml_datei(chapters_pfad)
+        mapping = self._hole_personen_mapping()
+
+        chapter_liste_key = mapping.get("chapter_liste", "chapters")
+        subchapter_liste_key = mapping.get("subchapter_liste", "subchapters")
+        subchapter_datum_key = mapping.get("subchapter_datum_feld", "anchor_date")
+
+        kapitel_liste = chapters_data.get(chapter_liste_key, [])
+        if not isinstance(kapitel_liste, list):
+            print(f"[AnnotationenEditor] chapters_data['{chapter_liste_key}'] ist keine Liste.")
+            return None
+
+        aktueller_titel = self.kapitel_liste[self.current_hauptkapitel_index]
+        aktueller_titel_norm = self._normalisiere_kapitel_titel(aktueller_titel)
+        aktueller_abschnitt_idx = self.current_abschnitt_index
+
+        print(f"[AnnotationenEditor] Suche anchor_date für Kapitel='{aktueller_titel}' | norm='{aktueller_titel_norm}' | Abschnitt={aktueller_abschnitt_idx}")
+
+        print("[AnnotationenEditor] Verfügbare YAML-Titel:")
+        for chapter in kapitel_liste:
+            yaml_titel = chapter.get("title", "")
+            yaml_titel_norm = self._normalisiere_kapitel_titel(yaml_titel)
+            print(f"    YAML title='{yaml_titel}' | norm='{yaml_titel_norm}'")
+
+        # 1. Exakter Match auf normalisierten title
+        for chapter in kapitel_liste:
+            yaml_titel = chapter.get("title", "")
+            yaml_titel_norm = self._normalisiere_kapitel_titel(yaml_titel)
+
+            if yaml_titel_norm == aktueller_titel_norm:
+                subchapters = chapter.get(subchapter_liste_key, [])
+                if 0 <= aktueller_abschnitt_idx < len(subchapters):
+                    anchor = subchapters[aktueller_abschnitt_idx].get(subchapter_datum_key)
+                    print(f"[AnnotationenEditor] Treffer über Titel: '{yaml_titel}' -> anchor_date={anchor}")
+                    return anchor
+                else:
+                    print(f"[AnnotationenEditor] Titel-Match gefunden, aber Abschnittsindex {aktueller_abschnitt_idx} außerhalb von {len(subchapters)} Subchaptern.")
+
+        # 2. Teilmatch
+        for chapter in kapitel_liste:
+            yaml_titel = chapter.get("title", "")
+            yaml_titel_norm = self._normalisiere_kapitel_titel(yaml_titel)
+
+            if (
+                aktueller_titel_norm and yaml_titel_norm and
+                (aktueller_titel_norm in yaml_titel_norm or yaml_titel_norm in aktueller_titel_norm)
+            ):
+                subchapters = chapter.get(subchapter_liste_key, [])
+                if 0 <= aktueller_abschnitt_idx < len(subchapters):
+                    anchor = subchapters[aktueller_abschnitt_idx].get(subchapter_datum_key)
+                    print(f"[AnnotationenEditor] Treffer über Teilmatch: '{yaml_titel}' -> anchor_date={anchor}")
+                    return anchor
+                else:
+                    print(f"[AnnotationenEditor] Teilmatch gefunden, aber Abschnittsindex {aktueller_abschnitt_idx} außerhalb von {len(subchapters)} Subchaptern.")
+
+        print("[AnnotationenEditor] Kein anchor_date gefunden.")
+        return None
+
+
+    def _lade_personen_aus_yaml(self):
+        chars_pfad = getattr(config, "PERSONEN_CHARAKTERE_DATEI", "")
+        chars_data = self._lade_yaml_datei(chars_pfad)
+        mapping = self._hole_personen_mapping()
+
+        relevante_perioden = mapping.get("relevante_perioden", ["group_periods", "external_periods"])
+        charakter_gruppen = mapping.get(
+            "charakter_gruppen",
+            ["children", "internal_children", "external_children", "external_adults", "internal_adults"]
+        )
+        id_feld = mapping.get("id_feld", "id")
+        name_feld = mapping.get("name_feld", "name")
+
+        anchor_date_str = self._hole_anchor_date_fuer_aktuellen_abschnitt()
+        stichtag = self._parse_iso_date(anchor_date_str)
+
+        print(f"[AnnotationenEditor] anchor_date_str={anchor_date_str} | stichtag={stichtag}")
+
+        if not stichtag:
+            print("[AnnotationenEditor] Kein anchor_date für aktuellen Abschnitt gefunden.")
+            return []
+
+        kandidaten = []
+
+        for gruppenname in charakter_gruppen:
+            eintraege = chars_data.get(gruppenname, [])
+            if not isinstance(eintraege, list):
+                continue
+
+            for char_data in eintraege:
+                aktiv = False
+                for perioden_key in relevante_perioden:
+                    perioden = char_data.get(perioden_key, [])
+                    if self._datum_in_perioden(stichtag, perioden):
+                        aktiv = True
+                        break
+
+                if not aktiv:
+                    continue
+
+                name = char_data.get(name_feld) or char_data.get(id_feld)
+                if name:
+                    kandidaten.append(str(name).strip())
+
+        eindeutig = []
+        gesehen = set()
+        for k in kandidaten:
+            key = k.casefold()
+            if key not in gesehen:
+                gesehen.add(key)
+                eindeutig.append(k)
+
+        print(f"[AnnotationenEditor] Personen aus YAML: {eindeutig}")
+        return eindeutig
+    
+    def _lade_personen_fuer_aktuellen_abschnitt(self):
+        quelle = getattr(config, "PERSONEN_QUELLE", "kapitel_config")
+
+        if quelle == "yaml":
+            personen = self._lade_personen_aus_yaml()
+            if personen:
+                return personen
+            print("[AnnotationenEditor] YAML-Personen leer, falle zurück auf kapitel_config.")
+
+        kapitelname = self.kapitel_liste[self.current_hauptkapitel_index]
+        return self._lade_personen_aus_kapitel_config(kapitelname)
+    
+    def _normalisiere_kapitel_titel(self, text):
+        if not text:
+            return ""
+
+        text = str(text).strip().lower()
+
+        # Unicode vereinheitlichen
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+
+        # Typische Trenner vereinheitlichen
+        text = text.replace("–", "-").replace("—", "-")
+        text = text.replace(":", " ")
+        text = text.replace(".", " ")
+        text = text.replace("_", " ")
+        text = text.replace("-", " ")
+
+        # Führende römische Kapitelnummern entfernen:
+        # z.B. "I scelus...", "XII scelus..."
+        text = re.sub(r"^\s*[ivxlcdm]+\s+", "", text, flags=re.IGNORECASE)
+
+        # Mehrfach-Leerzeichen zusammenziehen
+        text = re.sub(r"\s+", " ", text).strip()
+
+        return text

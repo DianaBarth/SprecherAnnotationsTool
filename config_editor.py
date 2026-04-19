@@ -811,9 +811,33 @@ class ConfigEditor(ttk.Frame):
         self.eingabe_ordner = eingabe_ordner
         self.notebook.add(self, text="⚙️ Einstellungen")
 
-        self.entries = {}
+        self.entries = {}  
+        self.personen_widgets = {}     
         self._build_widgets()
         self.notebook.hide(self)
+
+    def _update_personen_quelle_ui(self, event=None):
+        quelle_widget = self.entries.get("PERSONEN_QUELLE")
+        if quelle_widget is None:
+            return
+
+        quelle = quelle_widget.get()
+
+        yaml_aktiv = (quelle == "yaml")
+
+        for key in ("PERSONEN_CHAPTERS_DATEI", "PERSONEN_CHARAKTERE_DATEI"):
+            widgets = self.personen_widgets.get(key, {})
+            entry = widgets.get("entry")
+            button = widgets.get("button")
+
+            if entry is not None:
+                entry.configure(state="normal" if yaml_aktiv else "disabled")
+            if button is not None:
+                button.configure(state="normal" if yaml_aktiv else "disabled")
+
+        mapping_widget = self.personen_widgets.get("PERSONEN_YAML_MAPPING", {}).get("text")
+        if mapping_widget is not None:
+            mapping_widget.configure(state="normal" if yaml_aktiv else "disabled")
 
     def get_standard_font_path(self):
         system = platform.system()
@@ -954,19 +978,28 @@ class ConfigEditor(ttk.Frame):
             col_label = base_col
             col_entry = base_col + 1
 
+            actual_val = getattr(config, name, val)
+
             if name.startswith("FARBE_"):
                 hex_color = "#ffffff"
                 rgb_val = (255, 255, 255)
                 try:
-                    v = val.strip()
-                    if v.startswith("#"):
-                        hex_color = v
-                        rgb_val = tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
+                    if isinstance(actual_val, tuple) and len(actual_val) == 3:
+                        rgb_val = tuple(int(c) for c in actual_val)
+                        hex_color = '#%02x%02x%02x' % rgb_val
+                    elif isinstance(actual_val, str) and actual_val.startswith("#") and len(actual_val) == 7:
+                        hex_color = actual_val
+                        rgb_val = tuple(int(actual_val[i:i+2], 16) for i in (1, 3, 5))
                     else:
-                        t = ast.literal_eval(v)
-                        if isinstance(t, tuple) and len(t) == 3:
-                            rgb_val = tuple(int(c) for c in t)
-                            hex_color = '#%02x%02x%02x' % rgb_val
+                        v = str(actual_val).strip()
+                        if v.startswith("#"):
+                            hex_color = v
+                            rgb_val = tuple(int(hex_color[i:i+2], 16) for i in (1, 3, 5))
+                        else:
+                            t = ast.literal_eval(v)
+                            if isinstance(t, tuple) and len(t) == 3:
+                                rgb_val = tuple(int(c) for c in t)
+                                hex_color = '#%02x%02x%02x' % rgb_val
                 except Exception:
                     pass
 
@@ -994,36 +1027,142 @@ class ConfigEditor(ttk.Frame):
                     ToolTip(btn, comment)
 
             elif name.startswith("SCHRIFTART_"):
-                available_fonts = tkfont.families()
-                fontname = val.strip('"\'')
+                fontname = str(actual_val).strip('"\'')
                 lbl = ttk.Label(self.config_frame, text=name, font=(fontname, 10))
                 lbl.grid(row=row, column=col_label, sticky="w", padx=10, pady=2)
 
-                fd = FontDropdown(self.config_frame, fonts=None, initial_font=fontname)
+                fd = FontDropdown(self.config_frame, initial_font=fontname)
                 fd.set(fontname)
                 fd.grid(row=row, column=col_entry, sticky="ew", padx=5)
+
                 if comment:
+                    ToolTip(lbl, comment)
                     fd.tooltip = ToolTip(fd, comment)
+
                 self.entries[name] = fd
+
+            elif name == "PERSONEN_QUELLE":
+            
+                lbl = ttk.Label(self.config_frame, text=name)
+                lbl.grid(row=row, column=col_label, sticky="w", padx=10, pady=2)
+
+                combo = ttk.Combobox(
+                    self.config_frame,
+                    values=["kapitel_config", "yaml"],
+                    state="readonly",
+                    width=30
+                )
+                combo.set(str(actual_val))
+                combo.grid(row=row, column=col_entry, sticky="ew", padx=5)
+
+                if comment:
+                    ToolTip(lbl, comment)
+                    combo.tooltip = ToolTip(combo, comment)
+
+                self.entries[name] = combo
+                combo.bind("<<ComboboxSelected>>", self._update_personen_quelle_ui)
+
+            elif name in ("PERSONEN_CHAPTERS_DATEI", "PERSONEN_CHARAKTERE_DATEI"):
+                lbl = ttk.Label(self.config_frame, text=name)
+                lbl.grid(row=row, column=col_label, sticky="w", padx=10, pady=2)
+
+                pfad_frame = ttk.Frame(self.config_frame)
+                pfad_frame.grid(row=row, column=col_entry, sticky="ew", padx=5)
+                pfad_frame.columnconfigure(0, weight=1)
+
+                e = ttk.Entry(pfad_frame, width=30)
+                e.insert(0, str(actual_val))
+                e.grid(row=0, column=0, sticky="ew")
+
+                if name == "PERSONEN_CHAPTERS_DATEI":
+                    browse_title = "chapters.yaml auswählen"
+                else:
+                    browse_title = "charakters.yaml auswählen"
+
+                btn_browse = ttk.Button(
+                    pfad_frame,
+                    text="...",
+                    width=3,
+                    command=lambda entry=e, title=browse_title: self._browse_file_into_entry(
+                        entry,
+                        title=title,
+                        filetypes=[("YAML Dateien", "*.yaml *.yml"), ("Alle Dateien", "*.*")]
+                    )
+                )
+                btn_browse.grid(row=0, column=1, padx=(5, 0))
+
+                if comment:
+                    ToolTip(lbl, comment)
+                    e.tooltip = ToolTip(e, comment)
+                    ToolTip(btn_browse, comment)
+
+                self.entries[name] = e
+                
+                self.personen_widgets[name] = {
+                    "entry": e,
+                    "button": btn_browse
+                }
+
+            elif name == "PERSONEN_YAML_MAPPING":
+                from pprint import pformat
+
+                lbl = ttk.Label(self.config_frame, text=name)
+                lbl.grid(row=row, column=col_label, sticky="nw", padx=10, pady=2)
+
+                txt = tk.Text(self.config_frame, height=12, width=40, wrap="word")
+                if isinstance(actual_val, (dict, list, tuple)):
+                    txt.insert("1.0", pformat(actual_val, width=80, sort_dicts=False))
+                else:
+                    txt.insert("1.0", str(actual_val))
+
+                txt.grid(row=row, column=col_entry, sticky="ew", padx=5, pady=2)
+
+                if comment:
+                    ToolTip(lbl, comment)
+                    txt.tooltip = ToolTip(txt, comment)
+
+                self.entries[name] = txt
+
+                self.personen_widgets[name] = {
+                    "text": txt
+                }
 
             else:
                 lbl = ttk.Label(self.config_frame, text=name)
                 lbl.grid(row=row, column=col_label, sticky="w", padx=10, pady=2)
 
                 e = ttk.Entry(self.config_frame, width=30)
-                e.insert(0, val)
+                e.insert(0, str(actual_val))
                 e.grid(row=row, column=col_entry, sticky="ew", padx=5)
 
                 if comment:
                     ToolTip(lbl, comment)
-                    ToolTip(e, comment)
+                    e.tooltip = ToolTip(e, comment)
 
                 self.entries[name] = e
+            
+
+            
 
             paar_index += 1
             if paar_index > 2:
                 paar_index = 0
                 row += 1
+                
+        self._update_personen_quelle_ui()
+
+
+    def _get_widget_value(self, widget):
+        if widget is None:
+            return None
+
+        if isinstance(widget, tk.Text):
+            return widget.get("1.0", tk.END).strip()
+
+        if isinstance(widget, FontDropdown):
+            return widget.get()
+
+        return widget.get()
 
     def _build_aufgaben_editor(self):
         for widget in self.aufgaben_frame.winfo_children():
@@ -1052,11 +1191,25 @@ class ConfigEditor(ttk.Frame):
         if hasattr(self, "notebook"):
             self.notebook.hide(self)
 
+    def _browse_file_into_entry(self, entry_widget, title="Datei auswählen", filetypes=None):
+        if filetypes is None:
+            filetypes = [("Alle Dateien", "*.*")]
+
+        datei = filedialog.askopenfilename(
+            title=title,
+            filetypes=filetypes
+        )
+        if datei:
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, datei)
+
     def _load(self):
         import re
         import shutil
         import importlib.util
         from tkinter import messagebox, filedialog
+        import tkinter as tk
+        from tkinter import ttk
 
         lokal_ordner = "Eingabe"
         global_ordner = config.GLOBALORDNER.get("Eingabe", "Eingabe")
@@ -1085,7 +1238,7 @@ class ConfigEditor(ttk.Frame):
             messagebox.showerror("Fehler", f"Ausgewählte Datei konnte nicht geladen werden:\n{e}")
             return
 
-        # Pflichtfelder aus der Default-Konfiguration
+        # Pflichtfelder gegen default_config prüfen
         default_attrs = {k for k in dir(default_mod) if not k.startswith("_")}
         user_attrs = {k for k in dir(user_mod) if not k.startswith("_")}
         fehlend = default_attrs - user_attrs
@@ -1098,70 +1251,172 @@ class ConfigEditor(ttk.Frame):
         global_config_path = os.path.join(global_ordner, "config.py")
 
         try:
+            os.makedirs(lokal_ordner, exist_ok=True)
+            os.makedirs(global_ordner, exist_ok=True)
             shutil.copy(datei, lokal_config_path)
             shutil.copy(datei, global_config_path)
         except Exception as e:
             messagebox.showerror("Fehler", f"Konnte config.py nicht kopieren:\n{e}")
             return
 
-        # Kommentare aus der Datei auslesen (für ToolTips)
+        # Kommentare aus Datei auslesen (optional für ToolTips)
         kommentare = {}
         try:
             with open(datei, "r", encoding="utf-8") as f:
                 zeilen = f.readlines()
-                start = 0
-                for i, line in enumerate(zeilen):
-                    if not line.strip().startswith("#") and line.strip() != "":
-                        start = i
-                        break
-                for line in zeilen[start:]:
-                    line = line.rstrip("\n")
-                    match = re.match(r"^(\w+)\s*=\s*(.+?)\t#\s*(.+)$", line)
-                    if match:
-                        name = match.group(1)
-                        kommentar = match.group(3)
-                        kommentare[name] = kommentar
+
+            start = 0
+            for i, line in enumerate(zeilen):
+                if not line.strip().startswith("#") and line.strip() != "":
+                    start = i
+                    break
+
+            for line in zeilen[start:]:
+                line = line.rstrip("\n")
+                match = re.match(r"^(\w+)\s*=\s*(.+?)\t#\s*(.+)$", line)
+                if match:
+                    name = match.group(1)
+                    kommentar = match.group(3)
+                    kommentare[name] = kommentar
         except Exception:
             kommentare = {}
 
-        # Werte in self.entries übernehmen und ggf. ToolTip setzen
-        for n, e in self.entries.items():
-            if e is None:
-                continue  # Widget nicht vorhanden
-            val = getattr(user_mod, n, None)
-            if val is not None:
-                e.delete(0, "end")
-                e.insert(0, str(val))
+        # NUTZE_KI setzen
+        try:
+            if hasattr(user_mod, "NUTZE_KI"):
+                self.nutzeKI_var.set(bool(getattr(user_mod, "NUTZE_KI")))
+        except Exception as e:
+            print(f"[ConfigEditor._load] NUTZE_KI konnte nicht gesetzt werden: {e}")
+
+        # Normale Widgets befüllen
+        for n, widget in self.entries.items():
+            if widget is None:
+                continue
+
+            if not hasattr(user_mod, n):
+                continue
+
+            val = getattr(user_mod, n)
+
+            try:
+                # tk.Text
+                if isinstance(widget, tk.Text):
+                    from pprint import pformat
+                    widget.delete("1.0", tk.END)
+                    if isinstance(val, (dict, list, tuple)):
+                        widget.insert("1.0", pformat(val, width=80, sort_dicts=False))
+                    else:
+                        widget.insert("1.0", str(val))
+
+                # FontDropdown
+                elif isinstance(widget, FontDropdown):
+                    widget.set(str(val))
+
+                # Combobox
+                elif isinstance(widget, ttk.Combobox):
+                    widget.set(str(val))
+
+                # Normale Entry-Felder
+                else:
+                    widget.delete(0, tk.END)
+                    if isinstance(val, (dict, list, tuple)):
+                        widget.insert(0, repr(val))
+                    else:
+                        widget.insert(0, str(val))
+
                 if n in kommentare:
-                    ToolTip(e, kommentare[n])
+                    try:
+                        widget.tooltip = ToolTip(widget, kommentare[n])
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                print(f"[ConfigEditor._load] Feld '{n}' konnte nicht geladen werden: {e}")
+
+        # Farbbuttons separat setzen
+        for n, btn in self.color_buttons.items():
+            if not hasattr(user_mod, n):
+                continue
+
+            try:
+                val = getattr(user_mod, n)
+
+                rgb_val = (255, 255, 255)
+                hex_color = "#ffffff"
+
+                if isinstance(val, tuple) and len(val) == 3:
+                    rgb_val = tuple(int(c) for c in val)
+                    hex_color = '#%02x%02x%02x' % rgb_val
+                elif isinstance(val, str) and val.startswith("#") and len(val) == 7:
+                    hex_color = val
+                    rgb_val = tuple(int(val[i:i+2], 16) for i in (1, 3, 5))
+
+                btn.config(bg=hex_color)
+                btn.color_value = rgb_val
+
+                if n in kommentare:
+                    try:
+                        btn.tooltip = ToolTip(btn, kommentare[n])
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                print(f"[ConfigEditor._load] Farbe '{n}' konnte nicht geladen werden: {e}")
 
         # KI-Aufgaben und Annotationen setzen
-        self.ki_aufgaben_editor.set_aufgaben(getattr(user_mod, "KI_AUFGABEN"))
-        self.ki_aufgaben_editor.set_annotationen(getattr(user_mod, "AUFGABEN_ANNOTATIONEN"))
+        try:
+            if hasattr(user_mod, "KI_AUFGABEN"):
+                self.ki_aufgaben_editor.set_aufgaben(getattr(user_mod, "KI_AUFGABEN"))
+        except Exception as e:
+            print(f"[ConfigEditor._load] KI_AUFGABEN konnten nicht gesetzt werden: {e}")
 
-        # WICHTIG: GUI aktualisieren
-        if hasattr(self, "build_widget") and callable(self.build_widget):
-            self.build_widget()
+        try:
+            if hasattr(user_mod, "AUFGABEN_ANNOTATIONEN"):
+                self.ki_aufgaben_editor.set_annotationen(getattr(user_mod, "AUFGABEN_ANNOTATIONEN"))
+        except Exception as e:
+            print(f"[ConfigEditor._load] AUFGABEN_ANNOTATIONEN konnten nicht gesetzt werden: {e}")
+
+        # Prompt-Buttons passend zu NUTZE_KI ein-/ausblenden
+        try:
+            self.on_nutzeKI_changed()
+        except Exception as e:
+            print(f"[ConfigEditor._load] on_nutzeKI_changed fehlgeschlagen: {e}")
+
+        # Optional config-Modul neu laden
+        try:
+            importlib.reload(config)
+        except Exception as e:
+            messagebox.showwarning("Warnung", f"config-Modul konnte nicht neu geladen werden:\n{e}")
+
+        # Dashboard aktualisieren
+        try:
+            if hasattr(self.dashboard, "lade_aufgaben_checkboxes"):
+                self.dashboard.lade_aufgaben_checkboxes()
+        except Exception as e:
+            print(f"[ConfigEditor._load] lade_aufgaben_checkboxes fehlgeschlagen: {e}")
 
         messagebox.showinfo("Erfolg", "Config wurde geladen und GUI aktualisiert.")
 
+        try:
+            self._update_personen_quelle_ui()
+        except Exception as e:
+            print(f"[ConfigEditor._load] _update_personen_quelle_ui fehlgeschlagen: {e}")
 
     def _save(self):
-    
         header_block = [
             "# ---------------------------------------------",
             f"# Konfigurationsdatei (config.py), Automatisch generiert am {datetime.now().isoformat()}",
             "# ---------------------------------------------",
             "",
         ]
+
         ki_aufgaben_dict = self.ki_aufgaben_editor.get_aufgaben()
         aufgaben_annotationen_dict = self.ki_aufgaben_editor.get_annotationen()
-        globalordner_str = {k: str(v) for k, v in getattr(config, 'GLOBALORDNER', {}).items()}
+        globalordner_str = {k: str(v) for k, v in getattr(config, "GLOBALORDNER", {}).items()}
 
-        # Headerblock als Start
         lines = header_block[:]
 
-        # Variablen-Definitionen anfügen
+        # Standard-Block am Anfang der Config
         lines += [
             f"GLOBALORDNER = {repr(globalordner_str)}\t# Ordnerstruktur für Ein- und Ausgabe",
             "",
@@ -1171,61 +1426,78 @@ class ConfigEditor(ttk.Frame):
             "",
         ]
 
-        # Einträge aus self.eintraege verarbeiten (Kommentare, Variablen)
+        # Restliche Config-Einträge
         for eintrag in self.eintraege:
             if eintrag[0] == "__GROUP__":
-                # Leerzeile vor Gruppenüberschrift (außer am Anfang)
                 if len(lines) > 0 and lines[-1] != "":
                     lines.append("")
                 gruppe = eintrag[1]
                 lines.append(f"# {gruppe}")
-            else:
-                name, val, comment = eintrag
-                e = self.entries.get(name, None)  # zuerst e definieren
+                continue
 
-                 # NEU: Behandlung für Schriftart-Comboboxen
-                if name.startswith("SCHRIFTART_") and e is not None and isinstance(e, FontDropdown):
-                    selected_font  = e.get()  # FontDropdown.get() liefert String
-                    val_repr = repr(selected_font )
-                elif e is not None:
-                    val_str = e.get()
-                    try:
-                        val_eval = ast.literal_eval(val_str)
-                        val_repr = repr(val_eval)
-                    except Exception:
-                        val_repr = repr(val_str)
+            name, val, comment = eintrag
 
-                # Farben ans Ende verschieben, daher überspringen
-                if name.startswith("FARBE_"):
-                    continue
-                else:
-                    if name in self.entries and self.entries[name] is not None:                        
-                        val_str = e.get()
+            # Diese Felder wurden oben schon geschrieben oder werden manuell später ergänzt
+            if name in (
+                "GLOBALORDNER",
+                "NUTZE_KI",
+                "KI_AUFGABEN",
+                "AUFGABEN_ANNOTATIONEN",
+                "START_Y_POS",
+                "MAX_ZEILENANZAHL",
+            ):
+                continue
+
+            # Farben separat am Ende schreiben, damit nichts doppelt auftaucht
+            if name.startswith("FARBE_"):
+                continue
+
+            widget = self.entries.get(name, None)
+
+            if widget is not None:
+                try:
+                    val_str = self._get_widget_value(widget)
+
+                    # Leere Strings sauber behandeln
+                    if val_str is None:
+                        val_repr = "None"
+                    else:
                         try:
                             val_eval = ast.literal_eval(val_str)
                             val_repr = repr(val_eval)
                         except Exception:
                             val_repr = repr(val_str)
-                        kommentar = getattr(e, "tooltip", None)
-                        kommentar_text = kommentar.text if kommentar else ""
-                        if kommentar_text:
-                            lines.append(f"{name} = {val_repr}\t# {kommentar_text}")
-                        else:
-                            lines.append(f"{name} = {val_repr}")
+
+                    kommentar = getattr(widget, "tooltip", None)
+                    kommentar_text = kommentar.text if kommentar else comment
+
+                    if kommentar_text:
+                        lines.append(f"{name} = {val_repr}\t# {kommentar_text}")
                     else:
-                        # Fallback auf Wert aus eintraege
-                        if comment:
-                            lines.append(f"{name} = {repr(val)}\t# {comment}")
-                        else:
-                            lines.append(f"{name} = {repr(val)}")
-        # Farben ans Ende, damit sie nicht doppelt vorkommen
+                        lines.append(f"{name} = {val_repr}")
+
+                except Exception as e:
+                    # Fallback auf ursprünglichen Wert aus self.eintraege
+                    print(f"[ConfigEditor._save] Fehler bei Feld '{name}': {e}")
+                    if comment:
+                        lines.append(f"{name} = {repr(val)}\t# {comment}")
+                    else:
+                        lines.append(f"{name} = {repr(val)}")
+            else:
+                # Kein Widget vorhanden -> alten Wert aus self.eintraege übernehmen
+                if comment:
+                    lines.append(f"{name} = {repr(val)}\t# {comment}")
+                else:
+                    lines.append(f"{name} = {repr(val)}")
+
+        # Farben gesammelt am Ende schreiben
         for n, btn in self.color_buttons.items():
             rgb = getattr(btn, "color_value", (255, 255, 255))
             lines.append(f"{n} = {repr(rgb)}")
 
-         # Nun manuell die beiden speziellen Zeilen hinzufügen
-        lines.append("") 
-        lines.append("") # optional Leerzeile
+        # Berechnete Spezialzeilen ganz ans Ende
+        lines.append("")
+        lines.append("")
         lines.append("START_Y_POS = MAX_SEITENHOEHE - OBERER_SEITENRAND  # Berechnet automatisch die Y-Position (maximale Höhe minus oberer Rand)")
         lines.append("MAX_ZEILENANZAHL = (MAX_SEITENHOEHE - OBERER_SEITENRAND - UNTERER_SEITENRAND) // ZEILENHOEHE  # Berechnung der maximalen Zeilenanzahl")
 
@@ -1236,22 +1508,22 @@ class ConfigEditor(ttk.Frame):
         lokal_datei = os.path.join(lokal_ordner, "config.py")
         tmp_datei = os.path.join(lokal_ordner, "_tmp_config.py")
 
-        # Falls Datei existiert und Header enthält, nur den Inhaltsteil ersetzen (ab Zeile 6)
+        # Wenn bereits generierte config.py existiert, Header optional erhalten
         if os.path.exists(lokal_datei):
             try:
                 with open(lokal_datei, "r", encoding="utf-8") as f:
                     alte_zeilen = f.readlines()
+
                 if any("Automatisch generiert am" in z for z in alte_zeilen[:5]):
-                    # Ersetze nur den Bereich nach dem Header
                     lines = alte_zeilen[:6] + lines[len(header_block):]
             except Exception:
-                pass  # Falls Datei gesperrt o.ä., einfach komplett neu schreiben
+                pass
 
-        # Schreibe temporäre Datei
+        # Temporär schreiben
         with open(tmp_datei, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
-        # Ersetze config.py mit temporärer Datei
+        # Atomar ersetzen
         try:
             os.replace(tmp_datei, lokal_datei)
         except PermissionError:
@@ -1262,26 +1534,35 @@ class ConfigEditor(ttk.Frame):
             except Exception as e:
                 messagebox.showerror("Fehler", f"config.py konnte nicht überschrieben werden:\n{e}")
                 return
+        except Exception as e:
+            messagebox.showerror("Fehler", f"config.py konnte nicht gespeichert werden:\n{e}")
+            return
 
-        # Optional global speichern, falls GLOBALORDNER anders als "Eingabe"
+        # Optional global speichern
         global_ordner = config.GLOBALORDNER.get("Eingabe", "Eingabe")
         if global_ordner != "Eingabe":
-            os.makedirs(global_ordner, exist_ok=True)
-            global_datei = os.path.join(global_ordner, "config.py")
-            with open(global_datei, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
+            try:
+                os.makedirs(global_ordner, exist_ok=True)
+                global_datei = os.path.join(global_ordner, "config.py")
+                with open(global_datei, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+            except Exception as e:
+                messagebox.showwarning("Warnung", f"Globale config.py konnte nicht gespeichert werden:\n{e}")
 
         messagebox.showinfo("Erfolg", "config.py gespeichert.")
 
-        # Versuche config-Modul neu zu laden
+        # Config-Modul neu laden
         try:
             importlib.reload(config)
         except Exception as e:
             messagebox.showwarning("Warnung", f"config-Modul konnte nicht neu geladen werden:\n{e}")
 
-        # Aktualisiere Dashboard, falls vorhanden
+        # Dashboard aktualisieren
         if hasattr(self.dashboard, "lade_aufgaben_checkboxes"):
-            self.dashboard.lade_aufgaben_checkboxes()
+            try:
+                self.dashboard.lade_aufgaben_checkboxes()
+            except Exception as e:
+                print(f"[ConfigEditor._save] lade_aufgaben_checkboxes fehlgeschlagen: {e}")
 
     def _reset(self):
         lokal_ordner = self.eingabe_ordner  # z.B. "./Eingabe"
@@ -1398,6 +1679,8 @@ class PromptEditor(tk.Toplevel):
         content = content.replace("{AufgabenNr}", str(self.aufgabennr))
         content = content.replace("{AufgabenName}", self.aufgabenname)
         return content
+
+
 
     def save(self):
         text = self.text.get("1.0", tk.END)

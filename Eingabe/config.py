@@ -1,14 +1,6 @@
 # ---------------------------------------------
-
-
-
-
-
-
-
-# Konfigurationsdatei (config.py), Automatisch generiert am 2025-10-03T18:11:26.427934
-
-
+# Konfigurationsdatei (config.py), Automatisch generiert am 2026-04-19T15:40:24.808736
+# ---------------------------------------------
 
 GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
 
@@ -75,6 +67,12 @@ GEDANKEN_STRICHMUSTER = (8, 4)
 LINIENBREITE_STANDARD = 3
 
 # Berechnungen basierend auf Layout
+
+# PERSONEN-ERKENNUNGSEINSTELLUNGEN
+PERSONEN_QUELLE = 'yaml'	# oder kapitel_connfig.json
+PERSONEN_CHAPTERS_DATEI = 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe/chapters.yaml'
+PERSONEN_CHARAKTERE_DATEI = 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe/charakters.yaml'
+PERSONEN_YAML_MAPPING = {'relevante_perioden': ['group_periods', 'external_periods'], 'ignorierte_perioden': ['orga_periods'], 'id_feld': 'id', 'name_feld': 'name', 'chapter_liste': 'chapters', 'subchapter_liste': 'subchapters', 'subchapter_id_feld': 'sub_id', 'subchapter_datum_feld': 'anchor_date', 'charakter_gruppen': ['children', 'internal_children', 'external_children', 'external_adults', 'internal_adults']}
 FARBE_STANDARD = (25, 25, 25)
 FARBE_STAUPAUSE = (204, 102, 0)
 FARBE_KOMB_PAUSE = (153, 0, 153)

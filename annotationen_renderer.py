@@ -7,6 +7,7 @@ import tkinter.font as tkFont
 import hashlib
 from collections import defaultdict
 import importlib
+import colorsys
 
 import Eingabe.config as config  # Importiere das komplette config-Modul
 from config_editor import ToolTip
@@ -381,67 +382,90 @@ class AnnotationRenderer:
                 self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
 
-
     def verwende_hartkodiert_fuer_annotation(self, feldname, annotationswert):
         print(f"Prüfe verwende_hartkodiert_fuer_annotation: feldname={feldname}, annotationswert={annotationswert}")
+
         if not feldname or not annotationswert:
             print("Kein feldname oder annotationswert angegeben, Rückgabe False")
             return False
 
-        annotationswert = annotationswert.lower()
+        feldname = str(feldname).lower()
+        annotationswert = str(annotationswert).lower()
+
         for aufgaben_id, annot_liste in config.AUFGABEN_ANNOTATIONEN.items():
             aufgabenname = config.KI_AUFGABEN.get(aufgaben_id)
-            if aufgabenname.lower() != feldname.lower():
+            if not aufgabenname:
                 continue
+
+            if str(aufgabenname).lower() != feldname:
+                continue
+
             for annot in annot_liste:
-                name = annot.get("name").lower()
+                raw_name = annot.get("name")
                 verwende = annot.get("VerwendeHartKodiert", False)
-                if name is None:
+
+                # Allgemeine Definition ohne Namen
+                if raw_name is None:
                     if verwende:
                         print(f"VerwendeHartKodiert=True für Feld {feldname} ohne Namen (allgemein) erkannt")
                         return True
-                elif name.lower() == annotationswert.lower() and verwende:
+                    continue
+
+                name = str(raw_name).lower()
+
+                if name == annotationswert and verwende:
                     print(f"VerwendeHartKodiert=True für Feld {feldname} mit Wert {annotationswert} erkannt")
                     return True
+
         print("Keine Hartkodierung aktiviert gefunden")
         return False
-      
+
+
+
     def schrift_holen(self, element=None):
         importlib.reload(config)
 
-        betonung = element.get("betonung", None) if element else None    
-        person = element.get("person", None) if element else None
-        annotation = element.get("annotation", "") if element else ""
+        element = element or {}
 
+        betonung = element.get("betonung", None)
+        annotation = element.get("annotation", "") or ""
+
+        # Personenfeld dynamisch aus Aufgabe 3 holen
+        personen_feldname = config.KI_AUFGABEN.get(3, "person")
+        person = element.get(personen_feldname, None)
+
+        # Fallback für alte Datenbestände
+        if not person:
+            person = element.get("person", None)
+
+        # Hartkodierung nur noch für Betonung relevant
         if betonung:
             verwende_betonung = self.verwende_hartkodiert_fuer_annotation("betonung", betonung)
         else:
             verwende_betonung = False
 
-        if person:
-            verwende_person_farbe = self.verwende_hartkodiert_fuer_annotation("person", person)
-        else:
-            verwende_person_farbe = False
+        # Schriftgröße / Familie bestimmen
+        annotation_lower = str(annotation).lower()
 
-        # Schriftgröße bestimmen
-        if "überschrift" in annotation.lower():
+        if "überschrift" in annotation_lower:
             groesse = config.UEBERSCHRIFT_GROESSE
             familie = config.SCHRIFTART_UEBERSCHRIFT
-        elif "legende" in annotation.lower():
+        elif "legende" in annotation_lower:
             groesse = config.LEGENDE_GROESSE
             familie = config.SCHRIFTART_LEGENDE
         else:
             groesse = config.TEXT_GROESSE
             familie = config.SCHRIFTART_STANDARD
 
-        # Gewicht und Stil setzen
+        # Gewicht / Stil bestimmen
         if verwende_betonung:
-            if "hauptbetonung" in (betonung or "").lower():
+            betonung_lower = str(betonung).lower()
+            if "hauptbetonung" in betonung_lower:
                 weight = "bold"
                 slant = "roman"
-            elif "nebenbetonung" in (betonung or "").lower():
+            elif "nebenbetonung" in betonung_lower:
                 weight = "normal"
-                slant = "italic"  # kursiv für Nebenbetonung
+                slant = "italic"
             else:
                 weight = "normal"
                 slant = "roman"
@@ -449,8 +473,10 @@ class AnnotationRenderer:
             weight = "normal"
             slant = "roman"
 
-        # Farbe bestimmen
-        if verwende_person_farbe and person:
+        # Farbe bestimmen:
+        # Wenn eine Person gesetzt ist -> deterministische Hash-Farbe
+        # sonst Standardfarbe
+        if person:
             farbe = self.get_person_color(person)
         else:
             if self.ist_PDF:
@@ -459,22 +485,31 @@ class AnnotationRenderer:
                 farbe = zu_Hex_farbe(config.FARBE_STANDARD)
 
         if self.ist_PDF:
-                 # 💡 Font-Dateipfad konstruieren – hier als Beispiel (ggf. dynamisch machen)
             success = register_custom_font("", familie)
 
             if not success:
                 print(f"[schrift_holen] ⚠️ Schrift '{familie}' konnte nicht registriert werden – PDF-Fallback wahrscheinlich.")
-           
-            print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Farbe: {farbe}")
+
+            print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Farbe: {farbe}, Person: {person}")
             return familie, groesse, farbe
+
         else:
             if familie not in tkFont.families():
                 print(f"[WARNUNG] Font-Familie '{familie}' nicht verfügbar – Fallback wahrscheinlich!")
 
-            schrift = tkFont.Font(family=familie, size=groesse, weight=weight, slant=slant)
-            print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Gewicht: {weight}, Stil: {slant}, Farbe: {farbe}")
-            return schrift, farbe
+            schrift = tkFont.Font(
+                family=familie,
+                size=groesse,
+                weight=weight,
+                slant=slant
+            )
 
+            print(
+                f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, "
+                f"Gewicht: {weight}, Stil: {slant}, Farbe: {farbe}, Person: {person}"
+            )
+            return schrift, farbe
+        
     def _zeichne_bild(self, canvas, bildname, x, y, w, h,annotationsname, tag=None):
         pfad = os.path.join(config.GLOBALORDNER["Eingabe"], "bilder",bildname)   
         if self.ist_PDF:
@@ -907,3 +942,29 @@ class AnnotationRenderer:
 
         schrift = self.schrift_holen(element_kopie)
         self._zeichne_token(canvas, wortnr, element_kopie, x, y, schrift)
+
+    def name_zu_rgb_farbe(self, name: str):
+        """
+        Deterministische, gut sichtbare Farbe aus einem Namen.
+        """
+        if not name:
+            return (180, 180, 180)
+
+        text = str(name).strip().casefold()
+        digest = hashlib.md5(text.encode("utf-8")).hexdigest()
+
+        hue = int(digest[:8], 16) % 360
+        sat_raw = int(digest[8:12], 16)
+        light_raw = int(digest[12:16], 16)
+
+        saturation = 0.55 + (sat_raw / 0xFFFF) * 0.20   # 0.55 .. 0.75
+        lightness  = 0.45 + (light_raw / 0xFFFF) * 0.12 # 0.45 .. 0.57
+
+        r, g, b = colorsys.hls_to_rgb(hue / 360.0, lightness, saturation)
+        return (int(r * 255), int(g * 255), int(b * 255))
+
+    def get_person_color(self, person_name):
+        rgb = self.name_zu_rgb_farbe(person_name)
+        if self.ist_PDF:
+            return zu_PDF_farbe(rgb)
+        return zu_Hex_farbe(rgb)

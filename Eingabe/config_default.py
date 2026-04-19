@@ -108,3 +108,29 @@ FARBE_SPANNUNG = (168, 213, 186)          # Spannungskurve
 # Berechnungen basierend auf Layout
 START_Y_POS = MAX_SEITENHOEHE - OBERER_SEITENRAND  # Start-Y-Position für Inhalte
 MAX_ZEILENANZAHL = (MAX_SEITENHOEHE - OBERER_SEITENRAND - UNTERER_SEITENRAND) // ZEILENHOEHE  # Berechnet maximale Zeilenanzahl pro Seite
+
+
+# PERSONEN-ERKENNUNGSEINSTELLUNGEN
+
+PERSONEN_QUELLE = "yaml" #oder kapitel_connfig.json
+
+PERSONEN_CHAPTERS_DATEI = "Eingabe/chapters.yaml"
+PERSONEN_CHARAKTERE_DATEI = "Eingabe/charakters.yaml"
+
+PERSONEN_YAML_MAPPING = {
+    "relevante_perioden": ["group_periods", "external_periods"],
+    "ignorierte_perioden": ["orga_periods"],
+    "id_feld": "id",
+    "name_feld": "name",
+    "chapter_liste": "chapters",
+    "subchapter_liste": "subchapters",
+    "subchapter_id_feld": "sub_id",
+    "subchapter_datum_feld": "anchor_date",
+    "charakter_gruppen": [
+        "children",
+        "internal_children",
+        "external_children",
+        "external_adults",
+        "internal_adults"
+    ]
+}
