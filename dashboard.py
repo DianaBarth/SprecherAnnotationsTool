@@ -859,7 +859,16 @@ class DashBoard(ttk.Frame):
         # Modelle abrufen
         try:
             modelle = self.client.get_installed_models()
-            if not modelle:
+            text_modelle = [
+                m for m in modelle
+                if "whisper" not in m.lower()
+                and "wav2vec" not in m.lower()
+                and "speech" not in m.lower()
+                and "asr" not in m.lower()
+            ]
+
+
+            if not text_modelle:
                 raise RuntimeError("Keine Modelle gefunden.")
         except Exception as e:
             messagebox.showwarning("Warnung", f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab.")
@@ -917,14 +926,14 @@ class DashBoard(ttk.Frame):
             self.task_vars[schritt_nr] = var
             self.task_spinner_labels[schritt_nr] = spinner_lbl
 
-            if "(mit ki)" in beschreibung.lower() and modelle:
-                combo = ttk.Combobox(frame, values=modelle, state="readonly", width=40)
-                combo.set(modelle[0])
+            if "(mit ki)" in beschreibung.lower() and text_modelle:
+                combo = ttk.Combobox(frame, values=text_modelle, state="readonly", width=40)
+                combo.set(text_modelle[0])
                 combo.grid(row=0, column=2, padx=5, sticky="w")
                 self.model_selection_boxes[schritt_nr] = combo
 
                 # Speichere initial ausgewähltes Modell
-                self.selected_models[schritt_nr] = modelle[0]
+                self.selected_models[schritt_nr] = text_modelle[0]
 
                 # Callback zum Speichern der Auswahl
                 def on_model_selected(event, sn=schritt_nr):

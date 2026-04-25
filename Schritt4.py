@@ -9,6 +9,7 @@ import unicodedata
 import Eingabe.config as config  # Importiere das komplette config-Modul
 
 MODEL_NAME = ""  # Wird später durch GUI gesetzt/überschrieben
+IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
 
 def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
     try:
@@ -52,75 +53,105 @@ def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
         print(f"[FEHLER] KI-Anfrage fehlgeschlagen: {e}")
         return None
 
+
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False):
     print(f"[DEBUG] schritt4.daten_verarbeiten gestartet für {dateipfad} und {aufgabe}")
     ki_ordner = Path(ki_ordner)
 
-    if ist_ig_aufgabe and os.path.exists(result_file_path) and not force:
-        print("[INFO] IG bereits berechnet – überspringe")
-        return
-
+ 
     try:
         if not isinstance(dateipfad, str):
             raise ValueError(f"Unerwarteter Dateipfad: {dateipfad}")
 
         aufgaben_name = config.KI_AUFGABEN.get(aufgabe, f"unbekannt{aufgabe}")
         ist_ig_aufgabe = aufgaben_name.lower() == "ig"
+
+
+        global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
+
+        if ist_ig_aufgabe and IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT:
+            print("[INFO] IG-Analyse wurde in diesem Lauf bereits ausgeführt – überspringe.")
+            return
+        
         if ist_ig_aufgabe:
-            result_file_name = f"{aufgaben_name}_wortliste.txt"
+            result_file_name = "ig_wortliste.txt"
         else:
             result_file_name = f"{aufgaben_name}_{os.path.basename(dateipfad)}"
-        result_file_path = os.path.join(ki_ordner, result_file_name)
 
-        if os.path.exists(result_file_path) and not force:
+        result_file_path = ki_ordner / result_file_name
+
+        if result_file_path.exists() and not force:
             print(f"[INFO] Ergebnisdatei {result_file_path} existiert bereits. KI-Analyse wird übersprungen.")
+            return
+
+        if ist_ig_aufgabe:
+            ig_woerter_datei = ki_ordner / "ig_woerter.txt"
+
+            print("[INFO] Erzeuge IG-Wortliste aus JSON-Dateien ...")
+
+            extrahiere_ig_woerter_aus_json(
+                json_ordner=config.GLOBALORDNER["json"],
+                ausgabe_datei=ig_woerter_datei,
+                lowercase=True,
+                sort_case_insensitive=True,
+                min_len=2,
+                verwende_tokenInklZahlwoerter=True,
+            )
+
+            if not ig_woerter_datei.exists():
+                print(f"[FEHLER] IG-Wortliste wurde nicht erzeugt: {ig_woerter_datei}")
+                return
+
+            with open(ig_woerter_datei, "r", encoding="utf-8") as f:
+                eingabetext = f.read()
+
+            if not eingabetext.strip():
+                print("[WARNUNG] IG-Wortliste ist leer. IG-Analyse wird übersprungen.")
+                return
+
+            print(f"[INFO] Verwende IG-Wortliste statt Kapiteltext: {ig_woerter_datei}")
+
         else:
+            with open(dateipfad, "r", encoding="utf-8") as f:
+                eingabetext = f.read()
+
+        messages_Chat = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": eingabetext}
+        ]
+
+        messages_Flat = f"Anweisung:\n{prompt}\n{eingabetext}"
+
+        if client.check_chat_model():
+            ki_ergebnis = KI_Analyse_Chat(
+                client,
+                messages_Chat,
+                dateiname=os.path.basename(dateipfad),
+                wortnr_bereich=""
+            )
+        else:
+            ki_ergebnis = KI_Analyse_Flat(
+                client,
+                messages_Flat,
+                dateiname=os.path.basename(dateipfad),
+                wortnr_bereich=""
+            )
+
+        if ki_ergebnis:
+            print("KI Roh-Ausgabe:\n", ki_ergebnis)
+
+            antwort_log_datei = ki_ordner / f"{aufgaben_name}_KIAntwort.txt"
+            with open(antwort_log_datei, "a", encoding="utf-8") as f:
+                f.write(ki_ergebnis + "\n\n")
+
+            with open(result_file_path, "w", encoding="utf-8") as result_file:
+                result_file.write(ki_ergebnis)
+
+            print(f"[INFO] Ergebnis gespeichert unter: {result_file_path}")
+
             if ist_ig_aufgabe:
-                ig_datei = Path(ki_ordner) / "ig_woerter.txt"
-
-                if not ig_datei.exists():
-                    print(f"[FEHLER] IG-Wortliste nicht gefunden: {ig_datei}")
-                    return
-
-                with open(ig_datei, "r", encoding="utf-8") as f:
-                    eingabetext = f.read()
-
-                print(f"[INFO] Verwende IG-Wortliste statt Kapiteltext: {ig_datei}")
-
-            else:
-                with open(dateipfad, 'r', encoding='utf-8') as f:
-                    eingabetext = f.read()
-
-            messages_Chat = [
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": eingabetext}
-            ]
-            messages_Flat = f"Anweisung:\n{prompt}\n{eingabetext}"
-
-            # Daten an Modell übergeben
-            if client.check_chat_model():
-                ki_ergebnis = KI_Analyse_Chat(
-                    client, messages_Chat,
-                    dateiname=os.path.basename(dateipfad),
-                    wortnr_bereich=""
-                )
-            else:
-                ki_ergebnis = KI_Analyse_Flat(
-                    client, messages_Flat,
-                    dateiname=os.path.basename(dateipfad),
-                    wortnr_bereich=""
-                )
-
-            if ki_ergebnis:
-                print("KI Roh-Ausgabe:\n", ki_ergebnis)
-                antwort_log_datei = os.path.join(ki_ordner, f"{aufgaben_name}_KIAntwort.txt")
-                with open(antwort_log_datei, 'a', encoding='utf-8') as f:
-                    f.write(ki_ergebnis + "\n\n")  # mit Abstand anhängen
-
-                with open(result_file_path, 'w', encoding='utf-8') as result_file:
-                    result_file.write(ki_ergebnis)
-
-                print(f"[INFO] Ergebnis gespeichert unter: {result_file_path}")
+                splitte_ig_klassen(result_file_path, ki_ordner)
+                IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = True
 
     except Exception as e:
         print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
