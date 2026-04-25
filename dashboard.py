@@ -30,6 +30,7 @@ from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
 from system_ressourcen import Systemressourcen
 import config_editor
+from audioanalyse_tab import AudioAnalyseTab
 
 def lade_prompt_datei(ki_id):
         print(f"[INFO] Lade Prompt für KI-ID: {ki_id}")
@@ -330,8 +331,18 @@ class DashBoard(ttk.Frame):
                 # UI-Elemente bauen (muss als Methode definiert sein)
         self._build_widgets()
 
+        self.audioanalyse_tab = AudioAnalyseTab(
+            self.notebook,
+            notebook=self.notebook,
+            kapitel_config=self.kapitel_config,
+            ordner=self.ordner,
+        )
+        self.notebook.add(self.audioanalyse_tab, text="🎧 Audioanalyse")
+
         self.lade_docx_aus_globalordner()
-        
+        self._update_audioanalyse_context()
+
+                
         # Grid-Konfiguration für dynamisches Layout
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
@@ -939,7 +950,16 @@ class DashBoard(ttk.Frame):
         if not ordner or "Eingabe" not in ordner:
             print(f"GLOBALORDNER ist nicht korrekt gesetzt oder unvollständig.")
         else:    
-            self.ordner = ordner
+            self.ordner = dict(ordner)
+
+            eingabe_ordner = Path(self.ordner["Eingabe"])
+            projekt_basis = eingabe_ordner.parent
+
+            self.ordner.setdefault("audio", projekt_basis / "audio")
+            self.ordner.setdefault("audioanalyse", projekt_basis / "audioanalyse")
+            for key in ("audio", "audioanalyse"):
+                Path(self.ordner[key]).mkdir(parents=True, exist_ok=True)
+
             # Versuche, Pfad zur .docx-Datei aus Eingabe-Ordner zu rekonstruieren
             eingabe_ordner = Path(ordner["Eingabe"])
         
@@ -978,6 +998,7 @@ class DashBoard(ttk.Frame):
 
                 # Kapitel-Checkboxen laden
                 self.lade_kapitel_checkboxes()
+                self._update_audioanalyse_context()
 
             except Exception as e:
                 messagebox.showerror("Fehler", f"Beim Laden des Projekts ist ein Fehler aufgetreten:\n{e}")
@@ -1025,15 +1046,17 @@ class DashBoard(ttk.Frame):
 
         # Weitere Ausgabe-Unterordner anlegen
         self.ordner = {
-            "Eingabe":  ergebnisse_ordner / "Eingabe",
-            "txt":    ergebnisse_ordner / "txt",
-            "json":   ergebnisse_ordner / "json",
-            "saetze":   ergebnisse_ordner / "saetze",        
-            "ki":     ergebnisse_ordner / "ki",
-            "merge":  ergebnisse_ordner / "merge",
-            "pdf":    ergebnisse_ordner / "pdf",
+            "Eingabe": ergebnisse_ordner / "Eingabe",
+            "txt": ergebnisse_ordner / "txt",
+            "json": ergebnisse_ordner / "json",
+            "saetze": ergebnisse_ordner / "saetze",
+            "ki": ergebnisse_ordner / "ki",
+            "merge": ergebnisse_ordner / "merge",
+            "pdf": ergebnisse_ordner / "pdf",
             "manuell": ergebnisse_ordner / "manuell",
-            "pdf2" : ergebnisse_ordner / "pdf2",
+            "pdf2": ergebnisse_ordner / "pdf2",
+            "audio": ergebnisse_ordner / "audio",
+            "audioanalyse": ergebnisse_ordner / "audioanalyse",
         }
         
         for pfad in self.ordner.values():
@@ -1042,8 +1065,9 @@ class DashBoard(ttk.Frame):
  
         self.update_globalordner_in_config(self.ordner)
        
-        self.lade_kapitel_checkboxes()
-      
+        self.lade_kapitel_checkboxes()      
+        self._update_audioanalyse_context()
+
     def lade_kapitel_checkboxes(self):
 
         if not self.kapitel_config.kapitel_liste and self.kapitel_config.kapitel_daten:
@@ -1357,6 +1381,15 @@ class DashBoard(ttk.Frame):
              
 
             next_key = None
+            if getattr(config, "NUTZE_KI", True):
+                if config.KI_AUFGABEN:
+                    next_key = max(config.KI_AUFGABEN.keys()) + 1
+                else:
+                    next_key = 3
+            else:
+                next_key = 3
+
+                      
 
             if getattr(config, "NUTZE_KI", True):
                 if abort_flag.is_set():
@@ -1503,6 +1536,12 @@ class DashBoard(ttk.Frame):
                 print("[WARNUNG] Kein config_editor verfügbar – Änderungen nicht automatisch gespeichert.")
                 
 
+    def _update_audioanalyse_context(self):
+        if hasattr(self, "audioanalyse_tab"):
+            self.audioanalyse_tab.set_project_context(
+                kapitel_config=self.kapitel_config,
+                ordner=self.ordner,
+            )
 if __name__ == "__main__":
     import sys
     from pathlib import Path
@@ -1522,5 +1561,3 @@ if __name__ == "__main__":
     ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
 
 
-
-  

@@ -243,61 +243,24 @@ class AnnotationRenderer:
 
 
     def _handle_textausrichtung(self, canvas, element, position, annotationen, index):
-        token = element.get('token', '')
-        schrift = self.schrift_holen(element)
+        position = (position or "").lower()
+        token = element.get("token", "")
 
-        # 1. Start erkennen
-        if position in ("zentriertstart", "rechtsbuendigstart"):
-            print(f"{position} bei Index {index}")
-            self.ausrichtung = "zentriert" if "zentriert" in position else "rechtsbuendig"
+        # Start einer Ausrichtungsgruppe
+        if self._position_ist_ausrichtung_start(position):
+            self.ausrichtung = self._ausrichtung_aus_position(position)
             self.grouptyp_aktiv = self.ausrichtung
             self.group_start_index = index
-            self.group_tokens = [element] if token else []
+            self.group_tokens = [(index, element)]
             self.group_start_y = self.y_pos
-            self.group_width = self.berechne_breite_des_tokens(element, canvas, schrift) if token else 0
             return True
 
-        # 2. Gruppe aktiv
+        # Innerhalb einer aktiven Gruppe
         if self.grouptyp_aktiv is not None:
+            self.group_tokens.append((index, element))
 
-            self.group_tokens.append(element)
-            if token:
-                self.group_width += self.berechne_breite_des_tokens(element, canvas, schrift)
-
-            if position in ("zentriertende", "rechtsbuendigende"):
-                print(f"Gruppenende '{position}' bei Index {index}")
-
-                subgruppen = []
-                aktuelle_subgruppe = []
-
-                for elem in self.group_tokens:
-                    aktuelle_subgruppe.append(elem)
-                    annos = elem.get("annotation", "")
-                    if isinstance(annos, str) and "zeilenumbruch" in annos.lower():
-                        subgruppen.append(aktuelle_subgruppe)
-                        aktuelle_subgruppe = []
-
-                if aktuelle_subgruppe:
-                    subgruppen.append(aktuelle_subgruppe)
-
-                print(f"Erkannte {len(subgruppen)} Subgruppe(n) für Ausrichtung '{self.ausrichtung}'")
-
-                aktuelle_y = self.group_start_y or self.y_pos
-                zwischenraum = 5
-
-                for i, gruppe in enumerate(subgruppen):
-                    print(f"→ Subgruppe {i+1}: {[tok.get('token') for tok in gruppe]}")
-                    gesamtbreite = 0
-                    for tok in gruppe:
-                        schrift = self.schrift_holen(tok)
-                        gesamtbreite += self.berechne_breite_des_tokens(tok, canvas, schrift) + zwischenraum
-                    gesamtbreite -= zwischenraum  # Letztes Space raus
-
-                    self._verschiebe_token_gruppe(canvas, gruppe, aktuelle_y, gesamtbreite)
-                    aktuelle_y += self.zeilen_hoehe or 20  # Fallback-Wert falls nicht gesetzt
-
-                self.y_pos = aktuelle_y
-                self.x_pos = config.LINKER_SEITENRAND
+            if self._position_ist_ausrichtung_ende(position):
+                self._zeichne_ausrichtungsgruppe(canvas, self.group_tokens, self.group_start_y or self.y_pos)
                 self._reset_gruppe()
                 return True
 
@@ -305,6 +268,97 @@ class AnnotationRenderer:
 
         return False
 
+    def _position_ist_ausrichtung_start(self, position):
+        return position in ("zentriertstart", "rechtsbuendigstart", "linksbündigstart", "linksbuendigstart")
+
+
+    def _position_ist_ausrichtung_ende(self, position):
+        return position in ("zentriertende", "rechtsbuendigende", "linksbündigende", "linksbuendigende")
+
+
+    def _ausrichtung_aus_position(self, position):
+        position = (position or "").lower()
+
+        if "zentriert" in position:
+            return "zentriert"
+        if "rechtsbuendig" in position or "rechtsbündig" in position:
+            return "rechtsbuendig"
+        if "linksbuendig" in position or "linksbündig" in position:
+            return "linksbuendig"
+
+        return None
+
+
+    def _zeichne_ausrichtungsgruppe(self, canvas, gruppe, y_start):
+        zwischenraum = 5 if not self.ist_PDF else 2
+
+        subgruppen = []
+        aktuelle_subgruppe = []
+
+        for index, elem in gruppe:
+            annos = elem.get("annotation", {})
+            if isinstance(annos, dict) and "zeilenumbruch" in annos:
+                if aktuelle_subgruppe:
+                    subgruppen.append(aktuelle_subgruppe)
+                    aktuelle_subgruppe = []
+                continue
+
+            aktuelle_subgruppe.append((index, elem))
+
+        if aktuelle_subgruppe:
+            subgruppen.append(aktuelle_subgruppe)
+
+        aktuelle_y = y_start
+
+        for subgruppe in subgruppen:
+            gesamtbreite = 0
+
+            for index, elem in subgruppe:
+                token = elem.get("token", "")
+                if not token:
+                    continue
+                schrift = self.schrift_holen(elem)
+                gesamtbreite += self.berechne_breite_des_tokens(elem, canvas, schrift) + zwischenraum
+
+            if gesamtbreite > 0:
+                gesamtbreite -= zwischenraum
+
+            if self.ist_PDF:
+                seitenbreite = getattr(config, "MAX_ZEILENBREITE", 800)
+            else:
+                seitenbreite = self.max_breite
+
+            linker_rand = getattr(config, "LINKER_SEITENRAND", 50)
+            rechter_rand = getattr(config, "RECHTER_SEITENRAND", 50)
+
+            if self.ausrichtung == "zentriert":
+                x = linker_rand + max(0, (seitenbreite - linker_rand - rechter_rand - gesamtbreite) / 2)
+            elif self.ausrichtung == "rechtsbuendig":
+                x = seitenbreite - rechter_rand - gesamtbreite
+            else:
+                x = linker_rand
+
+            for index, elem in subgruppe:
+                token = elem.get("token", "")
+                if not token:
+                    continue
+
+                schrift = self.schrift_holen(elem)
+                text_breite, text_hoehe, schriftfarbe = self._berechne_textgroesse(canvas, schrift, token)
+
+                text_id = self._zeichne_token(canvas, index, elem, x, aktuelle_y, schrift)
+                self.canvas_elemente_pro_token[index] = {
+                    "x": x,
+                    "y": aktuelle_y,
+                    "canvas_id": text_id
+                }
+
+                x += text_breite + zwischenraum
+
+            aktuelle_y += self.zeilen_hoehe
+
+        self.y_pos = aktuelle_y
+        self.x_pos = getattr(config, "LINKER_SEITENRAND", 50)
 
 
     def _rekonstruiere_gruppe_bis_start(self, end_index, aktuelles_element, endetyp):
