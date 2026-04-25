@@ -10,6 +10,31 @@ from pathlib import Path
 import Eingabe.config as config
 
 
+def lade_wortliste(pfad):
+    pfad = Path(pfad)
+
+    if not pfad.exists():
+        print(f"[WARNUNG] Wortliste nicht gefunden: {pfad}")
+        return set()
+
+    eintraege = set()
+
+    with open(pfad, "r", encoding="utf-8") as f:
+        for zeile in f:
+            zeile = zeile.strip().lower()
+            if not zeile:
+                continue
+
+            # Falls Sonderfall-Datei Format "wort<TAB>klasse" hat
+            wort = zeile.split("\t")[0].strip()
+            wort = wort.split("|")[0].strip()
+
+            if wort:
+                eintraege.add(wort)
+
+    print(f"[INFO] {len(eintraege)} Einträge geladen aus: {pfad.name}")
+    return eintraege
+
 def lade_personen(kapitel_name):
     config_datei = "Eingabe/kapitel_config.json"
     try:
@@ -162,7 +187,14 @@ def extrahiere_typ_aus_ki_dateiname(dateiname, abschnitts_dateiname):
     typ = dateiname.split(suffix, 1)[0].lower().strip("_")
     return typ or None
 
-def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateiname, kein_ig_set=None):
+def merge_einen_abschnitt(
+    original_daten,
+    annotationsdateien,
+    abschnitts_dateiname,
+    kein_ig_set=None,
+    ik_set=None,
+    ig_sonderfaelle_set=None
+):
     annotationen_daten = defaultdict(list)
     schluessel_mapping = {wert: wert.capitalize() for wert in config.KI_AUFGABEN.values()}
 
@@ -222,7 +254,9 @@ def merge_einen_abschnitt(original_daten, annotationsdateien, abschnitts_dateina
         # IG immer direkt im Merge setzen
         ig_wert = bestimme_ig_wert_fuer_eintrag(
             neuer_eintrag,
-            kein_ig_set or set()
+            kein_ig_set=kein_ig_set or set(),
+            ik_set=ik_set or set(),
+            ig_sonderfaelle_set=ig_sonderfaelle_set or set(),
         )
         neuer_eintrag["ig"] = ig_wert
 
@@ -278,7 +312,9 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
     ziel_ordner = Path(ziel_ordner)
     ziel_ordner.mkdir(parents=True, exist_ok=True)
 
-    kein_ig_set = lade_kein_ig_liste(quellordner_annotationen)
+    kein_ig_set = lade_wortliste(quellordner_annotationen / "kein_ig.txt")
+    ik_set = lade_wortliste(quellordner_annotationen / "ik_aussprache.txt")
+    ig_sonderfaelle_set = lade_wortliste(quellordner_annotationen / "ig_sonderfaelle.txt")
 
     try:
         abschnittsdateien = ermittle_abschnittsdateien(quellordner_kapitel, ausgewaehlte_kapitel)
@@ -316,6 +352,8 @@ def Merge_annotationen(quellordner_kapitel, quellordner_annotationen, ziel_ordne
                 annotationsdateien=annotationsdateien,
                 abschnitts_dateiname=dateiname,
                 kein_ig_set=kein_ig_set,
+                ik_set=ik_set,
+                ig_sonderfaelle_set=ig_sonderfaelle_set,
             )
 
             zielpfad = ziel_ordner / dateiname
@@ -374,7 +412,7 @@ def lade_ig_mapping_aus_ordner(satz_ordner, ig_ordner, kapitelname):
 
 def lade_kein_ig_liste(ig_ordner):
     ig_ordner = Path(ig_ordner)
-    datei = ig_ordner / "keinIG.txt"
+    datei = ig_ordner / "kein_ig.txt"
 
     if not datei.exists():
         print(f"[WARNUNG] keine keinIG.txt gefunden: {datei}")
@@ -451,15 +489,24 @@ def update_json_with_ig_annotations(json_ordner, ausgabe_ordner, satz_ordner, ig
         print(f"[INFO]   ig='ich': {anzahl_ich}")
         print(f"[INFO]   ig='':   {anzahl_leer}")
 
-def bestimme_ig_wert_fuer_eintrag(eintrag, kein_ig_set):
+
+def bestimme_ig_wert_fuer_eintrag(
+    eintrag,
+    kein_ig_set=None,
+    ik_set=None,
+    ig_sonderfaelle_set=None
+):
     """
-    Bestimmt den IG-Wert für einen JSON-Eintrag.
-    Standard:
-    - enthält das Token 'ig'
-    - und steht nicht in keinIG.txt
-    => 'ich'
-    Sonst leer.
+    Neues IG-System:
+    - kein_ig.txt         => keine Markierung
+    - ik_aussprache.txt   => ig = "ik"
+    - ig_sonderfaelle.txt => keine automatische Markierung
+    - sonst bei echtem 'ig' => ig = "ich"
     """
+    kein_ig_set = kein_ig_set or set()
+    ik_set = ik_set or set()
+    ig_sonderfaelle_set = ig_sonderfaelle_set or set()
+
     token = (
         eintrag.get("tokenInklZahlwoerter")
         or eintrag.get("token")
@@ -471,10 +518,23 @@ def bestimme_ig_wert_fuer_eintrag(eintrag, kein_ig_set):
     if not token_clean:
         return ""
 
-    if "ig" in token_clean and token_clean not in kein_ig_set:
-        return "ich"
+    if "ig" not in token_clean:
+        return ""
 
-    return ""
+    # Wörter mit mehreren ig-Vorkommen nicht automatisch setzen
+    if token_clean in ig_sonderfaelle_set:
+        return ""
+
+    # Wörter ohne echten ig-Laut ignorieren
+    if token_clean in kein_ig_set:
+        return ""
+
+    # explizite ik-Ausnahmen
+    if token_clean in ik_set:
+        return "ik"
+
+    # Standardfall
+    return "ich"
 
 def normalisiere_ig_token(token, lowercase=True):
     """

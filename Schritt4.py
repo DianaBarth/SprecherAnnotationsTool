@@ -1,6 +1,9 @@
 import os
 import re
 import gc
+import json
+import regex
+from collections import Counter
 from pathlib import Path
 import unicodedata
 import Eingabe.config as config  # Importiere das komplette config-Modul
@@ -53,19 +56,40 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
     print(f"[DEBUG] schritt4.daten_verarbeiten gestartet für {dateipfad} und {aufgabe}")
     ki_ordner = Path(ki_ordner)
 
+    if ist_ig_aufgabe and os.path.exists(result_file_path) and not force:
+        print("[INFO] IG bereits berechnet – überspringe")
+        return
+
     try:
         if not isinstance(dateipfad, str):
             raise ValueError(f"Unerwarteter Dateipfad: {dateipfad}")
 
         aufgaben_name = config.KI_AUFGABEN.get(aufgabe, f"unbekannt{aufgabe}")
-        result_file_name = f"{aufgaben_name}_{os.path.basename(dateipfad)}"
+        ist_ig_aufgabe = aufgaben_name.lower() == "ig"
+        if ist_ig_aufgabe:
+            result_file_name = f"{aufgaben_name}_wortliste.txt"
+        else:
+            result_file_name = f"{aufgaben_name}_{os.path.basename(dateipfad)}"
         result_file_path = os.path.join(ki_ordner, result_file_name)
 
         if os.path.exists(result_file_path) and not force:
             print(f"[INFO] Ergebnisdatei {result_file_path} existiert bereits. KI-Analyse wird übersprungen.")
         else:
-            with open(dateipfad, 'r', encoding='utf-8') as f:
-                eingabetext = f.read()
+            if ist_ig_aufgabe:
+                ig_datei = Path(ki_ordner) / "ig_woerter.txt"
+
+                if not ig_datei.exists():
+                    print(f"[FEHLER] IG-Wortliste nicht gefunden: {ig_datei}")
+                    return
+
+                with open(ig_datei, "r", encoding="utf-8") as f:
+                    eingabetext = f.read()
+
+                print(f"[INFO] Verwende IG-Wortliste statt Kapiteltext: {ig_datei}")
+
+            else:
+                with open(dateipfad, 'r', encoding='utf-8') as f:
+                    eingabetext = f.read()
 
             messages_Chat = [
                 {"role": "system", "content": prompt},
@@ -123,6 +147,66 @@ def normalisiere_ig_token(token, lowercase=True):
 
     return token
 
+def splitte_ig_klassen(eingabe_datei, ki_ordner):
+    ik_set = set()
+    kein_set = set()
+
+    with open(eingabe_datei, "r", encoding="utf-8") as f:
+        for zeile in f:
+            zeile = zeile.strip()
+            if not zeile:
+                continue
+
+            teile = zeile.split("\t")
+            if len(teile) < 2:
+                continue
+
+            wort = teile[0].strip().lower()
+            klasse = teile[1].strip().lower()
+
+            if klasse == "ik":
+                ik_set.add(wort)
+            elif klasse == "kein":
+                kein_set.add(wort)
+            # "ich" wird bewusst ignoriert
+
+    # speichern
+    ik_datei = Path(ki_ordner) / "ik_aussprache.txt"
+    kein_datei = Path(ki_ordner) / "kein_ig.txt"
+
+    with open(ik_datei, "w", encoding="utf-8") as f:
+        for w in sorted(ik_set):
+            f.write(w + "\n")
+
+    with open(kein_datei, "w", encoding="utf-8") as f:
+        for w in sorted(kein_set):
+            f.write(w + "\n")
+
+    print(f"[INFO] ik-Wörter: {len(ik_set)} → {ik_datei}")
+    print(f"[INFO] kein-ig-Wörter: {len(kein_set)} → {kein_datei}")
+
+
+def ist_echtes_wort(token):
+    """
+    True nur für echte Wörter.
+    Erlaubt Buchstaben inkl. Umlaute, Bindestrich und Apostroph.
+    Keine Zahlen, keine Satzzeichen-only, keine Tags.
+    """
+    token = (token or "").strip()
+
+    if not token:
+        return False
+
+    if token.startswith("|") and token.endswith("|"):
+        return False
+
+    # Mindestens ein Buchstabe
+    if not regex.search(r"\p{L}", token):
+        return False
+
+    # Nur Buchstaben, kombinierende Zeichen, Bindestrich, Apostroph
+    return regex.fullmatch(r"[\p{L}\p{M}'’\-]+", token) is not None
+
 
 def extrahiere_ig_woerter_aus_json(
     json_ordner,
@@ -131,28 +215,13 @@ def extrahiere_ig_woerter_aus_json(
     sort_case_insensitive=True,
     min_len=1,
     verwende_tokenInklZahlwoerter=True,
-    ignoriere_spezialtokens=True,
 ):
     """
-    Extrahiert eindeutige IG-Wörter aus *_annotierungen.json-Dateien,
-    entfernt Duplikate und speichert alphabetisch sortiert als TXT.
+    Extrahiert alle tatsächlichen Wörter aus *_annotierungen.json-Dateien
+    und speichert sie mit Häufigkeit.
 
-    Parameter:
-    ----------
-    json_ordner : str | Path
-        Ordner mit JSON-Dateien
-    ausgabe_datei : str | Path
-        Zieldatei für Wortliste
-    lowercase : bool
-        Alles klein schreiben
-    sort_case_insensitive : bool
-        Alphabetisch ohne Groß-/Kleinschreibung sortieren
-    min_len : int
-        Minimale Tokenlänge
-    verwende_tokenInklZahlwoerter : bool
-        Bevorzugt tokenInklZahlwoerter statt token
-    ignoriere_spezialtokens : bool
-        Ignoriert Dinge wie |BREAK| oder Tag-Tokens
+    Ausgabeformat:
+        wort<TAB>anzahl
     """
     json_ordner = Path(json_ordner)
     ausgabe_datei = Path(ausgabe_datei)
@@ -162,13 +231,14 @@ def extrahiere_ig_woerter_aus_json(
         return
 
     json_dateien = sorted(json_ordner.glob("*_annotierungen.json"))
+
     if not json_dateien:
         print(f"[WARNUNG] Keine *_annotierungen.json-Dateien gefunden in: {json_ordner}")
         return
 
-    print(f"[INFO] Starte IG-Extraktion aus {len(json_dateien)} JSON-Dateien ...")
+    print(f"[INFO] Starte Wortextraktion aus {len(json_dateien)} JSON-Dateien ...")
 
-    einzigartige_tokens = set()
+    zaehler = Counter()
 
     for datei in json_dateien:
         try:
@@ -190,40 +260,35 @@ def extrahiere_ig_woerter_aus_json(
 
                 token = normalisiere_ig_token(token, lowercase=lowercase)
 
-                if not token:
-                    continue
-
                 if len(token) < min_len:
                     continue
 
-                if ignoriere_spezialtokens:
-                    # Tags wie |BREAK|, |ZentriertStart| etc.
-                    if token.startswith("|") and token.endswith("|"):
-                        continue
+                if not ist_echtes_wort(token):
+                    continue
 
-                    # leere / technische Marker
-                    if token in {"", "_", "__"}:
-                        continue
+                # Nur Wörter mit "ig"
+                if "ig" not in token:
+                    continue
 
-                einzigartige_tokens.add(token)
+                zaehler[token] += 1
 
         except Exception as e:
             print(f"[FEHLER] Fehler beim Lesen von {datei.name}: {e}")
 
     if sort_case_insensitive:
-        sortierte_tokens = sorted(einzigartige_tokens, key=lambda x: x.lower())
+        sortierte_tokens = sorted(zaehler.items(), key=lambda x: x[0].lower())
     else:
-        sortierte_tokens = sorted(einzigartige_tokens)
+        sortierte_tokens = sorted(zaehler.items())
 
     ausgabe_datei.parent.mkdir(parents=True, exist_ok=True)
 
     with open(ausgabe_datei, "w", encoding="utf-8") as f:
-        for token in sortierte_tokens:
-            f.write(token + "\n")
+        for token, anzahl in sortierte_tokens:
+            f.write(f"{token}\t{anzahl}\n")
 
-    print(f"[INFO] IG-Wörter extrahiert: {len(sortierte_tokens)}")
-    print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
-
+    print(f"[INFO] Echte Wörter extrahiert: {len(sortierte_tokens)}")
+    print(f"[INFO] Gesamtvorkommen: {sum(zaehler.values())}")
+    print(f"[✓] Wortliste gespeichert: {ausgabe_datei}")
 
 if __name__ == "__main__":
     extrahiere_ig_woerter_aus_json(
@@ -233,5 +298,4 @@ if __name__ == "__main__":
         sort_case_insensitive=True,
         min_len=2,
         verwende_tokenInklZahlwoerter=True,
-        ignoriere_spezialtokens=True,
     )

@@ -1,17 +1,29 @@
-Aufgabe IG:
+Du analysierst deutsche Wörter, die die Buchstabenfolge "ig" enthalten.
 
-Erkenne in der folgenden semikolonseparierten Wortliste alle Wörter, die „ig“ enthalten.
-Bestimme für jedes Vorkommen von „ig“, ob es wie „ik“ oder „ich“ ausgesprochen wird (nach deutscher Hochlautung).
-Falls ein Wort mehrere „ig“ enthält, gib die Klassifikation für jedes „ig“ in Reihenfolge, getrennt durch Bindestriche (z. B. ik-ik-ich).
+Aufgabe:
+Ordne jedes Wort einer Kategorie zu:
 
-Regeln:
-    Die Reihenfolge der Ausgaben muss der Reihenfolge der Wörter mit „ig“ in der Liste entsprechen.
-    Gib die Klassifikationen als semikolonseparierte Liste zurück, z. B.:
-        ich;ich;ik;ich;ik-ik-ik-ich
+- ik → "ig" wird wie "ik" gesprochen
+- ich → "ig" wird wie "ich" gesprochen
+- kein → kein echter "ig"-Laut (z.B. Zeigefinger)
 
-Beispiel Eingabe:
+Antwortformat (TSV, exakt):
+wort<TAB>klasse
 
-König;fertig;Königreich;dreißig;einunddreißigjährig
+Nur diese Klassen verwenden:
+ik
+ich
+kein
 
-Beispiel Ausgabe:
-ich;ich;ik;ich;ich-ich
+Keine Erklärungen.
+Keine zusätzlichen Texte.
+
+Beispiele:
+wichtig	ich
+richtig	ich
+fertig	ich
+König	ich
+Signal	ik
+Tiger	ik
+Figur	ik
+Zeigefinger	kein
