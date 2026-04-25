@@ -516,3 +516,5 @@ class KapitelConfig(ttk.Frame):
         if self.dashboard:
             self.dashboard.lade_kapitel_checkboxes()
  
+   
+

@@ -10,7 +10,16 @@ from kapitel_config import KapitelConfig
 from dashboard import DashBoard
 from modellwahl import InstallationModellwahl
 from config_editor import ConfigEditor
-import Eingabe.config as config # Importiere das komplette config-Modul
+
+import torch
+import Eingabe.config as config
+
+try:
+    torch.set_num_threads(getattr(config, "TORCH_NUM_THREADS", 12))
+    torch.set_num_interop_threads(getattr(config, "TORCH_INTEROP_THREADS", 2))
+    
+except RuntimeError as e:
+    print(f"[WARNUNG] Torch-Thread-Konfiguration konnte nicht gesetzt werden: {e}")
 
 class SprecherAnnotationsTool(tk.Tk):
     """Hauptanwendung mit Tab-Notebook"""

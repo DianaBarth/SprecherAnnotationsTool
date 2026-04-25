@@ -7,10 +7,10 @@ import sys
 import time
 import subprocess
 import threading
+import torch
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 
-import torch
 from huggingface_hub import HfApi, list_models
 from transformers import (
     AutoTokenizer,
@@ -350,10 +350,10 @@ class HuggingFaceClient:
                     bnb_4bit_compute_dtype=torch.float16,
                 )
                 
-                import torch
+               
 
-                torch.set_num_threads(12)
-                torch.set_num_interop_threads(2)
+                torch.set_num_threads(getattr(config, "TORCH_NUM_THREADS", 12))
+
 
 
                 self.model = AutoModelForCausalLM.from_pretrained(
@@ -391,20 +391,45 @@ class HuggingFaceClient:
             except Exception as e:
                 self.log(f"[WARN] GPU normal fehlgeschlagen: {e}")
 
+     
         # --------------------------------------------------
         # 3. LAST RESORT: CPU
         # --------------------------------------------------
+        self.model = None
+        gc.collect()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         self.log("[INFO] Fallback → CPU")
+
+        try:
+            torch.set_num_threads(getattr(config, "TORCH_NUM_THREADS", 12))
+        except RuntimeError as e:
+            self.log(f"[WARNUNG] torch.set_num_threads fehlgeschlagen: {e}")
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            low_cpu_mem_usage=True,
+            device_map=None,
+            low_cpu_mem_usage=False,
             trust_remote_code=True,
+            use_safetensors=True,
+            local_files_only=False,
         )
 
-        self.model.to("cpu")
+        meta_params = [
+            name for name, param in self.model.named_parameters()
+            if getattr(param, "is_meta", False)
+        ]
+
+        if meta_params:
+            raise RuntimeError(
+                f"Modell enthält Meta-Tensoren nach CPU-Laden: {meta_params[:10]}"
+            )
+
         self.load_mode = "cpu"
+        return
 
     def _load_classification_model(self, model_name: str):
         self.log("[INFO] Lade Token-Classification-Modell...")

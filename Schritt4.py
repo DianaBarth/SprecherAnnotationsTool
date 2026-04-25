@@ -8,8 +8,7 @@ from collections import Counter
 from pathlib import Path
 import unicodedata
 import Eingabe.config as config
-from KI_Analyse_Flat import baue_ki_prompt, lade_json_zu_txt_datei, splitte_in_abschnitte  # Importiere das komplette config-Modul
-import kapitel_config
+from KI_Analyse_Flat import baue_ki_prompt, lade_json_zu_txt_datei, splitte_in_abschnitte_nach_zeilenumbruch  
 import personen_resolver
 
 MODEL_NAME = ""  # Wird später durch GUI gesetzt/überschrieben
@@ -72,10 +71,12 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
         if ist_person_aufgabe and "{SPRECHER_LISTE_HIER_EINFÜGEN}" in prompt:
             try:
-                personen = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
-                    dateipfad=dateipfad
-                )
 
+                json_datei_fuer_personen = lade_json_zu_txt_datei(dateipfad)
+
+                personen = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
+                    dateipfad=str(json_datei_fuer_personen or dateipfad)
+                )
                 sprecher_liste_text = personen_resolver.formatiere_personen_fuer_prompt(personen)
 
                 prompt = prompt.replace(
@@ -186,6 +187,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
                 if antwort:
                     alle_antworten.append(antwort.strip())
+              
                 else:
                     print(f"[WARNUNG] Keine Antwort für IG-Chunk {chunk_nr}")
 
@@ -257,7 +259,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                         )
 
                 else:
-                    abschnitte = splitte_in_abschnitte(json_daten, max_tokens=500)
+                    abschnitte = splitte_in_abschnitte_nach_zeilenumbruch(json_daten)
 
                     print(f"[INFO] Verarbeite {len(abschnitte)} Abschnitt(e) mit Plaintext + WortNr-Mapping.")
 
@@ -539,9 +541,6 @@ def extrahiere_ig_woerter_aus_json(
 
     print(f"[INFO] IG-Wörter extrahiert: {len(sortierte_woerter)}")
     print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
-
-
-
 
 
 if __name__ == "__main__":
