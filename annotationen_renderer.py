@@ -199,7 +199,7 @@ class AnnotationRenderer:
 
         aktuelle_x = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
-        if 'zeilenumbruch' in annotation:
+        if self._hat_annotation(element_kopie, "zeilenumbruch"):
             print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
@@ -288,22 +288,35 @@ class AnnotationRenderer:
 
         return None
 
+    def _hat_annotation(self, element, name):
+        annotation = element.get("annotation", "")
+        name = str(name).lower()
 
+        if isinstance(annotation, dict):
+            return name in {str(k).lower() for k in annotation.keys()}
+
+        if isinstance(annotation, list):
+            return any(str(a).lower() == name for a in annotation)
+
+        return name in str(annotation).lower()
+
+ 
     def _zeichne_ausrichtungsgruppe(self, canvas, gruppe, y_start):
+        gruppe = list(gruppe)
         zwischenraum = 5 if not self.ist_PDF else 2
 
         subgruppen = []
         aktuelle_subgruppe = []
 
         for index, elem in gruppe:
-            annos = elem.get("annotation", {})
-            if isinstance(annos, dict) and "zeilenumbruch" in annos:
+            if self._hat_annotation(elem, "zeilenumbruch"):
                 if aktuelle_subgruppe:
                     subgruppen.append(aktuelle_subgruppe)
                     aktuelle_subgruppe = []
                 continue
 
-            aktuelle_subgruppe.append((index, elem))
+            if elem.get("token", ""):
+                aktuelle_subgruppe.append((index, elem))
 
         if aktuelle_subgruppe:
             subgruppen.append(aktuelle_subgruppe)
@@ -313,53 +326,64 @@ class AnnotationRenderer:
         for subgruppe in subgruppen:
             gesamtbreite = 0
 
-            for index, elem in subgruppe:
+            for pos_in_zeile, (index, elem) in enumerate(subgruppe):
                 token = elem.get("token", "")
                 if not token:
                     continue
+
+                if pos_in_zeile > 0 and not self._hat_annotation(elem, "satzzeichenOhneSpaceDavor"):
+                    gesamtbreite += zwischenraum
+
                 schrift = self.schrift_holen(elem)
-                gesamtbreite += self.berechne_breite_des_tokens(elem, canvas, schrift) + zwischenraum
-
-            if gesamtbreite > 0:
-                gesamtbreite -= zwischenraum
-
-            if self.ist_PDF:
-                seitenbreite = getattr(config, "MAX_ZEILENBREITE", 800)
-            else:
-                seitenbreite = self.max_breite
+                gesamtbreite += self.berechne_breite_des_tokens(elem, canvas, schrift)
 
             linker_rand = getattr(config, "LINKER_SEITENRAND", 50)
             rechter_rand = getattr(config, "RECHTER_SEITENRAND", 50)
 
+            if self.ist_PDF:
+                zeilenbreite = getattr(config, "MAX_ZEILENBREITE", 800)
+            else:
+                zeilenbreite = self.max_breite
+
+            nutzbare_breite = zeilenbreite - linker_rand - rechter_rand
+
             if self.ausrichtung == "zentriert":
-                x = linker_rand + max(0, (seitenbreite - linker_rand - rechter_rand - gesamtbreite) / 2)
+                x = linker_rand + max(0, (nutzbare_breite - gesamtbreite) / 2)
             elif self.ausrichtung == "rechtsbuendig":
-                x = seitenbreite - rechter_rand - gesamtbreite
+                x = linker_rand + max(0, nutzbare_breite - gesamtbreite)
             else:
                 x = linker_rand
 
-            for index, elem in subgruppe:
+            for pos_in_zeile, (index, elem) in enumerate(subgruppe):
                 token = elem.get("token", "")
                 if not token:
                     continue
 
+                if pos_in_zeile > 0 and not self._hat_annotation(elem, "satzzeichenOhneSpaceDavor"):
+                    x += zwischenraum
+
                 schrift = self.schrift_holen(elem)
-                text_breite, text_hoehe, schriftfarbe = self._berechne_textgroesse(canvas, schrift, token)
+                text_breite, text_hoehe, schriftfarbe = self._berechne_textgroesse(
+                    canvas,
+                    schrift,
+                    token
+                )
 
                 text_id = self._zeichne_token(canvas, index, elem, x, aktuelle_y, schrift)
+
                 self.canvas_elemente_pro_token[index] = {
                     "x": x,
                     "y": aktuelle_y,
                     "canvas_id": text_id
                 }
 
-                x += text_breite + zwischenraum
+                x += text_breite
 
             aktuelle_y += self.zeilen_hoehe
 
         self.y_pos = aktuelle_y
+        self.letzte_zeile_y_pos = aktuelle_y
         self.x_pos = getattr(config, "LINKER_SEITENRAND", 50)
-
 
     def _rekonstruiere_gruppe_bis_start(self, end_index, aktuelles_element, endetyp):
         # Ermittelt die Gruppe rückwärts vom Ende bis zum Start-Token
