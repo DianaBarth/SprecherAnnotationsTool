@@ -39,8 +39,9 @@ class SprecherAnnotationsTool(tk.Tk):
         self.starte_progress_pruefung()
         # KapitelConfig, Dashboard etc. anlegen
         self.kapitel_config = KapitelConfig(self, self.notebook)
+        self.modellwahl = InstallationModellwahl(self, self.notebook, self.client)
         self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client)
-        InstallationModellwahl(self, self.notebook, self.client)
+       
         self.kapitel_config.dashboard = self.dashboard
         self.config_editor = ConfigEditor(self, self.notebook, self.dashboard)        
 

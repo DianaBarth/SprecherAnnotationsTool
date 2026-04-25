@@ -1,409 +1,264 @@
-import subprocess
-import sys
+# huggingface_client.py
+
+import gc
 import os
-import threading
-import itertools
+import re
+import sys
 import time
-import shutil
+import subprocess
+import threading
 from pathlib import Path
-from typing import List, Optional, Callable, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
+
 import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import T5Tokenizer, T5ForConditionalGeneration,AutoTokenizer, AutoModelForTokenClassification,MistralForTokenClassification,MistralForCausalLM
-from huggingface_hub import list_models, HfApi
-from transformers import AutoTokenizer
+from huggingface_hub import HfApi, list_models
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    AutoModelForTokenClassification,
+)
 
+import Eingabe.config as config
 
-import Eingabe.config as config # Importiere das komplette config-Modul
 
 class HuggingFaceClient:
-    def __init__(self):
-        self.model_name = None
+    """
+    Robuster HF-Client für lokale Generierung:
+    - kleine Modelle normal
+    - große Modelle automatisch 4bit, wenn CUDA + bitsandbytes verfügbar
+    - CPU-Fallback
+    - saubere Prompt/Antwort-Trennung
+    """
+
+    def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
+        self.model_name: Optional[str] = None
         self.model = None
         self.tokenizer = None
-        self.hf_api = HfApi()  # API-Client initialisiert
+        self.task = "generation"
+        self.hf_api = HfApi()
+        self.log_callback = log_callback
 
-        # Überprüfen und ggf. Installation von Transformers und Torch
+        self.load_mode = None  # "normal", "4bit", "cpu"
+        self.last_error = None
+
         if not self.is_huggingface_installed():
-            print("[INFO] Hugging Face ist nicht installiert. KI wird erstmal deaktiviert....")
-            
-            # self.install_huggingface()
+            self.log("[INFO] HuggingFace/Transformers nicht installiert. KI deaktiviert.")
+
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
+
+    def log(self, text: str):
+        print(text)
+        if self.log_callback:
+            try:
+                self.log_callback(text)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # Installation / Checks
+    # ------------------------------------------------------------------
 
     def is_huggingface_installed(self) -> bool:
-        """Prüft, ob Hugging Face Transformers installiert ist."""
         try:
-            import transformers  # noqa: F401
+            import transformers  # noqa
             return True
         except ImportError:
             return False
 
-    def install_huggingface(self):
-        """Installiert Hugging Face Transformers und Torch."""
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers", "torch"])
-
-    def check_and_set_model(self, model_name: str):
-        """
-        Setzt ein Modell, falls es noch nicht gesetzt ist.
-        """
-        print(f"[Debug] check_and_set_model aufgerufen mit model_name: {model_name!r}")
-        if self.model_name != model_name:
-            print(f"[Debug] Unterschiedliches Modell erkannt (alt: {self.model_name!r}), setze neues Modell.")
-            self.set_model(model_name)
-        else:
-            print(f"[Debug] Modell {model_name!r} ist bereits gesetzt, kein Laden nötig.")
-
-    def check_chat_model(self):        
-        name = getattr(self, "model_name","").lower()
-        chat_keywords = [
-            "chat", "instruct", "zephyr", "hermes", "openchat", "llama2-chat", "vicuna",
-            "mistral-instruct", "command", "dialog", "assistant", "alpaca", "gpt", "xwin"
-        ]
-        return any(keyword in name for keyword in chat_keywords)
-
-    def set_model(self, model_name: str, task: str = "generation"):
-        print(f"[Debug] set_model aufgerufen mit model_name: {model_name!r}, task: {task!r}")
-        if not model_name:
-            raise ValueError("Leerer oder None model_name beim Laden!")
-
-        model_name_lower = model_name.lower()
-
-        if task == "generation":
-            # Lade generatives Modell
-            from transformers import AutoTokenizer, AutoModelForCausalLM
-
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(model_name,
-                                                            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                                                            device_map="auto" if torch.cuda.is_available() else None)
-            # Pad-Token setzen falls nötig
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        elif task == "classification":
-            # Beispiel: Token-Classification
-            from transformers import AutoTokenizer, AutoModelForTokenClassification
-
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.model = AutoModelForTokenClassification.from_pretrained(model_name)
-
-        else:
-            raise ValueError(f"Unbekannter task: {task}")
-
-        self.model_name = model_name
-        print(f"[HuggingFaceClient] Modell '{model_name}' für task '{task}' erfolgreich geladen.")
-
-
-    def generate(self, prompt: str) -> str:
-        if not self.model_name:
-            raise ValueError("Kein Modell gesetzt. Bitte set_model() aufrufen.")
-        
-        if torch.cuda.is_available():
-            print(torch.cuda.memory_summary())
-        else:
-            print("CUDA nicht verfügbar – alles läuft auf CPU")
-
-        print(f"[INFO] Generiere mit '{self.model_name}'")
-        
-        print("[INFO] Tokenizer-Aufruf gestartet")
-
-        # Falls tokenizer kein pad_token hat, setze pad_token auf eos_token (sicherheits-halber)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            print(f"[DEBUG] Pad token auf EOS token gesetzt: {self.tokenizer.pad_token}")
-
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=config.MAX_TOTAL_TOKENS,
-            return_attention_mask=True
-        )
-        print("[INFO] Tokenizer-Aufruf fertig")
-        
-        # Inputs auf das Device verschieben
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-        print("[INFO] Inputs auf Device verschoben")
-        
-        start = time.time()
-        print("[INFO] Beginne model.generate()")
-        with torch.no_grad():
-            outputs = self.model.generate(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                max_new_tokens=10,
-                pad_token_id=self.tokenizer.pad_token_id,
-                do_sample=False  # deterministisch, schneller
-            )
-        print(f"[INFO] generate() fertig nach {time.time() - start:.2f} Sekunden")
-
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-
-
-    def get_available_models(
-            self,
-            model_filter: Optional[str] = None,
-            language_keywords: Optional[List[str]] = None,
-            name_filter: Optional[str] = None,
-            limit: int = 5000
-        ) -> List[str]:
-        """
-        Liefert eine Liste verfügbarer Modelle vom Hugging Face Hub,
-        optional gefiltert nach Modell-, Sprach- und Namens-Keywords.
-        """
+    def is_bitsandbytes_available(self) -> bool:
         try:
-            # Sicherstellen, dass model_filter kein "None"-String ist
-            if model_filter is not None and model_filter.strip().lower() == "none":
-                model_filter = None
-            if model_filter == "":
-                model_filter = None
-
-            if language_keywords:
-                language_keywords = [kw.lower() for kw in language_keywords if kw]
-
-            print(f"[DEBUG] Suche Modelle mit filter={model_filter}, Sprache={language_keywords}, name_filter={name_filter}")
-
-            models = list_models(filter=model_filter, limit=limit, full=True)
-
-            names = []
-            for m in models:
-                model_id = m.modelId.lower()
-                # Filter nach Sprache
-                if language_keywords and not any(kw in model_id for kw in language_keywords):
-                    continue
-                # Filter nach Namen
-                if name_filter and name_filter.lower() not in model_id:
-                    continue
-                names.append(m.modelId)
-
-            unique_names = sorted(set(names))
-            print(f"[DEBUG] Gefundene Modelle: {len(unique_names)}")
-            return unique_names
-        except Exception as e:
-            print(f"[ERROR] Modelle konnten nicht geladen werden: {e}")
-            return ["t5-small", "t5-base"]
-
-    # def get_available_models(
-    #     self,
-    #     model_filter: str = None,
-    #     language_keywords: list[str] = None,
-    #     limit: int = 1000
-    # ) -> list[str]:
-    #     """
-    #     Liefert eine Liste verfügbarer Modelle vom Hugging Face Hub.
-    #     :param model_filter: Filter-String (z.B. 't5', 'bert').
-    #     :param language_keywords: Liste von Sprach-Keywords (z.B. ['deutsch','german']).
-    #     :param limit: Maximale Anzahl zu ladender Modelle.
-    #     """
-    #     try:
-    #         print(f"[DEBUG] get_available_models: filter={model_filter}, langs={language_keywords}")
-    #         models = list_models(filter=model_filter, limit=limit, full=True)
-    #         names: list[str] = []
-    #         for m in models:
-    #             model_id = m.modelId.lower()
-    #             if language_keywords and not any(kw in model_id for kw in language_keywords):
-    #                 continue
-    #             names.append(m.modelId)
-    #         names = sorted(set(names))
-    #         print(f"[DEBUG] Gefundene Modelle: {len(names)}")
-    #         return names
-    #     except Exception as e:
-    #         print(f"[ERROR] Modelle konnten nicht geladen werden: {e}")
-    #         return ["t5-small", "t5-base"]
-
-    def get_model_info(self, model_name: str) -> dict:
-        """
-        Liefert Metadaten für ein Modell (Größe, Parameter, Architektur, Tokenizer).
-        """
-        try:
-            model_info = self.hf_api.model_info(model_name)
-            config = model_info.config or {}
-            num_parameters = config.get("num_parameters", "Unbekannt")
-            arch = config.get("architectures", ["Unbekannt"])
-            tokenizer = config.get("tokenizer_class", "Unbekannt")
-
-            total_size = 0
-            if hasattr(model_info, "siblings") and model_info.siblings:
-                total_size = sum(getattr(s, 'size', 0) or 0 for s in model_info.siblings)
-            size_mb = total_size / (1024 * 1024)
-
-            return {
-                "Model Size (MB)": f"{size_mb:.2f}",
-                "Number of Parameters": num_parameters,
-                "Architecture": arch[0] if isinstance(arch, list) else arch,
-                "Tokenizer Class": tokenizer,
-            }
-        except Exception as e:
-            print(f"[ERROR] Fehler beim Abrufen der Modellinformationen: {e}")
-            return {"Error": str(e)}
-
-
-    def get_installed_models(self) -> list[str]:
-        """
-        Gibt eine Liste lokal gecachter HuggingFace-Modelle zurück.
-        Sucht in den beiden üblichen Cache-Pfaden.
-        """
-        try:
-            model_names = set()
-
-            # Pfad 1: neuer Hub-Cache
-            hub_cache = Path.home() / ".cache" / "huggingface" / "hub"
-            if hub_cache.exists():
-                for model_dir in hub_cache.glob("models--*"):
-                    if model_dir.is_dir():
-                        # "models--user--modelname" wird zu "user/modelname"
-                        model_name = model_dir.name.replace("models--", "").replace("--", "/")
-                        model_names.add(model_name)
-
-            # Pfad 2: älterer transformers-Cache (falls noch vorhanden)
-            transformers_cache = Path.home() / ".cache" / "huggingface" / "transformers"
-            if transformers_cache.exists():
-                for model_dir in transformers_cache.glob("models--*"):
-                    if model_dir.is_dir():
-                        model_name = model_dir.name.replace("models--", "").replace("--", "/")
-                        model_names.add(model_name)
-
-            print(f"[INFO] Installierte Modelle gefunden: {len(model_names)}+ {model_names} ")
-            return sorted(model_names)
-
-        except Exception as e:
-            print(f"[ERROR] Fehler beim Ermitteln der installierten Modelle: {e}")
-            return []
-
-
-    def check_and_load_model(self) -> bool:
-        """Lädt das Modell, falls noch nicht geschehen.
-        
-        :return: True, wenn Modell geladen oder bereits vorhanden, False bei Fehler.
-        """
-        if self.model is not None and self.tokenizer is not None:
-            # Modell ist bereits geladen
+            import bitsandbytes  # noqa
             return True
-
-        if not self.model_name or not self.model_name.strip():
-            raise ValueError("Kein Modell gesetzt oder Modellname ist leer.")
-
-        try:
-            self.set_model(self.model_name)
-            return True
-        except Exception as e:
-            print(f"[ERROR] Fehler beim Laden des Modells '{self.model_name}': {e}")
+        except Exception:
             return False
 
-    def run_model(self, prompt: str) -> str:
-        """Generiert Text basierend auf einem Prompt."""
-        self.check_and_load_model()
-        return self.generate(prompt)
+    def install_huggingface(self):
+        subprocess.check_call([
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "transformers",
+            "torch",
+            "accelerate",
+            "bitsandbytes",
+        ])
 
-    def stop_model(self):
-        """Optional: Stop-Logik für das Modell."""
-        print(f"[INFO] Modell '{self.model_name}' benötigt keine Stop-Logik.")
+    def cuda_info(self) -> Dict[str, Any]:
+        if not torch.cuda.is_available():
+            return {
+                "cuda": False,
+                "device": "cpu",
+                "vram_gb": 0,
+            }
 
-    def __del__(self):
-        print(f"[INFO] Lösche Modell '{self.model_name}'…")
+        props = torch.cuda.get_device_properties(0)
+        return {
+            "cuda": True,
+            "device": torch.cuda.get_device_name(0),
+            "vram_gb": round(props.total_memory / 1024**3, 2),
+        }
+
+    # ------------------------------------------------------------------
+    # Modellentscheidung
+    # ------------------------------------------------------------------
+
+    def estimate_model_size_mb(self, model_name: str) -> float:
+        """
+        Nutzt HF-Metadaten. Funktioniert online.
+        Falls nicht verfügbar: 0.0.
+        """
+        try:
+            info = self.hf_api.model_info(model_name)
+            total_size = 0
+            for sibling in info.siblings or []:
+                size = getattr(sibling, "size", 0) or 0
+                filename = getattr(sibling, "rfilename", "") or ""
+                if filename.endswith((".bin", ".safetensors")):
+                    total_size += size
+            return total_size / 1024**2
+        except Exception as e:
+            self.log(f"[WARN] Modellgröße konnte nicht ermittelt werden: {e}")
+            return 0.0
+
+    def should_use_4bit(self, model_name: str, force_quantization: Optional[bool] = None) -> bool:
+        """
+        Entscheidungsregel:
+        - force_quantization überschreibt alles
+        - ohne CUDA kein 4bit
+        - ohne bitsandbytes kein 4bit
+        - ab ca. 4 GB Modelldateien oder bekannten 7B/8B/13B-Modellen: 4bit
+        """
+        if force_quantization is not None:
+            return bool(force_quantization)
+
+        if not torch.cuda.is_available():
+            return False
+
+        if not self.is_bitsandbytes_available():
+            return False
+
+        name = model_name.lower()
+        large_markers = [
+            "7b", "8b", "9b", "10b", "11b", "12b", "13b",
+            "mistral", "mixtral", "llama", "leo-mistral",
+        ]
+        if any(marker in name for marker in large_markers):
+            return True
+
+        size_mb = self.estimate_model_size_mb(model_name)
+        return size_mb >= 4000
+
+    # ------------------------------------------------------------------
+    # Laden / Entladen
+    # ------------------------------------------------------------------
+
+    def unload_model(self):
+        self.log("[INFO] Entlade aktuelles Modell...")
         try:
             del self.model
             del self.tokenizer
         except Exception:
             pass
 
-    def train_model_from_file(self, train_file_path: str, epochs: int = 1, batch_size: int = 4, learning_rate: float = 5e-5, progress_callback=None):
-            """
-            Trainiert das aktuell geladene Modell mit einer lokalen Textdatei.
-            :param train_file_path: Pfad zur Trainingsdatei (Textdatei).
-            :param epochs: Anzahl der Trainingsdurchläufe.
-            :param batch_size: Batchgröße.
-            :param learning_rate: Lernrate.
-            :param progress_callback: Optionaler Callback(progress_fraction: float) zur Fortschrittsanzeige (0.0 - 1.0).
-            """
-            from torch.utils.data import Dataset, DataLoader
-            import torch
-            import os
+        self.model = None
+        self.tokenizer = None
+        self.model_name = None
+        self.load_mode = None
 
-            if self.model is None or self.tokenizer is None:
-                raise ValueError("Kein Modell geladen. Bitte zuerst set_model() aufrufen.")
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-            if not os.path.isfile(train_file_path):
-                raise FileNotFoundError(f"Trainingsdatei nicht gefunden: {train_file_path}")
+    def check_and_set_model(self, model_name: str, task: str = "generation", force_quantization=None):
+        model_name = (model_name or "").strip()
 
-            class TextDataset(Dataset):
-                def __init__(self, texts, tokenizer, max_length=512):
-                    self.tokenizer = tokenizer
-                    self.texts = texts
-                    self.max_length = max_length
+        self.log(f"[DEBUG] Modell prüfen/setzen: {model_name}")
+        self.log(f"[DEBUG] Aktuell geladen: {self.model_name}")
 
-                def __len__(self):
-                    return len(self.texts)
+        if (
+            self.model is not None
+            and self.tokenizer is not None
+            and self.model_name == model_name
+            and getattr(self, "task", "generation") == task
+        ):
+            self.log(f"[INFO] Modell bleibt geladen: {model_name}")
+            return
 
-                def __getitem__(self, idx):
-                    encoding = self.tokenizer(
-                        self.texts[idx],
-                        max_length=self.max_length,
-                        padding='max_length',
-                        truncation=True,
-                        return_tensors="pt"
-                    )
-                    input_ids = encoding['input_ids'].squeeze()
-                    attention_mask = encoding['attention_mask'].squeeze()
-                    return input_ids, attention_mask, input_ids  # labels = input_ids
+        self.set_model(model_name, task=task, force_quantization=force_quantization)
 
-            with open(train_file_path, "r", encoding="utf-8") as f:
-                texts = [line.strip() for line in f if line.strip()]
-            if not texts:
-                raise ValueError("Trainingsdatei ist leer oder enthält keine validen Zeilen.")
 
-            dataset = TextDataset(texts, self.tokenizer)
-            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.model.to(device)
-            self.model.train()
+    def set_model(self, model_name: str, task: str = "generation", force_quantization=None):
+        if not model_name or not model_name.strip():
+            raise ValueError("Leerer Modellname beim Laden.")
 
-            optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
+        model_name = model_name.strip()
 
-            total_batches = epochs * len(dataloader)
-            batch_count = 0
+        # 🔥 WICHTIG: nicht neu laden, wenn exakt dieses Modell schon da ist
+        if (
+            self.model is not None
+            and self.tokenizer is not None
+            and self.model_name == model_name
+            and getattr(self, "task", "generation") == task
+        ):
+            self.log(f"[INFO] Modell bereits geladen, überspringe Reload: {model_name}")
+            return
 
-            print(f"[TRAIN] Training auf {device} startet mit {len(dataset)} Beispielen...")
+        self.unload_model()
 
-            for epoch in range(epochs):
-                total_loss = 0
-                for batch_idx, (input_ids, attention_mask, labels) in enumerate(dataloader):
-                    input_ids = input_ids.to(device)
-                    attention_mask = attention_mask.to(device)
-                    labels = labels.to(device)
 
-                    outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-                    loss = outputs.loss
+        self.log(f"[INFO] Lade Modell: {model_name}")
+        self.log(f"[INFO] CUDA: {self.cuda_info()}")
 
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+        self.task = task
+        self.last_error = None
 
-                    total_loss += loss.item()
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                use_fast=True,
+                trust_remote_code=True,
+            )
 
-                    batch_count += 1
-                    if progress_callback:
-                        progress_callback(batch_count / total_batches)
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
 
-                    if batch_idx % 10 == 0:
-                        print(f"[TRAIN] Epoch {epoch+1}/{epochs}, Batch {batch_idx+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
+            if task == "generation":
+                self._load_generation_model(model_name, force_quantization)
+            elif task == "classification":
+                self._load_classification_model(model_name)
+            else:
+                raise ValueError(f"Unbekannter task: {task}")
 
-                avg_loss = total_loss / len(dataloader)
-                print(f"[TRAIN] Epoch {epoch+1} beendet, Durchschnitts-Loss: {avg_loss:.4f}")
-
-            print("[TRAIN] Training abgeschlossen.")
+            self.model_name = model_name
             self.model.eval()
+
+            self.log(
+                f"[OK] Modell geladen: {model_name} "
+                f"(task={task}, mode={self.load_mode})"
+            )
+
+        except Exception as e:
+            self.last_error = e
+            self.log(f"[ERROR] Modell konnte nicht geladen werden: {e}")
+            self.unload_model()
+            raise
+
+    def print_gpu_status(self):
+        if not torch.cuda.is_available():
+            print("[GPU] CUDA nicht verfügbar")
+            return
+
+        props = torch.cuda.get_device_properties(0)
+        print(f"[GPU] {torch.cuda.get_device_name(0)}")
+        print(f"[GPU] VRAM: {props.total_memory / 1024**3:.2f} GB")
 
     def get_model_filters(self, limit: int = 1000) -> list[str]:
         """
-        Liest aus den verfügbaren HuggingFace-Modellen automatisch mögliche
-        Filterbegriffe (z.B. Architektur, Pipeline-Tags, Modellnamen).
-        Gibt eine sortierte Liste einzigartiger Filterbegriffe zurück, 
-        wobei das erste Element "" (kein Filter = alle) ist.
-
-        :param limit: Maximale Anzahl an Modellen, die abgefragt werden.
+        Liefert Filterbegriffe für die Modell-Auswahl in der GUI.
         """
         try:
             models = self.hf_api.list_models(limit=limit, full=True)
@@ -411,10 +266,10 @@ class HuggingFaceClient:
             filters = set()
 
             for m in models:
-                # m ist ein ModelInfo-Objekt mit Metadaten
+                config_data = getattr(m, "config", None) or {}
 
-                if m.config and hasattr(m.config, "get"):
-                    arch = m.config.get("architectures", [])
+                if hasattr(config_data, "get"):
+                    arch = config_data.get("architectures", [])
                 else:
                     arch = []
 
@@ -425,433 +280,478 @@ class HuggingFaceClient:
                         if isinstance(a, str):
                             filters.add(a.lower())
 
-                if hasattr(m, "pipeline_tag") and m.pipeline_tag:
-                    filters.add(m.pipeline_tag.lower())
+                pipeline_tag = getattr(m, "pipeline_tag", None)
+                if pipeline_tag:
+                    filters.add(pipeline_tag.lower())
 
                 model_id = getattr(m, "modelId", "").lower()
-                known_models = ["t5", "bert", "gpt2", "gpt-neo", "gpt-j", "flan", "bart", "roberta",
-                                "distilbert", "xlm", "xlnet", "gpt4", "bert-large", "bert-base"]
+                known_models = [
+                    "t5", "bert", "gpt2", "gpt-neo", "gpt-j",
+                    "flan", "bart", "roberta", "distilbert",
+                    "xlm", "xlnet", "mistral", "llama",
+                    "gemma", "qwen", "phi"
+                ]
+
                 for km in known_models:
                     if km in model_id:
                         filters.add(km)
 
-            standard_filters = ["summarization", "translation", "classification",
-                                "text-generation", "token-classification", "question-answering",
-                                "conversational", "zero-shot-classification"]
-            for sf in standard_filters:
-                filters.add(sf)
+            standard_filters = [
+                "summarization",
+                "translation",
+                "classification",
+                "text-generation",
+                "token-classification",
+                "question-answering",
+                "conversational",
+                "zero-shot-classification",
+            ]
 
-            sorted_filters = sorted(filters)
-            # Leerer Filter für "alle" an erste Stelle setzen
-            return [""] + sorted_filters
+            filters.update(standard_filters)
+
+            return [""] + sorted(filters)
 
         except Exception as e:
             print(f"[ERROR] Fehler beim Abrufen der Model-Filter: {e}")
-            return [""] + ["summarization", "translation", "classification",
-                        "text-generation", "token-classification", "question-answering",
-                        "conversational", "zero-shot-classification"]
-        
 
-#     """
-#     Wrapper-Klasse für Hugging Face Modelle.
-#     Lädt Modelle und Tokenizer, listet verfügbare Modelle,
-#     führt Textgenerierung aus und ermöglicht Training auf lokalen Dateien.
-#     """
+            return [
+                "",
+                "text-generation",
+                "token-classification",
+                "classification",
+                "summarization",
+                "translation",
+                "question-answering",
+                "zero-shot-classification",
+        ]
 
-#     def __init__(self, log_manager = None):
-#         self.model_name: Optional[str] = None
-#         self.model: Optional[T5ForConditionalGeneration] = None
-#         self.tokenizer: Optional[T5Tokenizer] = None
-#         self.hf_api = HfApi()
-#         self.log_manager = log_manager
+    def _load_generation_model(self, model_name: str, force_quantization=None):
+        gpu_ok = torch.cuda.is_available()
+        gpu_can_handle = self._gpu_can_handle_model(model_name)
+        bnb_ok = self.is_bitsandbytes_available()
 
-#         if not self.is_huggingface_installed():
-#             print("[INFO] Hugging Face Transformers ist nicht installiert. KI wird deaktiviert...")
+        self.log(f"[DEBUG] GPU verfügbar: {gpu_ok}")
+        self.log(f"[DEBUG] GPU ausreichend: {gpu_can_handle}")
+        self.log(f"[DEBUG] bitsandbytes: {bnb_ok}")
 
-#     def is_huggingface_installed(self) -> bool:
-#         """Prüft, ob Hugging Face Transformers installiert ist."""
-#         try:
-#             import transformers  # noqa: F401
-#             return True
-#         except ImportError:
-#             return False
+        # --------------------------------------------------
+        # 1. BEST CASE: GPU + 4bit
+        # --------------------------------------------------
+        if gpu_ok and gpu_can_handle and bnb_ok:
+            try:
+                from transformers import BitsAndBytesConfig
 
-#     def install_huggingface(self):
-#         """Installiert Transformers und Torch via pip."""
-#         subprocess.check_call([sys.executable, "-m", "pip", "install", "transformers", "torch"])
+                self.log("[INFO] Lade Modell in 4bit auf GPU...")
+
+                quant_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                )
+
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    quantization_config=quant_config,
+                    device_map="auto",
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                )
+
+                self.load_mode = "4bit_gpu"
+                return
+
+            except Exception as e:
+                self.log(f"[WARN] 4bit fehlgeschlagen: {e}")
+
+        # --------------------------------------------------
+        # 2. FALLBACK: GPU normal (nur wenn sinnvoll!)
+        # --------------------------------------------------
+        if gpu_ok and gpu_can_handle:
+            try:
+                self.log("[INFO] Lade Modell normal auf GPU...")
+
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                )
+
+                self.load_mode = "gpu_fp16"
+                return
+
+            except Exception as e:
+                self.log(f"[WARN] GPU normal fehlgeschlagen: {e}")
+
+        # --------------------------------------------------
+        # 3. LAST RESORT: CPU
+        # --------------------------------------------------
+        self.log("[INFO] Fallback → CPU")
+
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+        )
+
+        self.model.to("cpu")
+        self.load_mode = "cpu"
+
+    def _load_classification_model(self, model_name: str):
+        self.log("[INFO] Lade Token-Classification-Modell...")
+        self.model = AutoModelForTokenClassification.from_pretrained(model_name)
+
+        if torch.cuda.is_available():
+            self.model.to("cuda")
+            self.load_mode = "classification_cuda"
+        else:
+            self.model.to("cpu")
+            self.load_mode = "classification_cpu"
+
+    # ------------------------------------------------------------------
+    # Generation
+    # ------------------------------------------------------------------
+
+    def get_model_device(self):
+        """
+        Bei 4bit/device_map='auto' darf man model.to(...) NICHT aufrufen.
+        Für Inputs reicht das Device der ersten Parameter.
+        """
+        try:
+            return next(self.model.parameters()).device
+        except Exception:
+            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def calc_max_new_tokens(
+        self,
+        prompt_token_count: int,
+        requested: Optional[int] = None,
+        min_new_tokens: int = 128,
+        hard_cap: int = 2048,
+    ) -> int:
+        """
+        Dynamisch:
+        - nutzt config.MAX_TOTAL_TOKENS
+        - begrenzt hart, damit 8GB VRAM nicht explodieren
+        """
+        if requested is not None:
+            return max(1, int(requested))
+
+        total_limit = getattr(config, "MAX_TOTAL_TOKENS", 4096)
+        available = max(min_new_tokens, total_limit - prompt_token_count)
+
+        return int(min(available, hard_cap))
+
+    def generate(
+        self,
+        prompt: str,
+        max_new_tokens: Optional[int] = None,
+        hard_cap: int = 2048,
+        temperature: float = 0.0,
+        stop_strings: Optional[List[str]] = None,
+    ) -> str:
+        if self.model is None or self.tokenizer is None:
+            raise ValueError("Kein Modell geladen. Bitte set_model() aufrufen.")
+
+        if not prompt or not prompt.strip():
+            return ""
+
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        max_input_tokens = getattr(config, "MAX_TOTAL_TOKENS", 4096)
+        max_input_tokens = max(512, max_input_tokens - 512)
+
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_input_tokens,
+            return_attention_mask=True,
+        )
+
+        prompt_len = inputs["input_ids"].shape[-1]
+        new_tokens = self.calc_max_new_tokens(
+            prompt_token_count=prompt_len,
+            requested=max_new_tokens,
+            hard_cap=hard_cap,
+        )
+
+        device = self.get_model_device()
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        do_sample = temperature > 0.0
+
+        self.log(
+            f"[INFO] generate(): prompt_tokens={prompt_len}, "
+            f"max_new_tokens={new_tokens}, mode={self.load_mode}"
+        )
+
+        start = time.time()
+
+        with torch.inference_mode():
+            output_ids = self.model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                max_new_tokens=new_tokens,
+                do_sample=do_sample,
+                temperature=temperature if do_sample else None,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+                repetition_penalty=1.05,
+                use_cache=True,
+            )
+
+        self.log(f"[INFO] generate() fertig nach {time.time() - start:.2f}s")
+
+        generated_ids = output_ids[0][prompt_len:]
+        text = self.tokenizer.decode(
+            generated_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        ).strip()
+
+        if stop_strings:
+            text = self.cut_at_stop_strings(text, stop_strings)
+
+        return text.strip()
+
+    def generate_stream(
+        self,
+        prompt: str,
+        on_token: Callable[[str], None],
+        max_new_tokens: Optional[int] = None,
+        hard_cap: int = 2048,
+        temperature: float = 0.0,
+    ) -> str:
+        """
+        Optional für GUI:
+        on_token bekommt laufend Textstücke.
+        Rückgabe ist der finale Text.
+        """
+        from transformers import TextIteratorStreamer
+
+        if self.model is None or self.tokenizer is None:
+            raise ValueError("Kein Modell geladen.")
+
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=getattr(config, "MAX_TOTAL_TOKENS", 4096) - 512,
+        )
+
+        prompt_len = inputs["input_ids"].shape[-1]
+        new_tokens = self.calc_max_new_tokens(prompt_len, max_new_tokens, hard_cap=hard_cap)
+
+        device = self.get_model_device()
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        streamer = TextIteratorStreamer(
+            self.tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True,
+        )
+
+        kwargs = dict(
+            **inputs,
+            streamer=streamer,
+            max_new_tokens=new_tokens,
+            do_sample=temperature > 0.0,
+            temperature=temperature if temperature > 0.0 else None,
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+            repetition_penalty=1.05,
+            use_cache=True,
+        )
+
+        thread = threading.Thread(target=self.model.generate, kwargs=kwargs)
+        thread.start()
+
+        parts = []
+        for piece in streamer:
+            parts.append(piece)
+            on_token(piece)
+
+        thread.join()
+        return "".join(parts).strip()
+
+    def cut_at_stop_strings(self, text: str, stop_strings: List[str]) -> str:
+        cut_pos = None
+        for s in stop_strings:
+            pos = text.find(s)
+            if pos != -1:
+                cut_pos = pos if cut_pos is None else min(cut_pos, pos)
+        return text[:cut_pos] if cut_pos is not None else text
+
+    def run_model(self, prompt: str) -> str:
+        self.check_and_load_model()
+        return self.generate(prompt)
+
+    def check_and_load_model(self) -> bool:
+        if self.model is not None and self.tokenizer is not None:
+            return True
+        if not self.model_name:
+            raise ValueError("Kein Modell gesetzt.")
+        self.set_model(self.model_name, task=self.task)
+        return True
+
+    # ------------------------------------------------------------------
+    # Chat- / Prompt-Helfer
+    # ------------------------------------------------------------------
+
+    def check_chat_model(self) -> bool:
+        name = (self.model_name or "").lower()
+        chat_keywords = [
+            "chat", "instruct", "zephyr", "hermes", "openchat",
+            "llama2-chat", "vicuna", "mistral-instruct",
+            "command", "dialog", "assistant", "alpaca", "gpt", "xwin",
+        ]
+        return any(k in name for k in chat_keywords)
+
+    def build_prompt(self, system_text: str, user_text: str) -> str:
+        """
+        Nutzt Chat-Template, falls verfügbar.
+        Sonst einfacher Fallback.
+        """
+        if self.tokenizer is not None and hasattr(self.tokenizer, "apply_chat_template"):
+            try:
+                messages = [
+                    {"role": "system", "content": system_text},
+                    {"role": "user", "content": user_text},
+                ]
+                return self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception:
+                pass
+
+        return (
+            f"### SYSTEM\n{system_text.strip()}\n\n"
+            f"### USER\n{user_text.strip()}\n\n"
+            f"### ASSISTANT\n"
+        )
+
+    # ------------------------------------------------------------------
+    # Bestehende Hilfsfunktionen
+    # ------------------------------------------------------------------
+
+    def get_available_models(
+        self,
+        model_filter: Optional[str] = None,
+        language_keywords: Optional[List[str]] = None,
+        name_filter: Optional[str] = None,
+        limit: int = 5000,
+    ) -> List[str]:
+        try:
+            if model_filter and model_filter.strip().lower() == "none":
+                model_filter = None
+            if model_filter == "":
+                model_filter = None
+
+            if language_keywords:
+                language_keywords = [kw.lower() for kw in language_keywords if kw]
+
+            models = list_models(filter=model_filter, limit=limit, full=True)
+
+            names = []
+            for m in models:
+                model_id = m.modelId.lower()
+                if language_keywords and not any(kw in model_id for kw in language_keywords):
+                    continue
+                if name_filter and name_filter.lower() not in model_id:
+                    continue
+                names.append(m.modelId)
+
+            return sorted(set(names))
+
+        except Exception as e:
+            self.log(f"[ERROR] Modelle konnten nicht geladen werden: {e}")
+            return ["t5-small", "t5-base"]
+
+    def get_model_info(self, model_name: str) -> dict:
+        try:
+            info = self.hf_api.model_info(model_name)
+            cfg = info.config or {}
+
+            total_size = 0
+            if info.siblings:
+                total_size = sum(getattr(s, "size", 0) or 0 for s in info.siblings)
+
+            arch = cfg.get("architectures", ["Unbekannt"])
+            if isinstance(arch, list):
+                arch = arch[0] if arch else "Unbekannt"
+
+            return {
+                "Model Size (MB)": f"{total_size / 1024**2:.2f}",
+                "Architecture": arch,
+                "Tokenizer Class": cfg.get("tokenizer_class", "Unbekannt"),
+                "Load Recommendation": (
+                    "4bit empfohlen"
+                    if self.should_use_4bit(model_name)
+                    else "normal/CPU möglich"
+                ),
+            }
+
+        except Exception as e:
+            return {"Error": str(e)}
+
+    def get_installed_models(self) -> List[str]:
+        model_names = set()
+
+        for cache in [
+            Path.home() / ".cache" / "huggingface" / "hub",
+            Path.home() / ".cache" / "huggingface" / "transformers",
+        ]:
+            if cache.exists():
+                for model_dir in cache.glob("models--*"):
+                    if model_dir.is_dir():
+                        name = model_dir.name.replace("models--", "").replace("--", "/")
+                        model_names.add(name)
+
+        return sorted(model_names)
+
+    def _gpu_can_handle_model(self, model_name: str) -> bool:
+        """
+        Prüft grob, ob GPU das Modell überhaupt stemmen kann.
+        Heuristik:
+        - VRAM < 6GB → eher kritisch für 7B
+        - VRAM < 4GB → nur kleine Modelle
+        """
+        if not torch.cuda.is_available():
+            return False
+
+        try:
+            props = torch.cuda.get_device_properties(0)
+            vram_gb = props.total_memory / 1024**3
+
+            name = model_name.lower()
+
+            # harte Regeln
+            if vram_gb < 4:
+                return False
+
+            if any(x in name for x in ["7b", "8b", "mistral", "llama"]):
+                return vram_gb >= 6  # 8GB ideal, 6GB minimal mit 4bit
+
+            return True
+
+        except Exception as e:
+            self.log(f"[WARN] GPU-Check fehlgeschlagen: {e}")
+            return False
 
 
-#     def check_and_set_model(self, model_name: str):
-#         """
-#         Setzt ein Modell, falls es noch nicht gesetzt ist.
-#         """
-#         print(f"[Debug] check_and_set_model aufgerufen mit model_name: {model_name!r}")
-#         if self.model_name != model_name:
-#             print(f"[Debug] Unterschiedliches Modell erkannt (alt: {self.model_name!r}), setze neues Modell.")
-#             self.set_model(model_name)
-#         else:
-#             print(f"[Debug] Modell {model_name!r} ist bereits gesetzt, kein Laden nötig.")
+    def stop_model(self):
+        self.log("[INFO] stop_model(): aktuell keine aktive Abbruchlogik.")
 
-
-#     def set_model(self, model_name: str):
-#         """
-#         Lädt das Modell und den Tokenizer mit einer Ladeanimation.
-#         Unterstützt automatische Auswahl der Modellklasse basierend auf dem Modellnamen.
-#         """
-#         print(f"[Debug] set_model aufgerufen mit model_name: {model_name!r}")
-#         if not model_name:
-#             raise ValueError("Leerer oder None model_name beim Laden!")
-
-#         # def spinner_func(done_flag):
-#         #     spinner = itertools.cycle(['|', '/', '-', '\\'])
-#         #     print(f"[HuggingFaceClient] Lade Modell '{model_name}', bitte warten... ", end="", flush=True)
-#         #     while not done_flag["done"]:
-#         #         sys.stdout.write(next(spinner))
-#         #         sys.stdout.flush()
-#         #         time.sleep(0.1)
-#         #         sys.stdout.write('\b')
-#         #     print("✔️")  # Lade erfolgreich
-
-#         done_flag = {"done": False}
-#         # spinner_thread = threading.Thread(target=spinner_func, args=(done_flag,))
-#         # spinner_thread.start()
-
-#         try:
-#             # Dynamische Auswahl der Modell- und Tokenizerklasse
-#             model_name_lower = model_name.lower()
-#             print(f"[Debug] model_name_lower = {model_name_lower}")
-
-#             if "roberta" in model_name_lower:
-#                 print("[Debug] Lade Roberta Modell")
-#                 from transformers import RobertaTokenizer, RobertaForTokenClassification
-#                 self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-#                 self.model = RobertaForTokenClassification.from_pretrained(model_name)
-#             elif "bert" in model_name_lower:
-#                 print("[Debug] Lade Bert Modell")
-#                 from transformers import BertTokenizer, BertForTokenClassification
-#                 self.tokenizer = BertTokenizer.from_pretrained(model_name)
-#                 self.model = BertForTokenClassification.from_pretrained(model_name)
-#             elif "t5" in model_name_lower:
-#                 print("[Debug] Lade T5 Modell")
-#                 from transformers import T5Tokenizer, T5ForConditionalGeneration
-#                 self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-#                 self.model = T5ForConditionalGeneration.from_pretrained(model_name)
-#             else:
-#                 print("[Debug] Lade AutoModel")
-#                 from transformers import AutoTokenizer, AutoModelForTokenClassification
-#                 self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-#                 self.model = AutoModelForTokenClassification.from_pretrained(model_name)
-
-#             self.model_name = model_name
-#         finally:
-#             done_flag["done"] = True
-#           #  spinner_thread.join()
-
-#         print(f"[HuggingFaceClient] Modell '{model_name}' erfolgreich geladen.")
-
-
-#     def generate(self, prompt: str, max_length: int = 200) -> str:
-#         """
-#         Generiert Text für einen gegebenen Prompt.
-#         """
-#         if not self.model or not self.tokenizer:
-#             raise ValueError("Kein Modell geladen. Bitte set_model() vorher aufrufen.")
-#         print(f"[INFO] Generiere mit '{self.model_name}': {prompt}")
-
-#         inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
-#         outputs = self.model.generate(inputs["input_ids"], max_length=max_length, num_return_sequences=1)
-#         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-  
-#     def get_available_models(
-#             self,
-#             model_filter: Optional[str] = None,
-#             language_keywords: Optional[List[str]] = None,
-#             name_filter: Optional[str] = None,
-#             limit: int = 5000
-#         ) -> List[str]:
-#         """
-#         Liefert eine Liste verfügbarer Modelle vom Hugging Face Hub,
-#         optional gefiltert nach Modell-, Sprach- und Namens-Keywords.
-#         """
-#         try:
-#             # Sicherstellen, dass model_filter kein "None"-String ist
-#             if model_filter is not None and model_filter.strip().lower() == "none":
-#                 model_filter = None
-#             if model_filter == "":
-#                 model_filter = None
-
-#             if language_keywords:
-#                 language_keywords = [kw.lower() for kw in language_keywords if kw]
-
-#             print(f"[DEBUG] Suche Modelle mit filter={model_filter}, Sprache={language_keywords}, name_filter={name_filter}")
-
-#             models = list_models(filter=model_filter, limit=limit, full=True)
-
-#             names = []
-#             for m in models:
-#                 model_id = m.modelId.lower()
-#                 # Filter nach Sprache
-#                 if language_keywords and not any(kw in model_id for kw in language_keywords):
-#                     continue
-#                 # Filter nach Namen
-#                 if name_filter and name_filter.lower() not in model_id:
-#                     continue
-#                 names.append(m.modelId)
-
-#             unique_names = sorted(set(names))
-#             print(f"[DEBUG] Gefundene Modelle: {len(unique_names)}")
-#             return unique_names
-#         except Exception as e:
-#             print(f"[ERROR] Modelle konnten nicht geladen werden: {e}")
-#             return ["t5-small", "t5-base"]
-
-#     def get_model_info(self, model_name: str) -> Dict[str, Any]:
-#         """
-#         Liefert Metadaten zu einem Modell.
-#         """
-#         try:
-#             model_info = self.hf_api.model_info(model_name)
-#             config = model_info.config
-
-#             if config is None:
-#                 num_parameters = "Unbekannt"
-#                 arch = ["Unbekannt"]
-#                 tokenizer = "Unbekannt"
-#             elif not hasattr(config, "get"):
-#                 # Falls config ein Objekt ist (kein Dict), greife direkt auf Attribute zu
-#                 num_parameters = getattr(config, "num_parameters", "Unbekannt")
-#                 arch = getattr(config, "architectures", ["Unbekannt"])
-#                 tokenizer = getattr(config, "tokenizer_class", "Unbekannt")
-#             else:
-#                 num_parameters = config.get("num_parameters", "Unbekannt")
-#                 arch = config.get("architectures", ["Unbekannt"])
-#                 tokenizer = config.get("tokenizer_class", "Unbekannt")
-
-#             total_size = 0
-#             if hasattr(model_info, "siblings") and model_info.siblings:
-#                 total_size = sum(getattr(s, 'size', 0) or 0 for s in model_info.siblings)
-#             size_mb = total_size / (1024 * 1024)
-
-#             return {
-#                 "Model Size (MB)": f"{size_mb:.2f}",
-#                 "Number of Parameters": num_parameters,
-#                 "Architecture": arch[0] if isinstance(arch, list) else arch,
-#                 "Tokenizer Class": tokenizer,
-#             }
-#         except Exception as e:
-#             print(f"[ERROR] Fehler beim Abrufen der Modellinformationen: {e}")
-#             return {"Error": str(e)}
-
-
-#     def get_installed_models(self) -> List[str]:
-#         """
-#         Gibt lokal gespeicherte Modelle zurück (Cache-Verzeichnisse).
-#         """
-#         model_names = set()
-#         try:
-#             hub_cache = Path.home() / ".cache" / "huggingface" / "hub"
-#             if hub_cache.exists():
-#                 for model_dir in hub_cache.glob("models--*"):
-#                     if model_dir.is_dir():
-#                         model_name = model_dir.name.replace("models--", "").replace("--", "/")
-#                         model_names.add(model_name)
-
-#             transformers_cache = Path.home() / ".cache" / "huggingface" / "transformers"
-#             if transformers_cache.exists():
-#                 for model_dir in transformers_cache.glob("models--*"):
-#                     if model_dir.is_dir():
-#                         model_name = model_dir.name.replace("models--", "").replace("--", "/")
-#                         model_names.add(model_name)
-
-#             print(f"[INFO] Installierte Modelle gefunden: {len(model_names)}: {model_names}")
-#             return sorted(model_names)
-#         except Exception as e:
-#             print(f"[ERROR] Fehler beim Ermitteln der installierten Modelle: {e}")
-#             return []
-
-#     def check_and_load_model(self) -> bool:
-#         """
-#         Lädt das Modell, falls noch nicht geladen.
-#         Gibt True zurück, wenn erfolgreich.
-#         """
-#         if self.model is not None and self.tokenizer is not None:
-#             return True
-#         if not self.model_name or not self.model_name.strip():
-#             raise ValueError("Kein Modell gesetzt oder leerer Modellname.")
-
-#         # Messagebox-Patch temporär deaktivieren
-#         self.log_manager.disable_messagebox_patch()
-
-#         try:
-#             self.set_model(self.model_name)
-#             return True
-#         except Exception as e:
-#             print(f"[ERROR] Fehler beim Laden des Modells '{self.model_name}': {e}")
-#             try:
-#                 import tkinter.messagebox as messagebox
-#                 messagebox.showerror("Fehler", f"Modell konnte nicht geladen werden:\n{e}")
-#             except Exception:
-#                 pass  # Fallback für Headless-Umgebung
-#             return False
-#         finally:
-#             self.log_manager.enable_messagebox_patch()
-
-#     def run_model(self, prompt: str) -> str:
-#         """
-#         Generiert Text basierend auf einem Prompt.
-#         """
-#         self.check_and_load_model()
-#         return self.generate(prompt)
-
-#     def stop_model(self):
-#         """
-#         Optional: Stop-Logik für das Modell.
-#         """
-#         print(f"[INFO] Modell '{self.model_name}' benötigt keine Stop-Logik.")
-
-#     def __del__(self):
-#         """
-#         Säubert Model- und Tokenizer-Objekte beim Löschen der Instanz.
-#         """
-#         print(f"[INFO] Lösche Modell '{self.model_name}' ...")
-#         try:
-#             del self.model
-#             del self.tokenizer
-#         except Exception:
-#             pass
-
-#     def train_model_from_file(
-#         self,
-#         train_file_path: str,
-#         epochs: int = 1,
-#         batch_size: int = 4,
-#         learning_rate: float = 5e-5,
-#         progress_callback: Optional[Callable[[float], None]] = None,
-#     ):
-#         """
-#         Trainiert das aktuell geladene Modell mit einer lokalen Textdatei.
-#         :param train_file_path: Pfad zur Trainingsdatei (Textdatei)
-#         :param epochs: Anzahl der Trainingsdurchläufe
-#         :param batch_size: Batchgröße
-#         :param learning_rate: Lernrate
-#         :param progress_callback: Optionaler Callback für Fortschritt (float von 0 bis 1)
-#         """
-#         if self.model is None or self.tokenizer is None:
-#             raise ValueError("Kein Modell geladen. Bitte zuerst set_model() aufrufen.")
-
-#         if not os.path.isfile(train_file_path):
-#             raise FileNotFoundError(f"Trainingsdatei nicht gefunden: {train_file_path}")
-
-#         class TextDataset(Dataset):
-#             def __init__(self, texts: List[str], tokenizer: T5Tokenizer, max_length: int = 512):
-#                 self.texts = texts
-#                 self.tokenizer = tokenizer
-#                 self.max_length = max_length
-
-#             def __len__(self):
-#                 return len(self.texts)
-
-#             def __getitem__(self, idx):
-#                 encodings = self.tokenizer(
-#                     self.texts[idx],
-#                     max_length=self.max_length,
-#                     padding="max_length",
-#                     truncation=True,
-#                     return_tensors="pt",
-#                 )
-#                 input_ids = encodings.input_ids.squeeze()
-#                 attention_mask = encodings.attention_mask.squeeze()
-#                 return input_ids, attention_mask
-
-#         print(f"[INFO] Lade Trainingsdaten aus '{train_file_path}'...")
-#         with open(train_file_path, "r", encoding="utf-8") as f:
-#             lines = [line.strip() for line in f if line.strip()]
-
-#         dataset = TextDataset(lines, self.tokenizer)
-#         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-#         optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#         print(f"[INFO] Trainiere auf Gerät: {device}")
-#         self.model.to(device)
-#         self.model.train()
-
-#         for epoch in range(epochs):
-#             print(f"[INFO] Starte Epoche {epoch + 1}/{epochs}")
-#             total_batches = len(dataloader)
-#             for batch_idx, (input_ids, attention_mask) in enumerate(dataloader):
-#                 input_ids = input_ids.to(device)
-#                 attention_mask = attention_mask.to(device)
-#                 labels = input_ids.clone()  # Für Autoencoder Training
-
-#                 outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-#                 loss = outputs.loss
-
-#                 optimizer.zero_grad()
-#                 loss.backward()
-#                 optimizer.step()
-
-#                 if progress_callback:
-#                     progress = (epoch * total_batches + batch_idx + 1) / (epochs * total_batches)
-#                     progress_callback(progress)
-
-#                 if (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == total_batches:
-#                     print(f"Epoche {epoch + 1}/{epochs}, Batch {batch_idx + 1}/{total_batches}, Loss: {loss.item():.4f}")
-
-#         print("[INFO] Training abgeschlossen.")
-
-#     def get_model_filters(self, limit: int = 1000) -> list[str]:
-#         """
-#         Liest aus den verfügbaren HuggingFace-Modellen automatisch mögliche
-#         Filterbegriffe (z.B. Architektur, Pipeline-Tags, Modellnamen).
-#         Gibt eine sortierte Liste einzigartiger Filterbegriffe zurück, 
-#         wobei das erste Element "" (kein Filter = alle) ist.
-
-#         :param limit: Maximale Anzahl an Modellen, die abgefragt werden.
-#         """
-#         try:
-#             models = self.hf_api.list_models(limit=limit, full=True)
-
-#             filters = set()
-
-#             for m in models:
-#                 # m ist ein ModelInfo-Objekt mit Metadaten
-
-#                 if m.config and hasattr(m.config, "get"):
-#                     arch = m.config.get("architectures", [])
-#                 else:
-#                     arch = []
-
-#                 if isinstance(arch, str):
-#                     filters.add(arch.lower())
-#                 elif isinstance(arch, (list, tuple)):
-#                     for a in arch:
-#                         if isinstance(a, str):
-#                             filters.add(a.lower())
-
-#                 if hasattr(m, "pipeline_tag") and m.pipeline_tag:
-#                     filters.add(m.pipeline_tag.lower())
-
-#                 model_id = getattr(m, "modelId", "").lower()
-#                 known_models = ["t5", "bert", "gpt2", "gpt-neo", "gpt-j", "flan", "bart", "roberta",
-#                                 "distilbert", "xlm", "xlnet", "gpt4", "bert-large", "bert-base"]
-#                 for km in known_models:
-#                     if km in model_id:
-#                         filters.add(km)
-
-#             standard_filters = ["summarization", "translation", "classification",
-#                                 "text-generation", "token-classification", "question-answering",
-#                                 "conversational", "zero-shot-classification"]
-#             for sf in standard_filters:
-#                 filters.add(sf)
-
-#             sorted_filters = sorted(filters)
-#             # Leerer Filter für "alle" an erste Stelle setzen
-#             return [""] + sorted_filters
-
-#         except Exception as e:
-#             print(f"[ERROR] Fehler beim Abrufen der Model-Filter: {e}")
-#             return [""] + ["summarization", "translation", "classification",
-#                         "text-generation", "token-classification", "question-answering",
-#                         "conversational", "zero-shot-classification"]
+    def __del__(self):
+        try:
+            self.unload_model()
+        except Exception:
+            pass

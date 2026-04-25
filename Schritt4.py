@@ -2,11 +2,15 @@ import os
 import re
 import gc
 import json
+import traceback
 import regex
 from collections import Counter
 from pathlib import Path
 import unicodedata
-import Eingabe.config as config  # Importiere das komplette config-Modul
+import Eingabe.config as config
+from KI_Analyse_Flat import baue_ki_prompt, lade_json_zu_txt_datei, splitte_in_abschnitte  # Importiere das komplette config-Modul
+import kapitel_config
+import personen_resolver
 
 MODEL_NAME = ""  # Wird später durch GUI gesetzt/überschrieben
 IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
@@ -53,26 +57,20 @@ def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
         print(f"[FEHLER] KI-Anfrage fehlgeschlagen: {e}")
         return None
 
-
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False):
     print(f"[DEBUG] schritt4.daten_verarbeiten gestartet für {dateipfad} und {aufgabe}")
     ki_ordner = Path(ki_ordner)
 
- 
     try:
         if not isinstance(dateipfad, str):
             raise ValueError(f"Unerwarteter Dateipfad: {dateipfad}")
 
         aufgaben_name = config.KI_AUFGABEN.get(aufgabe, f"unbekannt{aufgabe}")
-        ist_ig_aufgabe = aufgaben_name.lower() == "ig"
+        ist_ig_aufgabe = str(aufgaben_name).lower() == "ig"
 
-
-        global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
-
-        if ist_ig_aufgabe and IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT:
-            print("[INFO] IG-Analyse wurde in diesem Lauf bereits ausgeführt – überspringe.")
-            return
-        
+        # ----------------------------------------------------
+        # Ergebnisdatei bestimmen
+        # ----------------------------------------------------
         if ist_ig_aufgabe:
             result_file_name = "ig_wortliste.txt"
         else:
@@ -80,10 +78,9 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
         result_file_path = ki_ordner / result_file_name
 
-        if result_file_path.exists() and not force:
-            print(f"[INFO] Ergebnisdatei {result_file_path} existiert bereits. KI-Analyse wird übersprungen.")
-            return
-
+        # ----------------------------------------------------
+        # IG: Wortliste IMMER zuerst erzeugen
+        # ----------------------------------------------------
         if ist_ig_aufgabe:
             ig_woerter_datei = ki_ordner / "ig_woerter.txt"
 
@@ -92,8 +89,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
             extrahiere_ig_woerter_aus_json(
                 json_ordner=config.GLOBALORDNER["json"],
                 ausgabe_datei=ig_woerter_datei,
-                lowercase=True,
-                sort_case_insensitive=True,
+                lowercase=True,             
                 min_len=2,
                 verwende_tokenInklZahlwoerter=True,
             )
@@ -102,6 +98,21 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                 print(f"[FEHLER] IG-Wortliste wurde nicht erzeugt: {ig_woerter_datei}")
                 return
 
+        # ----------------------------------------------------
+        # Wenn Ergebnis schon existiert, überspringen
+        # ----------------------------------------------------
+        if result_file_path.exists() and not force:
+            print(f"[INFO] Ergebnisdatei {result_file_path} existiert bereits. KI-Analyse wird übersprungen.")
+
+            if ist_ig_aufgabe:
+                splitte_ig_klassen(result_file_path, ki_ordner)
+
+            return
+
+        # ----------------------------------------------------
+        # Eingabetext laden
+        # ----------------------------------------------------
+        if ist_ig_aufgabe:
             with open(ig_woerter_datei, "r", encoding="utf-8") as f:
                 eingabetext = f.read()
 
@@ -111,32 +122,187 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
             print(f"[INFO] Verwende IG-Wortliste statt Kapiteltext: {ig_woerter_datei}")
 
+            # ------------------------------------------------
+            # IG: Chunkweise verarbeiten
+            # ------------------------------------------------
+            zeilen = [z for z in eingabetext.splitlines() if z.strip()]
+            chunk_groesse = 100
+            chunks = [zeilen[i:i + chunk_groesse] for i in range(0, len(zeilen), chunk_groesse)]
+
+            print(f"[INFO] IG-Wortliste enthält {len(zeilen)} Zeilen.")
+            print(f"[INFO] Verarbeite IG in {len(chunks)} Chunk(s) à maximal {chunk_groesse} Wörter.")
+
+            alle_antworten = []
+
+            for chunk_nr, chunk in enumerate(chunks, start=1):
+                chunk_text = "\n".join(chunk)
+
+                print(f"[INFO] IG-Chunk {chunk_nr}/{len(chunks)} mit {len(chunk)} Zeilen")
+
+                messages_Chat = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": chunk_text}
+                ]
+
+                messages_Flat = f"Anweisung:\n{prompt}\n{chunk_text}"
+
+                if client.check_chat_model():
+                    antwort = KI_Analyse_Chat(
+                        client,
+                        messages_Chat,
+                        dateiname="ig_woerter.txt",
+                        wortnr_bereich=f"chunk_{chunk_nr:03}"
+                    )
+                else:
+                    antwort = KI_Analyse_Flat(
+                        client,
+                        messages_Flat,
+                        dateiname="ig_woerter.txt",
+                        wortnr_bereich=f"chunk_{chunk_nr:03}"
+                    )
+
+                if antwort:
+                    alle_antworten.append(antwort.strip())
+                else:
+                    print(f"[WARNUNG] Keine Antwort für IG-Chunk {chunk_nr}")
+
+            ki_ergebnis = "\n".join(alle_antworten).strip()
+
         else:
-            with open(dateipfad, "r", encoding="utf-8") as f:
-                eingabetext = f.read()
+            json_datei = lade_json_zu_txt_datei(dateipfad)
 
-        messages_Chat = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": eingabetext}
-        ]
+            if not json_datei or not json_datei.exists():
+                print(f"[WARNUNG] Keine passende JSON-Datei gefunden. Fallback auf TXT: {dateipfad}")
 
-        messages_Flat = f"Anweisung:\n{prompt}\n{eingabetext}"
+                with open(dateipfad, "r", encoding="utf-8") as f:
+                    eingabetext = f.read()
 
-        if client.check_chat_model():
-            ki_ergebnis = KI_Analyse_Chat(
-                client,
-                messages_Chat,
-                dateiname=os.path.basename(dateipfad),
-                wortnr_bereich=""
-            )
-        else:
-            ki_ergebnis = KI_Analyse_Flat(
-                client,
-                messages_Flat,
-                dateiname=os.path.basename(dateipfad),
-                wortnr_bereich=""
-            )
+                messages_Chat = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": eingabetext}
+                ]
 
+                messages_Flat = f"Anweisung:\n{prompt}\n\n{eingabetext}"
+
+                if client.check_chat_model():
+                    ki_ergebnis = KI_Analyse_Chat(
+                        client,
+                        messages_Chat,
+                        dateiname=os.path.basename(dateipfad),
+                        wortnr_bereich=""
+                    )
+                else:
+                    ki_ergebnis = KI_Analyse_Flat(
+                        client,
+                        messages_Flat,
+                        dateiname=os.path.basename(dateipfad),
+                        wortnr_bereich=""
+                    )
+
+            else:
+                print(f"[INFO] Verwende JSON + Plaintext-Kontext: {json_datei}")
+
+                with open(json_datei, "r", encoding="utf-8") as f:
+                    json_daten = json.load(f)
+
+                if not isinstance(json_daten, list):
+                    print(f"[WARNUNG] JSON ist keine Liste. Fallback auf TXT: {json_datei}")
+
+                    if aufgabe == 3:
+                        personen = personen_resolver.lade_personen_fuer_datei(
+                        kapitel_config=kapitel_config,
+                        dateipfad=dateipfad,
+                    )
+
+                        sprecher_liste_text = personen_resolver.formatiere_personen_fuer_prompt(personen)
+
+                        prompt = prompt.replace(
+                            "{SPRECHER_LISTE_HIER_EINFÜGEN}",
+                            sprecher_liste_text
+                        )
+
+
+                    with open(dateipfad, "r", encoding="utf-8") as f:
+                        eingabetext = f.read()
+
+                    messages_Chat = [
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": eingabetext}
+                    ]
+
+                    messages_Flat = f"Anweisung:\n{prompt}\n\n{eingabetext}"
+
+                    if client.check_chat_model():
+                        ki_ergebnis = KI_Analyse_Chat(
+                            client,
+                            messages_Chat,
+                            dateiname=os.path.basename(dateipfad),
+                            wortnr_bereich=""
+                        )
+                    else:
+                        ki_ergebnis = KI_Analyse_Flat(
+                            client,
+                            messages_Flat,
+                            dateiname=os.path.basename(dateipfad),
+                            wortnr_bereich=""
+                        )
+
+                else:
+                    abschnitte = splitte_in_abschnitte(json_daten, max_tokens=500)
+
+                    print(f"[INFO] Verarbeite {len(abschnitte)} Abschnitt(e) mit Plaintext + WortNr-Mapping.")
+
+                    alle_antworten = []
+
+                    for abschnitt_nr, abschnitt in enumerate(abschnitte, start=1):
+                        abschnitt_prompt = baue_ki_prompt(
+                            abschnitt_text=abschnitt["text"],
+                            tokens=abschnitt["tokens"],
+                            aufgabe_prompt=None
+                        )
+
+                        wortnr_bereich = f"{abschnitt.get('start_wortnr', '')}-{abschnitt.get('end_wortnr', '')}"
+
+                        print(
+                            f"[INFO] Abschnitt {abschnitt_nr}/{len(abschnitte)} "
+                            f"WortNr {wortnr_bereich}"
+                        )
+
+                        messages_Chat = [
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": abschnitt_prompt}
+                        ]
+
+                        messages_Flat = (
+                            f"Anweisung:\n{prompt}\n\n"
+                            f"{abschnitt_prompt}"
+                        )
+
+                        if client.check_chat_model():
+                            antwort = KI_Analyse_Chat(
+                                client,
+                                messages_Chat,
+                                dateiname=os.path.basename(dateipfad),
+                                wortnr_bereich=wortnr_bereich
+                            )
+                        else:
+                            antwort = KI_Analyse_Flat(
+                                client,
+                                messages_Flat,
+                                dateiname=os.path.basename(dateipfad),
+                                wortnr_bereich=wortnr_bereich
+                            )
+
+                        if antwort:
+                            alle_antworten.append(antwort.strip())
+                        else:
+                            print(f"[WARNUNG] Keine Antwort für Abschnitt {abschnitt_nr}")
+
+                    ki_ergebnis = "\n".join(alle_antworten).strip()
+
+        # ----------------------------------------------------
+        # Ergebnis speichern
+        # ----------------------------------------------------
         if ki_ergebnis:
             print("KI Roh-Ausgabe:\n", ki_ergebnis)
 
@@ -151,10 +317,12 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
             if ist_ig_aufgabe:
                 splitte_ig_klassen(result_file_path, ki_ordner)
-                IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = True
+        else:
+            print("[WARNUNG] Kein KI-Ergebnis erhalten.")
 
     except Exception as e:
         print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
+        traceback.print_exc()
     finally:
         gc.collect()
 
@@ -178,9 +346,17 @@ def normalisiere_ig_token(token, lowercase=True):
 
     return token
 
+import re
+from pathlib import Path
+
 def splitte_ig_klassen(eingabe_datei, ki_ordner):
     ik_set = set()
+    ich_set = set()
     kein_set = set()
+    sonder_set = set()
+
+    def ist_mehrfach_klasse(klasse):
+        return re.fullmatch(r"(ik|ich)(-(ik|ich))+", klasse) is not None
 
     with open(eingabe_datei, "r", encoding="utf-8") as f:
         for zeile in f:
@@ -195,27 +371,49 @@ def splitte_ig_klassen(eingabe_datei, ki_ordner):
             wort = teile[0].strip().lower()
             klasse = teile[1].strip().lower()
 
+            # Normalisieren
+            klasse = (
+                klasse
+                .replace("ig_ich", "ig-ich")
+                .replace("ig/ich", "ig-ich")
+                .replace("ig ich", "ig-ich")
+            )
+
+            # 🔥 NEUE LOGIK
+            if ist_mehrfach_klasse(klasse):
+                sonder_set.add(f"{wort}\t{klasse}")
+                continue
+
             if klasse == "ik":
                 ik_set.add(wort)
+            elif klasse == "ich":
+                ich_set.add(wort)
             elif klasse == "kein":
                 kein_set.add(wort)
-            # "ich" wird bewusst ignoriert
+            else:
+                kein_set.add(wort)
 
-    # speichern
-    ik_datei = Path(ki_ordner) / "ik_aussprache.txt"
-    kein_datei = Path(ki_ordner) / "kein_ig.txt"
-
-    with open(ik_datei, "w", encoding="utf-8") as f:
+    # Dateien schreiben
+    with open(Path(ki_ordner) / "ik_aussprache.txt", "w", encoding="utf-8") as f:
         for w in sorted(ik_set):
             f.write(w + "\n")
 
-    with open(kein_datei, "w", encoding="utf-8") as f:
+    with open(Path(ki_ordner) / "ich_aussprache.txt", "w", encoding="utf-8") as f:
+        for w in sorted(ich_set):
+            f.write(w + "\n")
+
+    with open(Path(ki_ordner) / "kein_ig.txt", "w", encoding="utf-8") as f:
         for w in sorted(kein_set):
             f.write(w + "\n")
 
-    print(f"[INFO] ik-Wörter: {len(ik_set)} → {ik_datei}")
-    print(f"[INFO] kein-ig-Wörter: {len(kein_set)} → {kein_datei}")
+    with open(Path(ki_ordner) / "ig_sonderfälle.txt", "w", encoding="utf-8") as f:
+        for eintrag in sorted(sonder_set):
+            f.write(eintrag + "\n")
 
+    print(f"[INFO] ik-Wörter: {len(ik_set)}")
+    print(f"[INFO] ich-Wörter: {len(ich_set)}")
+    print(f"[INFO] kein-ig-Wörter: {len(kein_set)}")
+    print(f"[INFO] Sonderfälle (mehrere ig): {len(sonder_set)}")
 
 def ist_echtes_wort(token):
     """
@@ -238,7 +436,6 @@ def ist_echtes_wort(token):
     # Nur Buchstaben, kombinierende Zeichen, Bindestrich, Apostroph
     return regex.fullmatch(r"[\p{L}\p{M}'’\-]+", token) is not None
 
-
 def extrahiere_ig_woerter_aus_json(
     json_ordner,
     ausgabe_datei,
@@ -246,13 +443,18 @@ def extrahiere_ig_woerter_aus_json(
     sort_case_insensitive=True,
     min_len=1,
     verwende_tokenInklZahlwoerter=True,
+    ignoriere_spezialtokens=True,
+    nur_tokens_mit_ig=True,
 ):
     """
-    Extrahiert alle tatsächlichen Wörter aus *_annotierungen.json-Dateien
-    und speichert sie mit Häufigkeit.
+    Extrahiert IG-Wörter aus *_annotierungen.json-Dateien.
 
     Ausgabeformat:
-        wort<TAB>anzahl
+        ein Wort pro Zeile
+
+    Keine Häufigkeit.
+    Keine Flexionsbündelung.
+    Keine Basisformen.
     """
     json_ordner = Path(json_ordner)
     ausgabe_datei = Path(ausgabe_datei)
@@ -262,14 +464,13 @@ def extrahiere_ig_woerter_aus_json(
         return
 
     json_dateien = sorted(json_ordner.glob("*_annotierungen.json"))
-
     if not json_dateien:
         print(f"[WARNUNG] Keine *_annotierungen.json-Dateien gefunden in: {json_ordner}")
         return
 
-    print(f"[INFO] Starte Wortextraktion aus {len(json_dateien)} JSON-Dateien ...")
+    print(f"[INFO] Starte IG-Extraktion aus {len(json_dateien)} JSON-Dateien ...")
 
-    zaehler = Counter()
+    woerter_set = set()
 
     for datei in json_dateien:
         try:
@@ -291,42 +492,54 @@ def extrahiere_ig_woerter_aus_json(
 
                 token = normalisiere_ig_token(token, lowercase=lowercase)
 
-                if len(token) < min_len:
+                if not token:
                     continue
 
-                if not ist_echtes_wort(token):
+                if ignoriere_spezialtokens:
+                    if token.startswith("|") and token.endswith("|"):
+                        continue
+                    if token in {"", "_", "__"}:
+                        continue
+
+                clean_token = re.sub(r"[^\wäöüÄÖÜß]", "", token).strip()
+
+                if not clean_token:
                     continue
 
-                # Nur Wörter mit "ig"
-                if "ig" not in token:
+                if len(clean_token) < min_len:
                     continue
 
-                zaehler[token] += 1
+                if nur_tokens_mit_ig and "ig" not in clean_token.lower():
+                    continue
+
+                woerter_set.add(clean_token)
 
         except Exception as e:
             print(f"[FEHLER] Fehler beim Lesen von {datei.name}: {e}")
 
-    if sort_case_insensitive:
-        sortierte_tokens = sorted(zaehler.items(), key=lambda x: x[0].lower())
-    else:
-        sortierte_tokens = sorted(zaehler.items())
+    sortierte_woerter = sorted(
+        woerter_set,
+        key=lambda x: x.lower() if sort_case_insensitive else x
+    )
 
     ausgabe_datei.parent.mkdir(parents=True, exist_ok=True)
 
     with open(ausgabe_datei, "w", encoding="utf-8") as f:
-        for token, anzahl in sortierte_tokens:
-            f.write(f"{token}\t{anzahl}\n")
+        for wort in sortierte_woerter:
+            f.write(wort + "\n")
 
-    print(f"[INFO] Echte Wörter extrahiert: {len(sortierte_tokens)}")
-    print(f"[INFO] Gesamtvorkommen: {sum(zaehler.values())}")
-    print(f"[✓] Wortliste gespeichert: {ausgabe_datei}")
+    print(f"[INFO] IG-Wörter extrahiert: {len(sortierte_woerter)}")
+    print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
+
+
+
+
 
 if __name__ == "__main__":
     extrahiere_ig_woerter_aus_json(
         json_ordner=config.GLOBALORDNER["json"],
         ausgabe_datei=Path(config.GLOBALORDNER["ki"]) / "ig_woerter.txt",
-        lowercase=True,
-        sort_case_insensitive=True,
+        lowercase=True,    
         min_len=2,
         verwende_tokenInklZahlwoerter=True,
     )

@@ -1,21 +1,102 @@
-**Aufgabe:** Erkenne Pausen in folgendem literarischen Textabschnitt.  
-Klassifiziere markierte Wörter entweder als **"atempause** oder **"staupause"**.
+### Aufgabe: Pausen im Text erkennen
 
-**Regeln:**
+Du erhältst pro Anfrage:
 
-    Setze Pausen nur an Satzgrenzen, bei Kommas, Gedankenstrichen oder nach Sinnabschnitten.
-    Maximal alle 10–15 Silben eine Atempause, maximal eine Staupause pro Satz (besser gar keine).
-    Lieber zu wenige als zu viele Pausen annotieren.
-    Gib ausschließlich ein gültiges JSON-Objekt mit Listen { "atempause": [...], "staupause": [...] }
-    Falls keine Pausen gefunden werden, gib zurück: { "atempause": [], "staupause": [] }
+1. Einen **literarischen Abschnitt als Fließtext**
+2. Darunter eine **Tokenliste mit WortNr-Zuordnung**
 
-**Beispiel Eingabe:**  
+---
+
+### Ziel
+
+Erkenne sinnvolle Sprechpausen und klassifiziere sie als:
+
+* **atempause** → natürliche Atemstellen im Sprachfluss
+* **staupause** → stärkere Pause durch Spannung, Zögern oder Bruch
+
+---
+
+### WICHTIG: Ausgabeformat
+
+* Gib **ausschließlich ein gültiges JSON-Objekt** zurück
+* Verwende **nur WortNr**, NICHT die Zeichen selbst
+* Format:
+
+```json id="g2m9xq"
+{
+  "atempause": [WortNr, ...],
+  "staupause": [WortNr, ...]
+}
+```
+
+---
+
+### Regeln
+
+* Setze Pausen nur:
+
+  * an **Satzgrenzen**
+  * bei **Kommas**
+  * bei **Gedankenstrichen**
+  * oder nach klaren **Sinnabschnitten**
+* Maximal:
+
+  * alle **10–15 Silben eine Atempause**
+  * **eine Staupause pro Satz (besser gar keine)**
+* Lieber **zu wenige als zu viele Pausen**
+* Nutze **nur WortNr aus der Tokenliste**
+* **Erfinde keine WortNr**
+
+---
+
+### Wenn keine Pausen gefunden werden
+
+```json id="c4l8pw"
+{
+  "atempause": [],
+  "staupause": []
+}
+```
+
+---
+
+### Hinweise zur Interpretation
+
+* **atempause**
+  → fließende, natürliche Gliederung (oft bei Kommas)
+
+* **staupause**
+  → bewusste Verzögerung, Spannung, Bruch (z. B. „–“, starke Satzenden)
+
+---
+
+### Beispiel
+
+**ABSCHNITT:**
 Er ging nach draußen, doch dann blieb er stehen.
 
-**Beispiel Ausgabe:**
-{
-  "atempause": [","],
-  "staupause": ["."]
-}.  
+**TOKENS / METADATEN:**
+WortNr 1: Er
+WortNr 2: ging
+WortNr 3: nach
+WortNr 4: draußen
+WortNr 5: ,
+WortNr 6: doch
+WortNr 7: dann
+WortNr 8: blieb
+WortNr 9: er
+WortNr 10: stehen
+WortNr 11: .
 
-Jezt kommt deine Eingabe:
+**Erwartete Ausgabe:**
+
+```json id="d8s2mz"
+{
+  "atempause": [5],
+  "staupause": [11]
+}
+```
+
+---
+
+Jetzt kommt deine Eingabe:
