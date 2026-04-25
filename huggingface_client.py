@@ -349,6 +349,12 @@ class HuggingFaceClient:
                     bnb_4bit_use_double_quant=True,
                     bnb_4bit_compute_dtype=torch.float16,
                 )
+                
+                import torch
+
+                torch.set_num_threads(12)
+                torch.set_num_interop_threads(2)
+
 
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,

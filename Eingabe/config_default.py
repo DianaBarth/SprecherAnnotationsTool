@@ -5,6 +5,7 @@
 # Ordnerstruktur für Ein- und Ausgabe
 GLOBALORDNER = {}
 NUTZE_KI = True  # Schaltet alle KI-Funktionen zentral ein oder aus
+MAX_PARALLELE_KI_TASKS = 2
 
 # Aufgabenübersicht mit IDs und Kurzbezeichnungen
 KI_AUFGABEN = {

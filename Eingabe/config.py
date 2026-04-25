@@ -33,6 +33,8 @@ BILDHOEHE_PX = 19
 PDF_SEITENFORMAT = 'A4'
 DATUMSFORMAT = '%Y-%m-%d_%H-%M-%S'
 
+
+
 # Layout-Einstellungen
 ZEICHENBREITE = 6
 ZEILENHOEHE = 40

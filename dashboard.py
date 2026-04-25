@@ -10,6 +10,13 @@ import tkinter as tk
 import traceback
 import queue
 import importlib
+import os
+
+os.environ["OMP_NUM_THREADS"] = "12"
+os.environ["MKL_NUM_THREADS"] = "12"
+
+import torch
+
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from docx import Document
@@ -1418,7 +1425,11 @@ class DashBoard(ttk.Frame):
                     print(f"[INFO] Keine aktiven und notwendigen KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
                 else:
                   
-                    max_workers = min(len(aktive_tasks), os.cpu_count() or 1)
+                    # max_workers = min(len(aktive_tasks), os.cpu_count() or 1)
+                    max_workers = min(
+                        getattr(config, "MAX_PARALLELE_KI_TASKS", 1),
+                        len(aktive_tasks)
+                    )
                     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                         futures = []
 
@@ -1461,6 +1472,23 @@ class DashBoard(ttk.Frame):
                                 print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
                                 traceback.print_exc()
 
+                        ki_fehler = False
+
+                        for future in concurrent.futures.as_completed(futures):
+                            try:
+                                result = future.result()
+                                if result is None:
+                                    ki_fehler = True
+                                print(f"[DEBUG] KI-Task abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                            except Exception as e:
+                                ki_fehler = True
+                                print(f"[ERROR] Fehler bei KI-Aufgabe: {e}", flush=True)
+                                traceback.print_exc()
+
+                        if ki_fehler:
+                            print(f"[WARNUNG] KI-Verarbeitung hatte Fehler für {kapitel_name}. Merge wird übersprungen.")
+                            return
+                        
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
             else:
                 next_key = 3 # falls keine KI-Aufgaben genutzt werden , defaultwert
