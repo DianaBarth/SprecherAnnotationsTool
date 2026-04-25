@@ -1551,22 +1551,3 @@ class DashBoard(ttk.Frame):
                 kapitel_config=self.kapitel_config,
                 ordner=self.ordner,
             )
-if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-    import Eingabe.config as config
-    sys.setrecursionlimit(2000)  # Vorsichtig erhöhen, Standard ist oft 1000
-    logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
-    ordner_nur_str = {
-        "saetze": config.GLOBALORDNER["saetze"],
-        "ki": config.GLOBALORDNER["ki"],
-    }
-
-    kapitel_name = "Prolog – Finis post portam"
-    aufgaben_id =4
-    prompt = lade_prompt_datei(4)
-    modell_name = "dbmdz/german-gpt2"
-
-    ki_task_process(kapitel_name, aufgaben_id, prompt, modell_name, ordner_nur_str, None)
-
-

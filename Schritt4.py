@@ -67,8 +67,31 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
         aufgaben_name = config.KI_AUFGABEN.get(aufgabe, f"unbekannt{aufgabe}")
         ist_ig_aufgabe = str(aufgaben_name).lower() == "ig"
+        
+        ist_person_aufgabe = str(aufgaben_name).lower() == "person"
 
-        # ----------------------------------------------------
+        if ist_person_aufgabe and "{SPRECHER_LISTE_HIER_EINFÜGEN}" in prompt:
+            try:
+                personen = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
+                    dateipfad=dateipfad
+                )
+
+                sprecher_liste_text = personen_resolver.formatiere_personen_fuer_prompt(personen)
+
+                prompt = prompt.replace(
+                    "{SPRECHER_LISTE_HIER_EINFÜGEN}",
+                    sprecher_liste_text
+                )
+
+                print(f"[INFO] Sprecherliste injiziert: {sprecher_liste_text}")
+
+            except Exception as e:
+                print(f"[WARNUNG] Sprecherliste konnte nicht injiziert werden: {e}")
+                prompt = prompt.replace(
+                    "{SPRECHER_LISTE_HIER_EINFÜGEN}",
+                    "Keine bekannten Sprecher"
+                )
+                # ----------------------------------------------------
         # Ergebnisdatei bestimmen
         # ----------------------------------------------------
         if ist_ig_aufgabe:
@@ -207,20 +230,6 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
                 if not isinstance(json_daten, list):
                     print(f"[WARNUNG] JSON ist keine Liste. Fallback auf TXT: {json_datei}")
-
-                    if aufgabe == 3:
-                        personen = personen_resolver.lade_personen_fuer_datei(
-                        kapitel_config=kapitel_config,
-                        dateipfad=dateipfad,
-                    )
-
-                        sprecher_liste_text = personen_resolver.formatiere_personen_fuer_prompt(personen)
-
-                        prompt = prompt.replace(
-                            "{SPRECHER_LISTE_HIER_EINFÜGEN}",
-                            sprecher_liste_text
-                        )
-
 
                     with open(dateipfad, "r", encoding="utf-8") as f:
                         eingabetext = f.read()
