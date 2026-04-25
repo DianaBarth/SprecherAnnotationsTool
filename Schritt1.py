@@ -11,7 +11,8 @@ EINRUECKUNGSFORMAT = getattr(config, "EINRUECKUNGSFORMAT", [])
 def normalisiere_text(text):
     text = (text or "").replace("\xa0", " ")
     text = text.replace("\t", " ")
-    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[ ]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
     return text.strip()
 
 
@@ -123,6 +124,61 @@ def extrahiere_kapitel_mit_config(
         "Rechtsbuendig": "|RechtsbuendigEnde| ",
     }
 
+    def run_ist_fett(run):
+        if run.bold is True:
+            return True
+        if run.style and run.style.font and run.style.font.bold is True:
+            return True
+        return False
+
+
+    def run_ist_kursiv(run):
+        if run.italic is True:
+            return True
+        if run.style and run.style.font and run.style.font.italic is True:
+            return True
+        return False
+
+
+    def paragraph_text_mit_inline_formatmarkern(paragraph):
+        teile = []
+        fett_aktiv = False
+        kursiv_aktiv = False
+
+        for run in paragraph.runs:
+            text = run.text or ""
+            if not text:
+                continue
+
+            text = text.replace("\xa0", " ").replace("\t", " ")
+
+            ist_fett = run_ist_fett(run)
+            ist_kursiv = run_ist_kursiv(run)
+
+            if ist_fett and not fett_aktiv:
+                teile.append("|FettStart|")
+                fett_aktiv = True
+            elif not ist_fett and fett_aktiv:
+                teile.append("|FettEnde|")
+                fett_aktiv = False
+
+            if ist_kursiv and not kursiv_aktiv:
+                teile.append("|KursivStart|")
+                kursiv_aktiv = True
+            elif not ist_kursiv and kursiv_aktiv:
+                teile.append("|KursivEnde|")
+                kursiv_aktiv = False
+
+            teile.append(text)
+
+        if kursiv_aktiv:
+            teile.append("|KursivEnde|")
+        if fett_aktiv:
+            teile.append("|FettEnde|")
+
+        return normalisiere_text("".join(teile))
+
+
     def kapitel_startet_mit(text, kapitel):
         text = normalisiere_text(text)
         kapitel = normalisiere_text(kapitel)
@@ -200,12 +256,14 @@ def extrahiere_kapitel_mit_config(
 
             for para_idx, para in enumerate(kapitel_paragraphs, start=1):
                 raw_text = para.text or ""
-                text = normalisiere_text(raw_text)
+                text = paragraph_text_mit_inline_formatmarkern(para)
 
                 print(f"[DEBUG] Absatz {para_idx}: roh={raw_text!r}")
                 print(f"[DEBUG] Absatz {para_idx}: normalisiert={text!r}")
-
-                if ist_kapitel_trenner(text, kapitel_trenner):
+                
+                text_fuer_trenner = normalisiere_text(raw_text)
+                
+                if ist_kapitel_trenner(text_fuer_trenner, kapitel_trenner):
                     print(f"[DEBUG] >>> TRENNER GEFUNDEN in Kapitel {kapitel_name!r}: {text!r}")
 
                     if aktueller_abschnitt:

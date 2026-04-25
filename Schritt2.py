@@ -98,12 +98,17 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         "Einrueckung": "|EinrueckungStart|",
         "Zentriert": "|ZentriertStart|",
         "Rechtsbuendig": "|RechtsbuendigStart|",
+        "Fett": "|FettStart|",
+        "Kursiv": "|KursivStart|",
     }
+
     END_TAGS = {
         "Ueberschrift": "|UeberschriftEnde|",
         "Einrueckung": "|EinrueckungEnde|",
         "Zentriert": "|ZentriertEnde|",
         "Rechtsbuendig": "|RechtsbuendigEnde|",
+        "Fett": "|FettEnde|",
+        "Kursiv": "|KursivEnde|",
     }
 
     eingabeordner = Path(eingabeordner)
@@ -149,6 +154,9 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         pending_position_start = None  # Typ, z.B. "Zentriert"
         last_token_idx = {}            # Dict für letzte Token-Position je Typ
         in_ueberschrift = False
+        fett_aktiv = False
+        kursiv_aktiv = False
+        betonungen = []
 
         i = 0
         while i < len(woerter_und_satzzeichen):
@@ -157,10 +165,22 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             # START-TAG erkennen
             if token in START_TAGS.values():
                 typ = [k for k, v in START_TAGS.items() if v == token][0]
-                print(f"DEBUG: START-TAG '{token}' erkannt, pending_position_start gesetzt auf '{typ}'")
+                print(f"DEBUG: START-TAG '{token}' erkannt")
+
+                if typ == "Fett":
+                    fett_aktiv = True
+                    i += 1
+                    continue
+
+                if typ == "Kursiv":
+                    kursiv_aktiv = True
+                    i += 1
+                    continue
+
                 if typ == "Ueberschrift":
                     in_ueberschrift = True
                     typ = "Zentriert"
+
                 pending_position_start = typ
                 i += 1
                 continue
@@ -169,11 +189,21 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             elif token in END_TAGS.values():
                 typ = [k for k, v in END_TAGS.items() if v == token][0]
                 print(f"DEBUG: END-TAG '{token}' erkannt")
+
+                if typ == "Fett":
+                    fett_aktiv = False
+                    i += 1
+                    continue
+
+                if typ == "Kursiv":
+                    kursiv_aktiv = False
+                    i += 1
+                    continue
+
                 if typ == "Ueberschrift":
                     in_ueberschrift = False
                     typ = "Zentriert"
 
-                # Position des letzten echten Tokens vor dem End-Tag mit Ende-Annotation versehen
                 if typ in last_token_idx and last_token_idx[typ] is not None:
                     idx = last_token_idx[typ]
                     if positions[idx]:
@@ -181,7 +211,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                     else:
                         positions[idx] = f"{typ}Ende"
                     print(f"DEBUG: Position an Index {idx} ergänzt mit '{typ}Ende'")
-                    last_token_idx[typ] = None  # Reset
+                    last_token_idx[typ] = None
 
                 i += 1
                 continue
@@ -192,6 +222,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                 cleaned_tokens.append("")
                 cleaned_annotations.append("zeilenumbruch")
                 positions.append("")
+                betonungen.append("")
                 i += 1
                 continue
 
@@ -229,9 +260,18 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             
             print(f"DEBUG: Token '{token}': Annotationen = {annotationen}, position_wert = {position_wert}")
 
+            betonung_wert = ""
+
+            if not in_ueberschrift:
+                if fett_aktiv:
+                    betonung_wert = "Hauptbetonung"
+                elif kursiv_aktiv:
+                    betonung_wert = "Nebenbetonung"
+
+            betonungen.append(betonung_wert)
             cleaned_tokens.append(token)
             cleaned_annotations.append(",".join(annotationen))
-            positions.append(position_wert)
+            positions.append(position_wert)            
             i += 1
 
         print(f"DEBUG: Anzahl Tokens: {len(cleaned_tokens)}")
@@ -239,8 +279,8 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         print(f"DEBUG: Beispiel Annotationen (erste 40): {cleaned_annotations[:40]}")
         print(f"DEBUG: Beispiel Positions (erste 40): {positions[:40]}")
 
-        if not (len(cleaned_tokens) == len(cleaned_annotations) == len(positions)):
-            raise ValueError("Längen von Tokens, Annotationen und Positionen stimmen nicht überein.")
+        if not (len(cleaned_tokens) == len(cleaned_annotations) == len(positions) == len(betonungen)):
+            raise ValueError("Längen von Tokens, Annotationen, Positionen und Betonungen stimmen nicht überein.")
 
         tokenInklZahlwoerter = []
         for idx, token in enumerate(cleaned_tokens):
@@ -255,6 +295,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             "tokenInklZahlwoerter": tokenInklZahlwoerter,
             "annotation": cleaned_annotations,
             "position": positions,
+            "betonung": betonungen,
         })
 
         for typ_name in config.KI_AUFGABEN.values():
