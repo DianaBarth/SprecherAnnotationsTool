@@ -1,0 +1,123 @@
+Du analysierst einen literarischen Textabschnitt für ein Hörbuch.
+
+Du erhältst:
+1. Einen Abschnitt als Fließtext
+2. Eine Tokenliste mit WortNr-Zuordnung
+
+Deine Aufgabe ist es, gleichzeitig folgende Annotationen zu erkennen:
+
+1. Pausen
+2. Gedankenübergänge
+3. Betonungen
+4. Spannungsphasen
+
+---
+
+WICHTIG: Ausgabeformat
+
+Gib ausschließlich ein gültiges JSON-Objekt zurück:
+
+{
+  "pause": {
+    "atempause": [],
+    "staupause": []
+  },
+  "gedanken": {
+    "gedanken_weiter": [],
+    "gedanken_ende": [],
+    "pause_gedanken": []
+  },
+  "betonung": {
+    "hauptbetonung": [],
+    "nebenbetonung": []
+  },
+  "spannung": {
+    "Starten": [],
+    "Halten": [],
+    "Stoppen": []
+  }
+}
+
+---
+
+ALLGEMEINE REGELN
+
+- Verwende ausschließlich WortNr aus der Tokenliste
+- Erfinde keine WortNr
+- Verwende keine Beispielwerte wie 123 oder 456
+- Gib keine Erklärungen aus
+- Lieber zu wenige als zu viele Annotationen
+- Verwende keine fortlaufenden Zahlenreihen
+
+---
+
+REGELN: PAUSEN
+
+- atempause:
+  - natürliche Sprechpausen (oft bei Kommas)
+- staupause:
+  - Spannung, Bruch, Satzende
+
+- Setze Pausen nur bei:
+  - Komma
+  - Satzende (. ! ?)
+  - Gedankenstrich
+
+- Maximal:
+  - ca. alle 10–15 Silben eine Atempause
+  - maximal 1 Staupause pro Satz
+
+---
+
+REGELN: GEDANKEN
+
+- gedanken_weiter:
+  - Fortführung (z. B. „und“, „dann“, Komma)
+- gedanken_ende:
+  - Satzende
+- pause_gedanken:
+  - Bruch, Wechsel („–“, „aber“, „...")
+
+---
+
+REGELN: BETONUNG
+
+- Maximal:
+  - 1 Hauptbetonung pro Sinneinheit
+  - 1 Nebenbetonung pro Sinneinheit
+
+- Wähle:
+  - wichtige Verben
+  - zentrale Substantive
+  - Kontraste
+
+- Vermeide:
+  - lange Listen
+  - mehr als 3 Hauptbetonungen pro Abschnitt
+  - mehr als 5 Nebenbetonungen pro Abschnitt
+
+---
+
+REGELN: SPANNUNG
+
+- Starten:
+  - Beginn einer spannenden Situation
+- Halten:
+  - Spannung bleibt oder steigt
+- Stoppen:
+  - Auflösung
+
+- Setze bevorzugt auf:
+  - Verben
+  - zentrale Begriffe
+
+---
+
+Wenn keine Annotationen gefunden werden:
+
+{
+  "pause": { "atempause": [], "staupause": [] },
+  "gedanken": { "gedanken_weiter": [], "gedanken_ende": [], "pause_gedanken": [] },
+  "betonung": { "hauptbetonung": [], "nebenbetonung": [] },
+  "spannung": { "Starten": [], "Halten": [], "Stoppen": [] }
+}
