@@ -8,29 +8,39 @@ from collections import Counter
 from pathlib import Path
 import unicodedata
 import Eingabe.config as config
-from KI_Analyse_Flat import baue_ki_prompt, lade_json_zu_txt_datei, splitte_in_abschnitte_nach_zeilenumbruch  
+from KI_Analyse_Flat import baue_ki_prompt, lade_json_zu_txt_datei, splitte_in_abschnitte_intelligent  
 import personen_resolver
 
 MODEL_NAME = ""  # Wird später durch GUI gesetzt/überschrieben
 IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
 
-def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
+def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich="", max_new_tokens=128):
     try:
-        # Kombiniere Messages zu Prompt-String
-        prompt = ""
+        system_text = ""
+        user_text = ""
+
         for msg in messages:
             if msg["role"] == "system":
-                prompt += f"<SYSTEM>\n{msg['content']}\n</SYSTEM>\n"
+                system_text += msg["content"].strip() + "\n"
             elif msg["role"] == "user":
-                prompt += f"<USER>\n{msg['content']}\n</USER>\n"
+                user_text += msg["content"].strip() + "\n"
 
-        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient …")
-        content = client.generate(prompt)
+        prompt = client.build_prompt(system_text, user_text)
 
-        print("[DEBUG] Prompt an Modell:")
-        print(prompt)
-        print("[DEBUG] KI-Ergebnis vom Modell:")
-        print(content)
+        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient STREAM …")
+
+        def on_token(piece):
+            print(piece, end="", flush=True)
+
+        content = client.generate_stream(
+            prompt,
+            on_token=on_token,
+            max_new_tokens=max_new_tokens,
+            hard_cap=max_new_tokens,
+            temperature=0.0,
+        )
+
+        print("\n[INFO] Stream abgeschlossen.")
 
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
@@ -38,23 +48,41 @@ def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich=""):
             log_antwort(dateiname, wortnr_bereich, content)
 
         return content
+
     except Exception as e:
         print(f"[FEHLER] KI-Anfrage fehlgeschlagen: {e}")
-        return None
-
-def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich=""):
+        traceback.print_exc()        
+        return None 
+    
+def KI_Analyse_Flat(client, prompt_text, dateiname="", wortnr_bereich="", max_new_tokens=128):
     try:
-        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient …")
-        content = client.generate(prompt_text)
+        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient STREAM …")
+
+        def on_token(piece):
+            print(piece, end="", flush=True)
+
+        content = client.generate_stream(
+            prompt_text,
+            on_token=on_token,
+            max_new_tokens=max_new_tokens,
+            hard_cap=max_new_tokens,
+            temperature=0.0,
+        )
+
+        print("\n[INFO] Stream abgeschlossen.")
+
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
         if dateiname and wortnr_bereich:
             log_antwort(dateiname, wortnr_bereich, content)
 
         return content
+
     except Exception as e:
         print(f"[FEHLER] KI-Anfrage fehlgeschlagen: {e}")
+        traceback.print_exc()
         return None
+
 
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False):
     print(f"[DEBUG] schritt4.daten_verarbeiten gestartet für {dateipfad} und {aufgabe}")
@@ -68,6 +96,21 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
         ist_ig_aufgabe = str(aufgaben_name).lower() == "ig"
         
         ist_person_aufgabe = str(aufgaben_name).lower() == "person"
+
+
+        aufgaben_name_lower = str(aufgaben_name).lower()
+
+        max_tokens_by_task = {
+            "pause": 128,
+            "gedanken": 128,
+            "betonung": 192,
+            "spannung": 128,
+            "person": 384,
+            "ig": 512,
+        }
+
+        antwort_max_new_tokens = max_tokens_by_task.get(aufgaben_name_lower, 128)
+
 
         if ist_person_aufgabe and "{SPRECHER_LISTE_HIER_EINFÜGEN}" in prompt:
             try:
@@ -174,17 +217,58 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     antwort = KI_Analyse_Chat(
                         client,
                         messages_Chat,
-                        dateiname="ig_woerter.txt",
-                        wortnr_bereich=f"chunk_{chunk_nr:03}"
+                        dateiname=os.path.basename(dateipfad),
+                        wortnr_bereich=wortnr_bereich,
+                        max_new_tokens=antwort_max_new_tokens,
                     )
                 else:
                     antwort = KI_Analyse_Flat(
                         client,
                         messages_Flat,
-                        dateiname="ig_woerter.txt",
-                        wortnr_bereich=f"chunk_{chunk_nr:03}"
+                        dateiname=os.path.basename(dateipfad),
+                        wortnr_bereich=f"chunk_{chunk_nr:03}",
+                        max_new_tokens=antwort_max_new_tokens
                     )
 
+                if antwort:
+                    start_wortnr = int(abschnitt.get("start_wortnr", 0))
+                    end_wortnr = int(abschnitt.get("end_wortnr", 0))
+
+                    if aufgaben_name_lower == "betonung":
+                        antwort = filtere_wortnr_json(
+                            antwort,
+                            erlaubte_keys=["hauptbetonung", "nebenbetonung"],
+                            start_wortnr=start_wortnr,
+                            end_wortnr=end_wortnr,
+                            max_pro_key=5,
+                        )
+
+                    elif aufgaben_name_lower == "pause":
+                        antwort = filtere_wortnr_json(
+                            antwort,
+                            erlaubte_keys=["atempause", "staupause"],
+                            start_wortnr=start_wortnr,
+                            end_wortnr=end_wortnr,
+                            max_pro_key=8,
+                        )
+
+                    elif aufgaben_name_lower == "gedanken":
+                        antwort = filtere_wortnr_json(
+                            antwort,
+                            erlaubte_keys=["gedanken_weiter", "gedanken_ende", "pause_gedanken"],
+                            start_wortnr=start_wortnr,
+                            end_wortnr=end_wortnr,
+                            max_pro_key=8,
+                        )
+
+                    elif aufgaben_name_lower == "spannung":
+                        antwort = filtere_wortnr_json(
+                            antwort,
+                            erlaubte_keys=["Starten", "Halten", "Stoppen"],
+                            start_wortnr=start_wortnr,
+                            end_wortnr=end_wortnr,
+                            max_pro_key=5,
+                        )
                 if antwort:
                     alle_antworten.append(antwort.strip())
               
@@ -259,18 +343,78 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                         )
 
                 else:
-                    abschnitte = splitte_in_abschnitte_nach_zeilenumbruch(json_daten)
+                    abschnitte = splitte_in_abschnitte_intelligent(json_daten)
+                    # 🔥 PERSON-GUARD: Nur ausführen, wenn irgendwo Anführungszeichen vorkommen
+                    if ist_person_aufgabe:
+                        hat_dialog = False
 
+                        for eintrag in json_daten:
+                            token = (
+                                eintrag.get("tokenInklZahlwoerter")
+                                or eintrag.get("token")
+                                or ""
+                            )
+
+                            if any(q in token for q in ['"', '„', '“', '‚', '‘']):
+                                hat_dialog = True
+                                break
+
+                        if not hat_dialog:
+                            print(f"[INFO] Keine Anführungszeichen in {dateipfad} → überspringe Person-Analyse.")
+                            return
+                    if abschnitte is None:
+                        print("[WARNUNG] splitte_in_abschnitte_intelligent() gab None zurück. Fallback: leer.")
+                        abschnitte = []
+
+                    if not isinstance(abschnitte, list):
+                        raise TypeError(
+                            f"splitte_in_abschnitte_intelligent() muss list zurückgeben, "
+                            f"gab aber {type(abschnitte).__name__}"
+                        )
+
+                    if not abschnitte:
+                        print(f"[WARNUNG] Keine Abschnitte erzeugt für {dateipfad}. KI-Analyse wird übersprungen.")
+                        return
+                    
                     print(f"[INFO] Verarbeite {len(abschnitte)} Abschnitt(e) mit Plaintext + WortNr-Mapping.")
 
                     alle_antworten = []
 
                     for abschnitt_nr, abschnitt in enumerate(abschnitte, start=1):
+                        
+                        # 🔥 Abschnittsbasierter PERSON-GUARD
+                        if ist_person_aufgabe:
+                            tokens = abschnitt.get("tokens", [])
+
+                            hat_dialog = any(
+                                any(q in str(
+                                    t.get("tokenInklZahlwoerter") or t.get("token") or ""
+                                ) for q in ['"', '„', '“', '‚', '‘'])
+                                for t in tokens
+                            )
+
+                            if not hat_dialog:
+                                print(f"[INFO] Abschnitt {abschnitt_nr} ohne Dialog → übersprungen.")
+                                continue
+
+
+                        aufgaben_name_lower = str(aufgaben_name).lower()
+
+                        kompakt = aufgaben_name_lower in {
+                            "pause",
+                            "gedanken",
+                            "betonung",
+                            "spannung",
+                        }
+
                         abschnitt_prompt = baue_ki_prompt(
                             abschnitt_text=abschnitt["text"],
                             tokens=abschnitt["tokens"],
-                            aufgabe_prompt=None
+                            aufgabe_prompt=None,
+                            kompakt=kompakt
                         )
+
+                        print(f"[DEBUG][Prompt] kompakt={kompakt} | Aufgabe={aufgaben_name}")
 
                         wortnr_bereich = f"{abschnitt.get('start_wortnr', '')}-{abschnitt.get('end_wortnr', '')}"
 
@@ -542,6 +686,61 @@ def extrahiere_ig_woerter_aus_json(
     print(f"[INFO] IG-Wörter extrahiert: {len(sortierte_woerter)}")
     print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
 
+
+    def extrahiere_json_objekt(text):
+        if not text:
+            return None
+
+        start = text.find("{")
+        ende = text.rfind("}")
+
+        if start == -1 or ende == -1 or ende <= start:
+            return None
+
+        try:
+            return json.loads(text[start:ende + 1])
+        except Exception:
+            return None
+
+
+    def filtere_wortnr_json(antwort_text, erlaubte_keys, start_wortnr, end_wortnr, max_pro_key=None):
+        daten = extrahiere_json_objekt(antwort_text)
+
+        if not isinstance(daten, dict):
+            print("[WARNUNG][KI-JSON] Antwort ist kein gültiges JSON-Objekt.")
+            return None
+
+        bereinigt = {}
+
+        for key in erlaubte_keys:
+            werte = daten.get(key, [])
+
+            if not isinstance(werte, list):
+                werte = []
+
+            gefiltert = []
+
+            for nr in werte:
+                try:
+                    nr_int = int(nr)
+                except Exception:
+                    continue
+
+                if start_wortnr <= nr_int <= end_wortnr:
+                    if nr_int not in gefiltert:
+                        gefiltert.append(nr_int)
+                else:
+                    print(
+                        f"[WARNUNG][KI-JSON] Entferne WortNr außerhalb Abschnitt: "
+                        f"{nr_int} nicht in {start_wortnr}-{end_wortnr}"
+                    )
+
+            if max_pro_key is not None:
+                gefiltert = gefiltert[:max_pro_key]
+
+            bereinigt[key] = gefiltert
+
+        return json.dumps(bereinigt, ensure_ascii=False, indent=2)   
 
 if __name__ == "__main__":
     extrahiere_ig_woerter_aus_json(

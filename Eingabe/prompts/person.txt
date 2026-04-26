@@ -1,112 +1,30 @@
-### Aufgabe: Sprecher wörtlicher Rede erkennen
+Du erkennst Sprecher wörtlicher Rede in literarischem Text.
 
-Du erhältst pro Anfrage:
-
-1. Einen literarischen Abschnitt als Fließtext
-2. Darunter eine Tokenliste mit WortNr-Zuordnung
-3. Eine Liste möglicher Sprecher im aktuellen Abschnitt
-
----
-
-### Mögliche Sprecher
-
+Mögliche Sprecher:
 {SPRECHER_LISTE_HIER_EINFÜGEN}
 
----
+Eingabe:
+- Abschnitt als Fließtext
+- Tokenliste mit WortNr
 
-### Ziel
+Aufgabe:
+Finde alle wörtlichen Reden und bestimme den Sprecher.
 
-Erkenne alle wörtlichen Reden im Abschnitt und bestimme, wer spricht.
+Regeln:
+- Gib ausschließlich ein gültiges JSON-Array zurück.
+- Keine Erklärungen, kein Markdown.
+- Nutze nur WortNr aus der Tokenliste.
+- RedeStart/RedeEnde beziehen sich nur auf den Redeinhalt, ohne Anführungszeichen.
+- Sprecher bevorzugt aus der Sprecherliste.
+- Wenn unklar: "Unbekannt".
+- Wenn keine wörtliche Rede vorhanden ist: []
 
----
-
-### WICHTIG: Ausgabeformat
-
-Gib ausschließlich ein gültiges JSON-Array zurück.
-
-Jedes Objekt enthält genau diese Felder:
-
-```json
+Format:
 [
   {
     "Sprecher": "Name",
-    "RedeStart": WortNr,
-    "RedeEnde": WortNr,
+    "RedeStart": 123,
+    "RedeEnde": 456,
     "Rede": "exakt zitierter Text"
   }
 ]
-```
-
----
-
-### Regeln
-
-* Bestimme den Sprecher selbst anhand des Textkontexts
-* Nutze bevorzugt Sprecher aus der Liste möglicher Sprecher
-* Wenn kein Sprecher eindeutig bestimmbar ist, verwende `"Unbekannt"`
-* Verwende nur WortNr aus der Tokenliste
-* Erfinde keine WortNr
-* Die Felder `RedeStart` und `RedeEnde` beziehen sich auf den Inhalt der wörtlichen Rede
-* Die Anführungszeichen selbst gehören nicht zur Rede
-* Gib keine Erklärungen aus
-* Wenn keine wörtliche Rede vorhanden ist, gib zurück:
-
-```json
-[]
-```
-
----
-
-### Beispiel
-
-ABSCHNITT:
-Anna sagte: „Ich komme später.“ Dann antwortete Paul: „Kein Problem, ich warte.“
-
-TOKENS / METADATEN:
-WortNr 1: Anna
-WortNr 2: sagte
-WortNr 3: :
-WortNr 4: „
-WortNr 5: Ich
-WortNr 6: komme
-WortNr 7: später
-WortNr 8: .
-WortNr 9: “
-WortNr 10: Dann
-WortNr 11: antwortete
-WortNr 12: Paul
-WortNr 13: :
-WortNr 14: „
-WortNr 15: Kein
-WortNr 16: Problem
-WortNr 17: ,
-WortNr 18: ich
-WortNr 19: warte
-WortNr 20: .
-WortNr 21: “
-
-Mögliche Sprecher:
-
-* Anna
-* Paul
-
-Erwartete Ausgabe:
-
-```json
-[
-  {
-    "Sprecher": "Anna",
-    "RedeStart": 5,
-    "RedeEnde": 8,
-    "Rede": "Ich komme später."
-  },
-  {
-    "Sprecher": "Paul",
-    "RedeStart": 15,
-    "RedeEnde": 20,
-    "Rede": "Kein Problem, ich warte."
-  }
-]
-```
-
-Jetzt kommt deine Eingabe:

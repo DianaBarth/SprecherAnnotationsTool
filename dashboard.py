@@ -1137,7 +1137,7 @@ class DashBoard(ttk.Frame):
         selected_file_path = self.selected_file.get()
         task_flags = {key: var.get() for key, var in self.task_vars.items()}
 
-        # >>> HIER EINFÜGEN: Schutzabfragen
+        
         if not ausgewaehlte_kapitel:
             messagebox.showwarning(
                 "Keine Kapitel ausgewählt",
@@ -1157,7 +1157,7 @@ class DashBoard(ttk.Frame):
             with self.tasks_lock:
                 self.tasks_running = False
             return
-        # <<< ENDE EINFÜGESTELLE
+      
 
         model_selection_boxes = getattr(self, "model_selection_boxes", None)
         kapitel_liste = list(self.kapitel_config.kapitel_liste)
@@ -1185,9 +1185,19 @@ class DashBoard(ttk.Frame):
             bereits_in_queue.add(kapitel)
             self.thread_queue.put(kapitel)
         
-        kapitel_anzahl = len(ausgewaehlte_kapitel)
-        max_threads = min(self.max_workers, kapitel_anzahl)
-        max_threads = max(1, max_threads)  # zusätzliche Absicherung
+            kapitel_anzahl = len(ausgewaehlte_kapitel)
+
+            ki_aktiv = (
+                getattr(config, "NUTZE_KI", True)
+                and any(task_flags.get(aid, False) for aid in config.KI_AUFGABEN)
+            )
+
+            if ki_aktiv:
+                max_threads = 1
+                print("[INFO] KI aktiv: Kapitel werden seriell verarbeitet, um Modell-Doppel-Loads zu vermeiden.", flush=True)
+            else:
+                max_threads = min(self.max_workers, kapitel_anzahl)
+                max_threads = max(1, max_threads)
 
         try:
             with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
@@ -1324,7 +1334,7 @@ class DashBoard(ttk.Frame):
         except Exception as e:
             print(f"[FEHLER] KI-Task fehlgeschlagen: {e}", flush=True)
             traceback.print_exc()
-            return None
+            raise
 
     
     def verarbeite_kapitel(
@@ -1517,7 +1527,7 @@ class DashBoard(ttk.Frame):
                         flush=True
                     )
 
-                    client = ki_client or HuggingFaceClient()
+                    client = ki_client or get_ki_client("main")
                     aktuell_geladenes_modell = ki_vorgeladenes_modell
 
                     for aufgaben_id in aktive_tasks:
@@ -1549,15 +1559,18 @@ class DashBoard(ttk.Frame):
                             print(f"[FEHLER] Kein Modell für Aufgabe {aufgaben_id} gewählt.", flush=True)
                             return
 
-                        if str(modell_name).strip() != str(aktuell_geladenes_modell or "").strip():
+                        modell_name_norm = str(modell_name or "").strip().replace("\\", "/")
+                        geladen_norm = str(getattr(client, "model_name", None) or "").strip().replace("\\", "/")
+
+                        if modell_name_norm != geladen_norm:
                             print(
                                 f"[INFO] Modellwechsel für Kapitel {kapitel_name}: "
                                 f"{aktuell_geladenes_modell} -> {modell_name}",
                                 flush=True
                             )
-
-                            client.check_and_set_model(modell_name)
-                            aktuell_geladenes_modell = modell_name
+                            client.check_and_set_model(modell_name_norm)
+                            aktuell_geladenes_modell = modell_name_norm
+                                                        
                         else:
                             print(f"[INFO] Modell bereits für Kapitel {kapitel_name} geladen: {modell_name}", flush=True)
 
@@ -1588,6 +1601,8 @@ class DashBoard(ttk.Frame):
                             return
 
                         print(f"[DEBUG] KI-Aufgabe {aufgaben_id} abgeschlossen für Kapitel {kapitel_name}", flush=True)
+                        if mp_progress_queue:
+                            mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
 

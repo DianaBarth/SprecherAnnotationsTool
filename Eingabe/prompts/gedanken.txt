@@ -1,81 +1,34 @@
-Aufgabe: Gedankenübergänge erkennen
+Du erkennst Gedankenübergänge in literarischem Text.
 
-Du erhältst pro Anfrage:
+Eingabe:
+- Abschnitt als Fließtext
+- Tokenliste mit WortNr
 
-Einen literarischen Abschnitt als Fließtext
-Darunter eine Tokenliste mit WortNr-Zuordnung
-Ziel
+Aufgabe:
+Klassifiziere Übergänge in:
+- gedanken_weiter: Fortführung (z. B. „und“, „dann“, Komma)
+- gedanken_ende: Abschluss (meist ., !, ?)
+- pause_gedanken: Bruch oder Zögern (z. B. –, ..., „aber“)
 
-Erkenne Übergänge von Gedanken und klassifiziere sie in:
+Regeln:
+- Gib ausschließlich gültiges JSON zurück.
+- Keine Erklärungen, kein Markdown.
+- Verwende nur WortNr aus der Tokenliste.
+- Erfinde keine WortNr.
+- Setze Annotationen sparsam.
+- Lieber zu wenige als zu viele.
+- Setze sie auf Signalwörter oder Satzzeichen.
 
-gedanken_weiter → Aufzählungen, Einschübe, Nebensatz-Enden
-gedanken_ende → Ende eines vollständigen Hauptsatzes
-pause_gedanken → kurze Unterbrechung, Zögern oder gedanklicher Bruch
-WICHTIG: Ausgabeformat
-Gib ausschließlich ein gültiges JSON-Objekt zurück
-Verwende nur WortNr, NICHT die Wörter selbst
 Format:
 {
-  "gedanken_weiter": [WortNr, ...],
-  "gedanken_ende": [WortNr, ...],
-  "pause_gedanken": [WortNr, ...]
+  "gedanken_weiter": [123],
+  "gedanken_ende": [456],
+  "pause_gedanken": [789]
 }
-Regeln
-Lieber zu wenige als zu viele Annotationen
-Nutze nur WortNr aus der Tokenliste
-Erfinde keine WortNr
-Setze Annotationen möglichst auf:
-das Signalwort (z. B. „dann“, „aber“)
-oder das auslösende Satzzeichen (z. B. „–“, „,“ oder „?“)
-Wenn nichts gefunden wird
+
+Wenn nichts gefunden wird:
 {
   "gedanken_weiter": [],
   "gedanken_ende": [],
   "pause_gedanken": []
 }
-Hinweise zur Interpretation
-gedanken_weiter
-→ Fortführung eines Gedankens (z. B. „und“, „dann“, Komma bei Aufzählung)
-gedanken_ende
-→ klarer Abschluss (meist „.“, „!“, „?“)
-pause_gedanken
-→ Bruch, Zögern oder Wechsel (z. B. „–“, „...“, „aber“ nach Pause)
-Beispiel
-
-ABSCHNITT:
-Ich wollte gehen, doch dann erinnerte ich mich – vielleicht sollte ich bleiben. Aber war das wirklich eine gute Idee?
-
-TOKENS / METADATEN:
-WortNr 1: Ich
-WortNr 2: wollte
-WortNr 3: gehen
-WortNr 4: ,
-WortNr 5: doch
-WortNr 6: dann
-WortNr 7: erinnerte
-WortNr 8: ich
-WortNr 9: mich
-WortNr 10: –
-WortNr 11: vielleicht
-WortNr 12: sollte
-WortNr 13: ich
-WortNr 14: bleiben
-WortNr 15: .
-WortNr 16: Aber
-WortNr 17: war
-WortNr 18: das
-WortNr 19: wirklich
-WortNr 20: eine
-WortNr 21: gute
-WortNr 22: Idee
-WortNr 23: ?
-
-Erwartete Ausgabe:
-
-{
-  "gedanken_weiter": [6],
-  "gedanken_ende": [23],
-  "pause_gedanken": [10]
-}
-
-Jetzt kommt deine Eingabe:

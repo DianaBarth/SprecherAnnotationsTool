@@ -154,26 +154,37 @@ class HuggingFaceClient:
     # ------------------------------------------------------------------
     # Laden / Entladen
     # ------------------------------------------------------------------
+    def unload_model(self, clear_model_name: bool = True):
+        if self.model is None and self.tokenizer is None:
+            return
 
-    def unload_model(self):
         self.log("[INFO] Entlade aktuelles Modell...")
+
         try:
             del self.model
+        except Exception:
+            pass
+
+        try:
             del self.tokenizer
         except Exception:
             pass
 
         self.model = None
         self.tokenizer = None
-        self.model_name = None
+
+        if clear_model_name:
+            self.model_name = None
+            self.task = "generation"
+
         self.load_mode = None
 
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
+    
     def check_and_set_model(self, model_name: str, task: str = "generation", force_quantization=None):
-        model_name = (model_name or "").strip()
+        model_name = self._normalize_model_name(model_name)
 
         self.log(f"[DEBUG] Modell prüfen/setzen: {model_name}")
         self.log(f"[DEBUG] Aktuell geladen: {self.model_name}")
@@ -190,14 +201,13 @@ class HuggingFaceClient:
         self.set_model(model_name, task=task, force_quantization=force_quantization)
 
 
-
     def set_model(self, model_name: str, task: str = "generation", force_quantization=None):
         if not model_name or not model_name.strip():
             raise ValueError("Leerer Modellname beim Laden.")
 
-        model_name = model_name.strip()
+        model_name = self._normalize_model_name(model_name)
+        task = task or "generation"
 
-        # 🔥 WICHTIG: nicht neu laden, wenn exakt dieses Modell schon da ist
         if (
             self.model is not None
             and self.tokenizer is not None
@@ -207,24 +217,28 @@ class HuggingFaceClient:
             self.log(f"[INFO] Modell bereits geladen, überspringe Reload: {model_name}")
             return
 
-        self.unload_model()
+        old_model_name = self.model_name
+        old_task = self.task
 
+        self.unload_model(clear_model_name=True)
 
         self.log(f"[INFO] Lade Modell: {model_name}")
         self.log(f"[INFO] CUDA: {self.cuda_info()}")
 
-        self.task = task
         self.last_error = None
 
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
                 use_fast=True,
                 trust_remote_code=True,
             )
 
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            self.tokenizer = tokenizer
+            self.task = task
 
             if task == "generation":
                 self._load_generation_model(model_name, force_quantization)
@@ -233,8 +247,21 @@ class HuggingFaceClient:
             else:
                 raise ValueError(f"Unbekannter task: {task}")
 
+            if self.model is None:
+                raise RuntimeError("Modell-Ladevorgang beendet, aber self.model ist None.")
+
             self.model_name = model_name
             self.model.eval()
+
+            try:
+                self.model.generation_config.do_sample = False
+                self.model.generation_config.temperature = None
+                self.model.generation_config.top_p = None
+                self.model.generation_config.top_k = None
+            except Exception:
+                pass
+
+            self._assert_model_ready()
 
             self.log(
                 f"[OK] Modell geladen: {model_name} "
@@ -244,8 +271,15 @@ class HuggingFaceClient:
         except Exception as e:
             self.last_error = e
             self.log(f"[ERROR] Modell konnte nicht geladen werden: {e}")
-            self.unload_model()
+
+            self.unload_model(clear_model_name=True)
+
+            # Merken, was versucht wurde, damit check_and_load_model sinnvoll bleibt
+            self.model_name = model_name or old_model_name
+            self.task = task or old_task
+
             raise
+
 
     def print_gpu_status(self):
         if not torch.cuda.is_available():
@@ -442,9 +476,37 @@ class HuggingFaceClient:
             self.model.to("cpu")
             self.load_mode = "classification_cpu"
 
+
+    def _assert_model_ready(self):
+        if self.model is None:
+            raise RuntimeError("Modell ist None nach dem Laden.")
+
+        if self.tokenizer is None:
+            raise RuntimeError("Tokenizer ist None nach dem Laden.")
+
+        try:
+            params = list(self.model.parameters())
+        except Exception as e:
+            raise RuntimeError(f"Modellparameter nicht lesbar: {e}")
+
+        if not params:
+            raise RuntimeError("Modell hat keine Parameter.")
+
+        meta_params = [
+            name for name, param in self.model.named_parameters()
+            if getattr(param, "is_meta", False)
+        ]
+
+        if meta_params:
+            raise RuntimeError(
+                f"Modell enthält Meta-Tensoren: {meta_params[:10]}"
+            )
+
     # ------------------------------------------------------------------
     # Generation
     # ------------------------------------------------------------------
+
+
 
     def get_model_device(self):
         """
@@ -461,7 +523,7 @@ class HuggingFaceClient:
         prompt_token_count: int,
         requested: Optional[int] = None,
         min_new_tokens: int = 128,
-        hard_cap: int = 2048,
+        hard_cap: int = 512,
     ) -> int:
         """
         Dynamisch:
@@ -475,6 +537,7 @@ class HuggingFaceClient:
         available = max(min_new_tokens, total_limit - prompt_token_count)
 
         return int(min(available, hard_cap))
+
 
     def generate(
         self,
@@ -490,9 +553,13 @@ class HuggingFaceClient:
         if not prompt or not prompt.strip():
             return ""
 
+        # Safety: pad_token setzen
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
+        # --------------------------------------------------
+        # Tokenisierung
+        # --------------------------------------------------
         max_input_tokens = getattr(config, "MAX_TOTAL_TOKENS", 4096)
         max_input_tokens = max(512, max_input_tokens - 512)
 
@@ -506,6 +573,7 @@ class HuggingFaceClient:
         )
 
         prompt_len = inputs["input_ids"].shape[-1]
+
         new_tokens = self.calc_max_new_tokens(
             prompt_token_count=prompt_len,
             requested=max_new_tokens,
@@ -522,34 +590,71 @@ class HuggingFaceClient:
             f"max_new_tokens={new_tokens}, mode={self.load_mode}"
         )
 
+        # --------------------------------------------------
+        # 🔥 Qwen / Chat EOS Fix
+        # --------------------------------------------------
+        eos_token_id = self.tokenizer.eos_token_id
+
+        try:
+            im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+            if isinstance(im_end_id, int) and im_end_id != self.tokenizer.unk_token_id:
+                eos_token_id = [self.tokenizer.eos_token_id, im_end_id]
+        except Exception:
+            pass
+
+        # --------------------------------------------------
+        # Generation kwargs sauber bauen
+        # --------------------------------------------------
+        gen_kwargs = dict(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            max_new_tokens=new_tokens,
+            do_sample=do_sample,
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=eos_token_id,
+            repetition_penalty=1.05,
+            use_cache=True,
+        )
+
+        if do_sample:
+            gen_kwargs.update(dict(
+                temperature=temperature,
+                top_p=0.9,
+                top_k=50,
+            ))
+
+        # --------------------------------------------------
+        # Inferenz
+        # --------------------------------------------------
         start = time.time()
 
         with torch.inference_mode():
-            output_ids = self.model.generate(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                max_new_tokens=new_tokens,
-                do_sample=do_sample,
-                temperature=temperature if do_sample else None,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                repetition_penalty=1.05,
-                use_cache=True,
-            )
+            output_ids = self.model.generate(**gen_kwargs)
 
         self.log(f"[INFO] generate() fertig nach {time.time() - start:.2f}s")
 
+        # --------------------------------------------------
+        # Decode (nur neue Tokens!)
+        # --------------------------------------------------
         generated_ids = output_ids[0][prompt_len:]
+
         text = self.tokenizer.decode(
             generated_ids,
             skip_special_tokens=True,
             clean_up_tokenization_spaces=True,
         ).strip()
 
+        # --------------------------------------------------
+        # Stop-Strings
+        # --------------------------------------------------
         if stop_strings:
             text = self.cut_at_stop_strings(text, stop_strings)
 
         return text.strip()
+
+
+    def _normalize_model_name(self, name: str) -> str:
+        return (name or "").strip().replace("\\", "/")
 
     def generate_stream(
         self,
@@ -588,17 +693,34 @@ class HuggingFaceClient:
             skip_special_tokens=True,
         )
 
+        eos_token_id = self.tokenizer.eos_token_id
+
+        try:
+            im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+            if isinstance(im_end_id, int) and im_end_id != self.tokenizer.unk_token_id:
+                eos_token_id = [self.tokenizer.eos_token_id, im_end_id]
+        except Exception:
+            pass
+
+        do_sample = temperature > 0.0
+
         kwargs = dict(
             **inputs,
             streamer=streamer,
             max_new_tokens=new_tokens,
-            do_sample=temperature > 0.0,
-            temperature=temperature if temperature > 0.0 else None,
+            do_sample=do_sample,
             pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
+            eos_token_id=eos_token_id,
             repetition_penalty=1.05,
             use_cache=True,
         )
+
+        if do_sample:
+            kwargs.update({
+                "temperature": temperature,
+                "top_p": 0.9,
+                "top_k": 50,
+            })
 
         thread = threading.Thread(target=self.model.generate, kwargs=kwargs)
         thread.start()
@@ -623,14 +745,19 @@ class HuggingFaceClient:
         self.check_and_load_model()
         return self.generate(prompt)
 
+ 
     def check_and_load_model(self) -> bool:
         if self.model is not None and self.tokenizer is not None:
             return True
-        if not self.model_name:
-            raise ValueError("Kein Modell gesetzt.")
-        self.set_model(self.model_name, task=self.task)
-        return True
 
+        if not self.model_name:
+            raise ValueError("Kein Modell gesetzt. Erst set_model(model_name) aufrufen.")
+
+        model_name = self.model_name
+        task = self.task or "generation"
+
+        self.set_model(model_name, task=task)
+        return True
     # ------------------------------------------------------------------
     # Chat- / Prompt-Helfer
     # ------------------------------------------------------------------
@@ -783,6 +910,6 @@ class HuggingFaceClient:
 
     def __del__(self):
         try:
-            self.unload_model()
+            self.unload_model(clear_model_name=True)
         except Exception:
             pass

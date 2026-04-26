@@ -48,8 +48,8 @@ FehlerAnzeigen = True  # Aktiviert die Anzeige von Fehlern während der Laufzeit
 
 # Token-Begrenzungen für KI
 MAX_NEW_TOKENS = 500         # Maximale neue Tokens, die generiert werden dürfen
-MAX_PROMPT_TOKENS = 250     # Maximale Tokens im Prompt (Eingabe)
-MAX_TOTAL_TOKENS = 1500      # Gesamtanzahl Tokens inkl. Prompt und Antwort
+MAX_PROMPT_TOKENS = 2000    # Maximale Tokens im Prompt (Eingabe)
+MAX_TOTAL_TOKENS = 4000      # Gesamtanzahl Tokens inkl. Prompt und Antwort
 
 # Allgemeine Formatierung
 ANZAHL_ÜBERSCHRIFTENZEILEN = 2   # Anzahl Zeilen für Kapitelüberschriften

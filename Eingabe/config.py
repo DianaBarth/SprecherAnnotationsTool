@@ -23,8 +23,8 @@ FehlerAnzeigen = True
 
 # Token-Begrenzungen für KI
 MAX_NEW_TOKENS = 500
-MAX_PROMPT_TOKENS = 250
-MAX_TOTAL_TOKENS = 1500
+MAX_PROMPT_TOKENS = 2000
+MAX_TOTAL_TOKENS = 4000
 
 # Allgemeine Formatierung
 EINRUECKUNGSFORMAT = ['zitat', 'schriftstücke', 'quote']

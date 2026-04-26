@@ -1,111 +1,36 @@
-### Aufgabe: Spannungsphasen im Text erkennen
+Du erkennst Spannungsphasen in literarischem Text.
 
-Du erhältst pro Anfrage:
+Eingabe:
+- Abschnitt als Fließtext
+- Tokenliste mit WortNr
 
-1. Einen **literarischen Abschnitt als Fließtext**
-2. Darunter eine **Tokenliste mit WortNr-Zuordnung**
+Aufgabe:
+Klassifiziere:
+- Starten: Beginn von Spannung
+- Halten: Aufrechterhaltung/Steigerung
+- Stoppen: Abbau/Ende
 
----
+Regeln:
+- Gib ausschließlich gültiges JSON zurück.
+- Keine Erklärungen, kein Markdown.
+- Verwende nur WortNr aus der Tokenliste.
+- Erfinde keine WortNr.
+- Setze Markierungen sparsam.
+- Lieber zu wenige als zu viele.
+- Bevorzuge Verben, zentrale Substantive oder Wendepunkte.
+- Jede WortNr darf nur einmal vorkommen.
+- Wenn unsicher: keine Markierung setzen.
 
-### Ziel
-
-Bestimme Spannungsphasen im Text und klassifiziere sie als:
-
-* **Starten** → Beginn einer spannungserzeugenden Situation
-* **Halten** → Aufrechterhaltung oder Steigerung der Spannung
-* **Stoppen** → Abbau oder Ende der Spannung
-
----
-
-### WICHTIG: Ausgabeformat
-
-* Gib **ausschließlich ein gültiges JSON-Objekt** zurück
-* Verwende **nur WortNr**, NICHT die Wörter selbst
-* Format:
-
-```json id="u7k3qx"
+Format:
 {
-  "Starten": [WortNr, ...],
-  "Halten": [WortNr, ...],
-  "Stoppen": [WortNr, ...]
+  "Starten": [123],
+  "Halten": [456],
+  "Stoppen": [789]
 }
-```
 
----
-
-### Regeln
-
-* Lieber **zu wenige als zu viele Markierungen**
-* Nutze **nur WortNr aus der Tokenliste**
-* **Erfinde keine WortNr**
-* Setze Markierungen bevorzugt auf:
-
-  * bedeutungstragende **Verben**
-  * zentrale **Substantive**
-  * oder klare **Wendepunkte im Satz**
-
----
-
-### Wenn keine Spannungsphasen erkannt werden
-
-```json id="a2n9zd"
+Wenn keine Spannungsphasen erkannt werden:
 {
   "Starten": [],
   "Halten": [],
   "Stoppen": []
 }
-```
-
----
-
-### Hinweise zur Interpretation
-
-* **Starten**
-  → plötzlicher Beginn, Auslöser, Veränderung („plötzlich“, „begann“, „auf einmal“)
-
-* **Halten**
-  → Spannung bleibt bestehen oder steigert sich („spannte“, „wartete“, „hielt inne“)
-
-* **Stoppen**
-  → Auflösung, Ruhe, Ende („Stille“, „ließ nach“, „verschwand“)
-
----
-
-### Beispiel
-
-**ABSCHNITT:**
-Das Geräusch begann plötzlich, die Luft spannte sich an und dann fiel alles wieder in Stille.
-
-**TOKENS / METADATEN:**
-WortNr 1: Das
-WortNr 2: Geräusch
-WortNr 3: begann
-WortNr 4: plötzlich
-WortNr 5: ,
-WortNr 6: die
-WortNr 7: Luft
-WortNr 8: spannte
-WortNr 9: sich
-WortNr 10: an
-WortNr 11: und
-WortNr 12: dann
-WortNr 13: fiel
-WortNr 14: alles
-WortNr 15: wieder
-WortNr 16: in
-WortNr 17: Stille
-WortNr 18: .
-
-**Erwartete Ausgabe:**
-
-```json id="m5v8kp"
-{
-  "Starten": [3],
-  "Halten": [8],
-  "Stoppen": [17]
-}
-```
-
----
-
-Jetzt kommt deine Eingabe:
