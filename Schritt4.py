@@ -93,25 +93,23 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
             raise ValueError(f"Unerwarteter Dateipfad: {dateipfad}")
 
         aufgaben_name = config.KI_AUFGABEN.get(aufgabe, f"unbekannt{aufgabe}")
-        ist_ig_aufgabe = str(aufgaben_name).lower() == "ig"
-        
-        ist_person_aufgabe = str(aufgaben_name).lower() == "person"
-
-
         aufgaben_name_lower = str(aufgaben_name).lower()
 
+        ist_ig_aufgabe = aufgaben_name_lower == "ig"
+        ist_person_aufgabe = aufgaben_name_lower == "person"
+
         max_tokens_by_task = {
-            "kombination": 512,           
+            "kombination": 512,
             "person": 384,
             "ig": 512,
         }
-
         antwort_max_new_tokens = max_tokens_by_task.get(aufgaben_name_lower, 128)
 
-
+        # ----------------------------------------------------
+        # Person: Sprecherliste injizieren
+        # ----------------------------------------------------
         if ist_person_aufgabe and "{SPRECHER_LISTE_HIER_EINFÜGEN}" in prompt:
             try:
-
                 json_datei_fuer_personen = lade_json_zu_txt_datei(dateipfad)
 
                 personen = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
@@ -132,7 +130,8 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     "{SPRECHER_LISTE_HIER_EINFÜGEN}",
                     "Keine bekannten Sprecher"
                 )
-                # ----------------------------------------------------
+
+        # ----------------------------------------------------
         # Ergebnisdatei bestimmen
         # ----------------------------------------------------
         if ist_ig_aufgabe:
@@ -143,7 +142,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
         result_file_path = ki_ordner / result_file_name
 
         # ----------------------------------------------------
-        # IG: Wortliste IMMER zuerst erzeugen
+        # IG: Wortliste erzeugen
         # ----------------------------------------------------
         if ist_ig_aufgabe:
             ig_woerter_datei = ki_ordner / "ig_woerter.txt"
@@ -153,7 +152,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
             extrahiere_ig_woerter_aus_json(
                 json_ordner=config.GLOBALORDNER["json"],
                 ausgabe_datei=ig_woerter_datei,
-                lowercase=True,             
+                lowercase=True,
                 min_len=2,
                 verwende_tokenInklZahlwoerter=True,
             )
@@ -163,7 +162,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                 return
 
         # ----------------------------------------------------
-        # Wenn Ergebnis schon existiert, überspringen
+        # Vorhandenes Ergebnis überspringen
         # ----------------------------------------------------
         if result_file_path.exists() and not force:
             print(f"[INFO] Ergebnisdatei {result_file_path} existiert bereits. KI-Analyse wird übersprungen.")
@@ -173,9 +172,11 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
             return
 
-        # ----------------------------------------------------
-        # Eingabetext laden
-        # ----------------------------------------------------
+        ki_ergebnis = ""
+
+        # ====================================================
+        # IG-SPEZIALFALL
+        # ====================================================
         if ist_ig_aufgabe:
             with open(ig_woerter_datei, "r", encoding="utf-8") as f:
                 eingabetext = f.read()
@@ -186,9 +187,6 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
             print(f"[INFO] Verwende IG-Wortliste statt Kapiteltext: {ig_woerter_datei}")
 
-            # ------------------------------------------------
-            # IG: Chunkweise verarbeiten
-            # ------------------------------------------------
             zeilen = [z for z in eingabetext.splitlines() if z.strip()]
             chunk_groesse = 100
             chunks = [zeilen[i:i + chunk_groesse] for i in range(0, len(zeilen), chunk_groesse)]
@@ -215,7 +213,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                         client,
                         messages_Chat,
                         dateiname=os.path.basename(dateipfad),
-                        wortnr_bereich=wortnr_bereich,
+                        wortnr_bereich=f"ig_chunk_{chunk_nr:03}",
                         max_new_tokens=antwort_max_new_tokens,
                     )
                 else:
@@ -223,60 +221,26 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                         client,
                         messages_Flat,
                         dateiname=os.path.basename(dateipfad),
-                        wortnr_bereich=f"chunk_{chunk_nr:03}",
-                        max_new_tokens=antwort_max_new_tokens
+                        wortnr_bereich=f"ig_chunk_{chunk_nr:03}",
+                        max_new_tokens=antwort_max_new_tokens,
                     )
 
                 if antwort:
-                    start_wortnr = int(abschnitt.get("start_wortnr", 0))
-                    end_wortnr = int(abschnitt.get("end_wortnr", 0))
-
-                    if aufgaben_name_lower == "betonung":
-                        antwort = filtere_wortnr_json(
-                            antwort,
-                            erlaubte_keys=["hauptbetonung", "nebenbetonung"],
-                            start_wortnr=start_wortnr,
-                            end_wortnr=end_wortnr,
-                            max_pro_key=5,
-                        )
-
-                    elif aufgaben_name_lower == "pause":
-                        antwort = filtere_wortnr_json(
-                            antwort,
-                            erlaubte_keys=["atempause", "staupause"],
-                            start_wortnr=start_wortnr,
-                            end_wortnr=end_wortnr,
-                            max_pro_key=8,
-                        )
-
-                    elif aufgaben_name_lower == "gedanken":
-                        antwort = filtere_wortnr_json(
-                            antwort,
-                            erlaubte_keys=["gedanken_weiter", "gedanken_ende", "pause_gedanken"],
-                            start_wortnr=start_wortnr,
-                            end_wortnr=end_wortnr,
-                            max_pro_key=8,
-                        )
-
-                    elif aufgaben_name_lower == "spannung":
-                        antwort = filtere_wortnr_json(
-                            antwort,
-                            erlaubte_keys=["Starten", "Halten", "Stoppen"],
-                            start_wortnr=start_wortnr,
-                            end_wortnr=end_wortnr,
-                            max_pro_key=5,
-                        )
-                if antwort:
                     alle_antworten.append(antwort.strip())
-              
                 else:
                     print(f"[WARNUNG] Keine Antwort für IG-Chunk {chunk_nr}")
 
             ki_ergebnis = "\n".join(alle_antworten).strip()
 
+        # ====================================================
+        # NORMALE AUFGABEN: person / kombination / ältere Tasks
+        # ====================================================
         else:
             json_datei = lade_json_zu_txt_datei(dateipfad)
 
+            # ------------------------------------------------
+            # Fallback: keine JSON-Datei gefunden
+            # ------------------------------------------------
             if not json_datei or not json_datei.exists():
                 print(f"[WARNUNG] Keine passende JSON-Datei gefunden. Fallback auf TXT: {dateipfad}")
 
@@ -295,22 +259,30 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                         client,
                         messages_Chat,
                         dateiname=os.path.basename(dateipfad),
-                        wortnr_bereich=""
+                        wortnr_bereich="",
+                        max_new_tokens=antwort_max_new_tokens,
                     )
                 else:
                     ki_ergebnis = KI_Analyse_Flat(
                         client,
                         messages_Flat,
                         dateiname=os.path.basename(dateipfad),
-                        wortnr_bereich=""
+                        wortnr_bereich="",
+                        max_new_tokens=antwort_max_new_tokens,
                     )
 
+            # ------------------------------------------------
+            # JSON-Datei vorhanden
+            # ------------------------------------------------
             else:
                 print(f"[INFO] Verwende JSON + Plaintext-Kontext: {json_datei}")
 
                 with open(json_datei, "r", encoding="utf-8") as f:
                     json_daten = json.load(f)
 
+                # --------------------------------------------
+                # Fallback: JSON ist keine Liste
+                # --------------------------------------------
                 if not isinstance(json_daten, list):
                     print(f"[WARNUNG] JSON ist keine Liste. Fallback auf TXT: {json_datei}")
 
@@ -329,19 +301,25 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                             client,
                             messages_Chat,
                             dateiname=os.path.basename(dateipfad),
-                            wortnr_bereich=""
+                            wortnr_bereich="",
+                            max_new_tokens=antwort_max_new_tokens,
                         )
                     else:
                         ki_ergebnis = KI_Analyse_Flat(
                             client,
                             messages_Flat,
                             dateiname=os.path.basename(dateipfad),
-                            wortnr_bereich=""
+                            wortnr_bereich="",
+                            max_new_tokens=antwort_max_new_tokens,
                         )
 
+                # --------------------------------------------
+                # Normalfall: JSON-Liste in Abschnitte splitten
+                # --------------------------------------------
                 else:
                     abschnitte = splitte_in_abschnitte_intelligent(json_daten)
-                    # 🔥 PERSON-GUARD: Nur ausführen, wenn irgendwo Anführungszeichen vorkommen
+
+                    # PERSON-GUARD: Kapitel ohne Dialog überspringen
                     if ist_person_aufgabe:
                         hat_dialog = False
 
@@ -359,6 +337,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                         if not hat_dialog:
                             print(f"[INFO] Keine Anführungszeichen in {dateipfad} → überspringe Person-Analyse.")
                             return
+
                     if abschnitte is None:
                         print("[WARNUNG] splitte_in_abschnitte_intelligent() gab None zurück. Fallback: leer.")
                         abschnitte = []
@@ -372,21 +351,26 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     if not abschnitte:
                         print(f"[WARNUNG] Keine Abschnitte erzeugt für {dateipfad}. KI-Analyse wird übersprungen.")
                         return
-                    
+
                     print(f"[INFO] Verarbeite {len(abschnitte)} Abschnitt(e) mit Plaintext + WortNr-Mapping.")
 
                     alle_antworten = []
 
                     for abschnitt_nr, abschnitt in enumerate(abschnitte, start=1):
-                        
-                        # 🔥 Abschnittsbasierter PERSON-GUARD
+
+                        # PERSON-GUARD: Abschnitt ohne Dialog überspringen
                         if ist_person_aufgabe:
                             tokens = abschnitt.get("tokens", [])
 
                             hat_dialog = any(
-                                any(q in str(
-                                    t.get("tokenInklZahlwoerter") or t.get("token") or ""
-                                ) for q in ['"', '„', '“', '‚', '‘'])
+                                any(
+                                    q in str(
+                                        t.get("tokenInklZahlwoerter")
+                                        or t.get("token")
+                                        or ""
+                                    )
+                                    for q in ['"', '„', '“', '‚', '‘']
+                                )
                                 for t in tokens
                             )
 
@@ -394,14 +378,12 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                                 print(f"[INFO] Abschnitt {abschnitt_nr} ohne Dialog → übersprungen.")
                                 continue
 
-
-                        aufgaben_name_lower = str(aufgaben_name).lower()
-
                         kompakt = aufgaben_name_lower in {
                             "pause",
                             "gedanken",
                             "betonung",
                             "spannung",
+                            "kombination",
                         }
 
                         abschnitt_prompt = baue_ki_prompt(
@@ -413,7 +395,9 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
                         print(f"[DEBUG][Prompt] kompakt={kompakt} | Aufgabe={aufgaben_name}")
 
-                        wortnr_bereich = f"{abschnitt.get('start_wortnr', '')}-{abschnitt.get('end_wortnr', '')}"
+                        start_wortnr = int(abschnitt.get("start_wortnr", 0))
+                        end_wortnr = int(abschnitt.get("end_wortnr", 0))
+                        wortnr_bereich = f"{start_wortnr}-{end_wortnr}"
 
                         print(
                             f"[INFO] Abschnitt {abschnitt_nr}/{len(abschnitte)} "
@@ -435,22 +419,67 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                                 client,
                                 messages_Chat,
                                 dateiname=os.path.basename(dateipfad),
-                                wortnr_bereich=wortnr_bereich
+                                wortnr_bereich=wortnr_bereich,
+                                max_new_tokens=antwort_max_new_tokens,
                             )
                         else:
                             antwort = KI_Analyse_Flat(
                                 client,
                                 messages_Flat,
                                 dateiname=os.path.basename(dateipfad),
-                                wortnr_bereich=wortnr_bereich
+                                wortnr_bereich=wortnr_bereich,
+                                max_new_tokens=antwort_max_new_tokens,
                             )
 
                         if antwort:
-                            alle_antworten.append(antwort.strip())
+                            # Alte Einzelaufgaben optional filtern
+                            if aufgaben_name_lower == "betonung":
+                                antwort = filtere_wortnr_json(
+                                    antwort,
+                                    erlaubte_keys=["hauptbetonung", "nebenbetonung"],
+                                    start_wortnr=start_wortnr,
+                                    end_wortnr=end_wortnr,
+                                    max_pro_key=5,
+                                )
+
+                            elif aufgaben_name_lower == "pause":
+                                antwort = filtere_wortnr_json(
+                                    antwort,
+                                    erlaubte_keys=["atempause", "staupause"],
+                                    start_wortnr=start_wortnr,
+                                    end_wortnr=end_wortnr,
+                                    max_pro_key=8,
+                                )
+
+                            elif aufgaben_name_lower == "gedanken":
+                                antwort = filtere_wortnr_json(
+                                    antwort,
+                                    erlaubte_keys=["gedanken_weiter", "gedanken_ende", "pause_gedanken"],
+                                    start_wortnr=start_wortnr,
+                                    end_wortnr=end_wortnr,
+                                    max_pro_key=8,
+                                )
+
+                            elif aufgaben_name_lower == "spannung":
+                                antwort = filtere_wortnr_json(
+                                    antwort,
+                                    erlaubte_keys=["Starten", "Halten", "Stoppen"],
+                                    start_wortnr=start_wortnr,
+                                    end_wortnr=end_wortnr,
+                                    max_pro_key=5,
+                                )
+
+                            if antwort:
+                                alle_antworten.append(antwort.strip())
+                            else:
+                                print(f"[WARNUNG] Antwort für Abschnitt {abschnitt_nr} wurde weggefiltert.")
                         else:
                             print(f"[WARNUNG] Keine Antwort für Abschnitt {abschnitt_nr}")
 
-                    ki_ergebnis = "\n".join(alle_antworten).strip()
+                    if aufgaben_name_lower == "kombination":
+                        ki_ergebnis = merge_kombi_antworten(alle_antworten)
+                    else:
+                        ki_ergebnis = "\n".join(alle_antworten).strip()
 
         # ----------------------------------------------------
         # Ergebnis speichern
@@ -475,6 +504,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
     except Exception as e:
         print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
         traceback.print_exc()
+
     finally:
         gc.collect()
 
@@ -742,7 +772,112 @@ def extrahiere_ig_woerter_aus_json(
     print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
 
 
+def extrahiere_json_objekt_robust(text):
+    if not text:
+        return None
 
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"^```(?:json)?", "", text.strip(), flags=re.IGNORECASE)
+    text = re.sub(r"```$", "", text.strip()).strip()
+
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    tiefe = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+
+        if escape:
+            escape = False
+            continue
+
+        if ch == "\\":
+            escape = True
+            continue
+
+        if ch == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if ch == "{":
+            tiefe += 1
+        elif ch == "}":
+            tiefe -= 1
+            if tiefe == 0:
+                try:
+                    return json.loads(text[start:i + 1])
+                except Exception:
+                    return None
+
+    return None
+
+
+def leeres_kombi_json():
+    return {
+        "pause": {
+            "atempause": [],
+            "staupause": []
+        },
+        "gedanken": {
+            "gedanken_weiter": [],
+            "gedanken_ende": [],
+            "pause_gedanken": []
+        },
+        "betonung": {
+            "hauptbetonung": [],
+            "nebenbetonung": []
+        },
+        "spannung": {
+            "Starten": [],
+            "Halten": [],
+            "Stoppen": []
+        }
+    }
+
+
+def merge_kombi_antworten(antworten):
+    merged = leeres_kombi_json()
+
+    for antwort in antworten:
+        daten = extrahiere_json_objekt_robust(antwort)
+
+        if not isinstance(daten, dict):
+            print("[WARNUNG] Kombi-Antwort konnte nicht als JSON gelesen werden.")
+            continue
+
+        for hauptkey, kategorien in merged.items():
+            teil = daten.get(hauptkey, {})
+
+            if not isinstance(teil, dict):
+                continue
+
+            for subkey in kategorien.keys():
+                werte = teil.get(subkey, [])
+
+                if not isinstance(werte, list):
+                    continue
+
+                for nr in werte:
+                    try:
+                        nr_int = int(nr)
+                    except Exception:
+                        continue
+
+                    if nr_int not in merged[hauptkey][subkey]:
+                        merged[hauptkey][subkey].append(nr_int)
+
+    for hauptkey in merged:
+        for subkey in merged[hauptkey]:
+            merged[hauptkey][subkey] = sorted(merged[hauptkey][subkey])
+
+    return json.dumps(merged, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
     extrahiere_ig_woerter_aus_json(

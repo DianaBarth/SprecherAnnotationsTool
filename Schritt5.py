@@ -96,7 +96,10 @@ def finde_annotationsdateien_fuer_abschnitt(quellordner_annotationen, abschnitts
     abschnitts_stem = Path(abschnitts_dateiname).stem
 
     muster = f"*_{abschnitts_stem}_*.json"
-    dateien = sorted(quellordner_annotationen.glob(muster))
+    dateien = sorted(
+            list(quellordner_annotationen.glob(f"*_{abschnitts_stem}_*.json")) +
+            list(quellordner_annotationen.glob(f"*_{abschnitts_stem}_*.txt"))
+    )
 
     print(f"[DEBUG] Suche KI-Dateien mit Muster: {muster}")
     print(f"[DEBUG] Gefundene KI-Dateien: {[d.name for d in dateien]}")
@@ -372,6 +375,9 @@ def merge_einen_abschnitt(
     annotationen_daten = defaultdict(list)
     feldnamen_pro_typ = {}
 
+    # ----------------------------------------------------
+    # KI-Dateien laden + normalisieren
+    # ----------------------------------------------------
     for dateipfad in annotationsdateien:
         dateiname = dateipfad.name
         typ = extrahiere_typ_aus_ki_dateiname(dateiname, abschnitts_dateiname)
@@ -390,8 +396,7 @@ def merge_einen_abschnitt(
             continue
 
         try:
-            with open(dateipfad, encoding="utf-8") as f:
-                daten = json.load(f)
+            daten = lade_json_robust(dateipfad)
 
             normalisiert = normalisiere_ki_daten(
                 typ=typ,
@@ -411,6 +416,14 @@ def merge_einen_abschnitt(
             traceback.print_exc()
             continue
 
+    # ----------------------------------------------------
+    # Index bauen:
+    # indizes = {
+    #   "pause": {25: ["atempause"]},
+    #   "gedanken": {30: ["gedanken_weiter"]},
+    #   ...
+    # }
+    # ----------------------------------------------------
     indizes = defaultdict(dict)
 
     for typ, daten in annotationen_daten.items():
@@ -418,6 +431,7 @@ def merge_einen_abschnitt(
 
         if typ == "kombination":
             print(f"[DEBUG] Erstelle Kombi-Index für Typ '{typ}'")
+
             teilindizes = baue_index(daten, feldname=None)
 
             for feld, nr_index in teilindizes.items():
@@ -429,23 +443,32 @@ def merge_einen_abschnitt(
                 continue
 
             print(f"[DEBUG] Erstelle Index für Typ '{typ}' -> Feld '{feldname}'")
+
             teilindizes = baue_index(daten, feldname)
 
             for feld, nr_index in teilindizes.items():
                 for nr, werte in nr_index.items():
                     indizes[feld].setdefault(nr, []).extend(werte)
 
-        zusammengefuehrt = []
+    # ----------------------------------------------------
+    # Originaldaten mit Annotationen anreichern
+    # ----------------------------------------------------
+    zusammengefuehrt = []
 
     for eintrag in original_daten:
+        if not isinstance(eintrag, dict):
+            continue
+
         wortnr = eintrag.get("WortNr")
 
         if wortnr is None:
+            zusammengefuehrt.append(dict(eintrag))
             continue
 
         try:
             wortnr_int = int(wortnr)
         except (ValueError, TypeError):
+            zusammengefuehrt.append(dict(eintrag))
             continue
 
         neuer_eintrag = dict(eintrag)
@@ -471,7 +494,6 @@ def merge_einen_abschnitt(
 
     print(f"[INFO] Merge Abschnitt abgeschlossen: {abschnitts_dateiname}")
     return zusammengefuehrt
-
 
 def Merge_annotationen(
     quellordner_kapitel,
@@ -547,6 +569,55 @@ def Merge_annotationen(
         print(f"[FEHLER] Merge_annotationen fehlgeschlagen: {e}")
         traceback.print_exc()
 
+
+def lade_json_robust(dateipfad):
+    text = Path(dateipfad).read_text(encoding="utf-8").strip()
+
+    # Markdown entfernen
+    text = re.sub(r"^```(?:json)?", "", text.strip(), flags=re.IGNORECASE)
+    text = re.sub(r"```$", "", text.strip())
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Versuch: erstes vollständiges JSON-Objekt extrahieren
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("Kein JSON-Objekt gefunden.")
+
+    tiefe = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+
+        if escape:
+            escape = False
+            continue
+
+        if ch == "\\":
+            escape = True
+            continue
+
+        if ch == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if ch == "{":
+            tiefe += 1
+        elif ch == "}":
+            tiefe -= 1
+            if tiefe == 0:
+                kandidat = text[start:i + 1]
+                return json.loads(kandidat)
+
+    raise ValueError("Kein vollständiges JSON-Objekt gefunden.")
 
 if __name__ == "__main__":
     Merge_annotationen(
