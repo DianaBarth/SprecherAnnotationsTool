@@ -1109,6 +1109,8 @@ class DashBoard(ttk.Frame):
         self.all_var.set(alle_aktiv)
 
     def start_tasks(self):
+        global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
+        IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
         self.master.starte_progress_pruefung()
         # Leere eventuell verbliebene Aufgaben aus früheren Läufen
         while not self.thread_queue.empty():
@@ -1272,7 +1274,10 @@ class DashBoard(ttk.Frame):
 
             self.thread_queue.task_done()
 
-    def ki_task_mit_client(self,client, kapitel_name, aufgaben_id, prompt, ordner, mp_progress_queue=None):
+
+    def ki_task_mit_client(self, client, kapitel_name, aufgaben_id, prompt, ordner, mp_progress_queue=None):
+        global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
+
         print(
             f"[DEBUG] KI-Task mit vorhandenem Client für Kapitel '{kapitel_name}', Aufgabe {aufgaben_id}",
             flush=True
@@ -1285,48 +1290,94 @@ class DashBoard(ttk.Frame):
                 raise FileNotFoundError(f"Ordner für Satzdateien nicht gefunden: {satz_ordner}")
 
             aufgaben_name = config.KI_AUFGABEN.get(aufgaben_id, "")
+            aufgaben_name_lower = str(aufgaben_name).lower()
 
-            if str(aufgaben_name).lower() == "ig":
-                satzdateien = sorted([
-                    f for f in satz_ordner.iterdir()
-                    if f.is_file()
-                    and f.name.startswith(f"{kapitel_name}_ig_abschnitt")
-                    and f.suffix == ".txt"
-                ])
-            else:
-                satzdateien = sorted([
-                    f for f in satz_ordner.iterdir()
-                    if f.is_file()
-                    and f.name.startswith(f"{kapitel_name}_")
-                    and "_abschnitt" in f.name
-                    and "_ig_abschnitt" not in f.name
-                    and f.suffix == ".txt"
-                ])
+            # ----------------------------------------------------
+            # IG: nur einmal global pro Lauf
+            # ----------------------------------------------------
+            if aufgaben_name_lower == "ig":
+                if IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT:
+                    print("[INFO] IG-Analyse wurde in diesem Lauf bereits erledigt → überspringe.", flush=True)
 
-            anzahl = len(satzdateien)
-            print(f"[DEBUG] Gefundene Satzdateien: {anzahl} für Kapitel {kapitel_name}", flush=True)
+                    if mp_progress_queue:
+                        mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
+                        mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
-            if anzahl == 0:
-                if mp_progress_queue:
-                    mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                return f"Keine passenden Satzdateien für Kapitel {kapitel_name} gefunden."
+                    return "IG bereits erledigt"
 
-            for i, datei in enumerate(satzdateien, start=1):
-                print(f"[DEBUG] Verarbeite Satzdatei {i}/{anzahl}: {datei}", flush=True)
+                IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = True
+
+                print("[INFO] Starte globale IG-Analyse einmalig für diesen Lauf.", flush=True)
+
+                dummy_datei = satz_ordner / "_ig_global_dummy.txt"
 
                 daten_verarbeiten(
                     client,
                     prompt,
-                    str(datei),
+                    str(dummy_datei),
                     ordner["ki"],
                     aufgaben_id,
                     force=False,
                 )
 
                 if mp_progress_queue:
-                    fortschritt = int((i / anzahl) * 100)
-                    mp_progress_queue.put((kapitel_name, aufgaben_id, fortschritt))
-                    print(f"[DEBUG] Fortschritt gesendet: {fortschritt}%", flush=True)
+                    mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
+                    mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+
+                return "IG global abgeschlossen"
+
+            # ----------------------------------------------------
+            # Nicht-IG: Satzdateien finden
+            # ----------------------------------------------------
+            satzdateien = sorted([
+                f for f in satz_ordner.iterdir()
+                if f.is_file()
+                and f.name.startswith(f"{kapitel_name}_")
+                and "_abschnitt" in f.name
+                and "_ig_abschnitt" not in f.name
+                and f.suffix == ".txt"
+            ])
+
+            anzahl = len(satzdateien)
+            print(f"[DEBUG] Gefundene Satzdateien: {anzahl} für Kapitel {kapitel_name}", flush=True)
+
+            if anzahl == 0:
+                print(f"[WARNUNG] Keine passenden Satzdateien für Kapitel {kapitel_name} gefunden.", flush=True)
+
+                if mp_progress_queue:
+                    mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
+                    mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+
+                return f"Keine passenden Satzdateien für Kapitel {kapitel_name} gefunden."
+
+            # ----------------------------------------------------
+            # Wichtig:
+            # daten_verarbeiten() lädt inzwischen die komplette Kapitel-JSON
+            # und splittet intern. Deshalb nur einmal pro Kapitel/Aufgabe aufrufen.
+            # ----------------------------------------------------
+            referenz_datei = satzdateien[0]
+
+            print(
+                f"[INFO] JSON-basierte KI-Verarbeitung nur einmal pro Kapitel: {kapitel_name} "
+                f"über Referenzdatei {referenz_datei.name}",
+                flush=True
+            )
+
+            if mp_progress_queue:
+                mp_progress_queue.put((kapitel_name, aufgaben_id, 1))
+
+            daten_verarbeiten(
+                client,
+                prompt,
+                str(referenz_datei),
+                ordner["ki"],
+                aufgaben_id,
+                force=False,
+            )
+
+            if mp_progress_queue:
+                mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
+                mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
             print(f"[INFO] Task {aufgaben_id} für Kapitel {kapitel_name} erfolgreich abgeschlossen.", flush=True)
             return f"Task {aufgaben_id} für Kapitel {kapitel_name} abgeschlossen"
@@ -1335,7 +1386,6 @@ class DashBoard(ttk.Frame):
             print(f"[FEHLER] KI-Task fehlgeschlagen: {e}", flush=True)
             traceback.print_exc()
             raise
-
     
     def verarbeite_kapitel(
         self,

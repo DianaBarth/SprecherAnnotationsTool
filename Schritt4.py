@@ -482,9 +482,67 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
         gc.collect()
 
 def log_antwort(dateiname, wortnr_bereich, content):
-    log_datei = f"log_{dateiname}.txt"
-    with open(log_datei, 'a', encoding='utf-8') as log_file:
-        log_file.write(f"Bereich: {wortnr_bereich}, Antwort: {content}\n")
+    try:
+        print(
+            f"[KI-ANTWORT] Datei={dateiname} | Bereich={wortnr_bereich}\n{content}\n"
+        )
+    except Exception as e:
+        print(f"[WARNUNG] Konnte KI-Antwort nicht loggen: {e}")
+
+def extrahiere_json_objekt(text):
+    if not text:
+        return None
+
+    start = text.find("{")
+    ende = text.rfind("}")
+
+    if start == -1 or ende == -1 or ende <= start:
+        return None
+
+    try:
+        return json.loads(text[start:ende + 1])
+    except Exception:
+        return None
+
+
+def filtere_wortnr_json(antwort_text, erlaubte_keys, start_wortnr, end_wortnr, max_pro_key=None):
+    daten = extrahiere_json_objekt(antwort_text)
+
+    if not isinstance(daten, dict):
+        print("[WARNUNG][KI-JSON] Antwort ist kein gültiges JSON-Objekt.")
+        return None
+
+    bereinigt = {}
+
+    for key in erlaubte_keys:
+        werte = daten.get(key, [])
+
+        if not isinstance(werte, list):
+            werte = []
+
+        gefiltert = []
+
+        for nr in werte:
+            try:
+                nr_int = int(nr)
+            except Exception:
+                continue
+
+            if start_wortnr <= nr_int <= end_wortnr:
+                if nr_int not in gefiltert:
+                    gefiltert.append(nr_int)
+            else:
+                print(
+                    f"[WARNUNG][KI-JSON] Entferne WortNr außerhalb Abschnitt: "
+                    f"{nr_int} nicht in {start_wortnr}-{end_wortnr}"
+                )
+
+        if max_pro_key is not None:
+            gefiltert = gefiltert[:max_pro_key]
+
+        bereinigt[key] = gefiltert
+
+    return json.dumps(bereinigt, ensure_ascii=False, indent=2)   
 
 def normalisiere_ig_token(token, lowercase=True):
     """
@@ -687,60 +745,7 @@ def extrahiere_ig_woerter_aus_json(
     print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
 
 
-    def extrahiere_json_objekt(text):
-        if not text:
-            return None
 
-        start = text.find("{")
-        ende = text.rfind("}")
-
-        if start == -1 or ende == -1 or ende <= start:
-            return None
-
-        try:
-            return json.loads(text[start:ende + 1])
-        except Exception:
-            return None
-
-
-    def filtere_wortnr_json(antwort_text, erlaubte_keys, start_wortnr, end_wortnr, max_pro_key=None):
-        daten = extrahiere_json_objekt(antwort_text)
-
-        if not isinstance(daten, dict):
-            print("[WARNUNG][KI-JSON] Antwort ist kein gültiges JSON-Objekt.")
-            return None
-
-        bereinigt = {}
-
-        for key in erlaubte_keys:
-            werte = daten.get(key, [])
-
-            if not isinstance(werte, list):
-                werte = []
-
-            gefiltert = []
-
-            for nr in werte:
-                try:
-                    nr_int = int(nr)
-                except Exception:
-                    continue
-
-                if start_wortnr <= nr_int <= end_wortnr:
-                    if nr_int not in gefiltert:
-                        gefiltert.append(nr_int)
-                else:
-                    print(
-                        f"[WARNUNG][KI-JSON] Entferne WortNr außerhalb Abschnitt: "
-                        f"{nr_int} nicht in {start_wortnr}-{end_wortnr}"
-                    )
-
-            if max_pro_key is not None:
-                gefiltert = gefiltert[:max_pro_key]
-
-            bereinigt[key] = gefiltert
-
-        return json.dumps(bereinigt, ensure_ascii=False, indent=2)   
 
 if __name__ == "__main__":
     extrahiere_ig_woerter_aus_json(
