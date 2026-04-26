@@ -740,19 +740,21 @@ class DashBoard(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
 
+
     def lade_aufgaben_checkboxes(self):
         print("Aufgaben-Checkboxen geladen!")
         importlib.reload(config)
-        
+
         # Vorherige Widgets löschen
         for widget in self.aufg_frame.winfo_children():
             widget.destroy()
 
         self.task_vars = {}
-        self.selected_models = {}  # Speichert pro Aufgabe das ausgewählte Modell
+        self.selected_models = {}
+        self.model_selection_boxes = {}
 
         # Checkbox-Variable für "Alle Aufgaben"
-        self.all_tasks_var = tk.BooleanVar(value=True)  # Standard: alle aktiv
+        self.all_tasks_var = tk.BooleanVar(value=True)
 
         def toggle_all_tasks():
             wert = self.all_tasks_var.get()
@@ -760,14 +762,18 @@ class DashBoard(ttk.Frame):
                 var.set(wert)
 
         def update_all_tasks_var(*args):
+            if not self.task_vars:
+                return
             alle = all(var.get() for var in self.task_vars.values())
             if self.all_tasks_var.get() != alle:
                 self.all_tasks_var.set(alle)
 
         style = ttk.Style()
-        style.configure("HervorgehobeneCheckbutton.TCheckbutton",
-                        font=("Segoe UI", 10, "bold"),
-                        foreground="blue")
+        style.configure(
+            "HervorgehobeneCheckbutton.TCheckbutton",
+            font=("Segoe UI", 10, "bold"),
+            foreground="blue"
+        )
 
         rahmen = ttk.Frame(self.aufg_frame, padding=5, style="HervorhebungsFrame.TFrame")
         rahmen.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 10))
@@ -782,7 +788,9 @@ class DashBoard(ttk.Frame):
         )
         cb_all.grid(row=0, column=0, sticky="w", padx=5, pady=(5, 10))
 
-        # Feste Einträge 1 und 2
+        # ----------------------------------------------------
+        # Aufgabenliste bauen
+        # ----------------------------------------------------
         self.aufgaben_input = {
             1: "Text nach Kapiteln aufteilen",
             2: "Kapitel für KI vorbereiten",
@@ -790,19 +798,31 @@ class DashBoard(ttk.Frame):
 
         if getattr(config, "NUTZE_KI", True):
             print("KI nutzen!")
+
+            aktive_ki_aufgaben = getattr(
+                config,
+                "AKTIVE_KI_AUFGABEN",
+                list(config.KI_AUFGABEN.keys())
+            )
+            aktive_ki_aufgaben = {int(x) for x in aktive_ki_aufgaben}
+
+            print(f"[DEBUG] KI_AUFGABEN: {config.KI_AUFGABEN}")
+            print(f"[DEBUG] AKTIVE_KI_AUFGABEN: {aktive_ki_aufgaben}")
+
             for key, wert in sorted(config.KI_AUFGABEN.items()):
-                self.aufgaben_input[key] = f"{wert.capitalize()}-Erkennung (mit KI)"
-            if config.KI_AUFGABEN:
-                max_key = max(config.KI_AUFGABEN.keys())
-                next_key = max_key + 1
-            else:
-                next_key = 3
-        else:
-            next_key = 3
+                key_int = int(key)
 
-        self.aufgaben_input[next_key] = "Erzeugung (Merge + PDF)"
+                if key_int not in aktive_ki_aufgaben:
+                    continue
 
+                self.aufgaben_input[key_int] = f"{wert.capitalize()}-Erkennung (mit KI)"
+
+        merge_key = int(getattr(config, "MERGE_AUFGABE_ID", 99))
+        self.aufgaben_input[merge_key] = "Erzeugung (Merge + PDF)"
+
+        # ----------------------------------------------------
         # Modelle abrufen
+        # ----------------------------------------------------
         try:
             modelle = self.client.get_installed_models()
             text_modelle = [
@@ -813,22 +833,26 @@ class DashBoard(ttk.Frame):
                 and "asr" not in m.lower()
             ]
 
-
             if not text_modelle:
                 raise RuntimeError("Keine Modelle gefunden.")
+
         except Exception as e:
-            messagebox.showwarning("Warnung", f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab.")
+            messagebox.showwarning(
+                "Warnung",
+                f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab."
+            )
             for tab_id in self.notebook.tabs():
                 if self.notebook.tab(tab_id, "text") == "InstallationModellwahl":
                     self.notebook.select(tab_id)
                     break
             return
 
-        self.model_selection_boxes = {}
-
-        # Tooltip-Funktion (einfacher Tooltip mit Label)
+        # ----------------------------------------------------
+        # Tooltip-Funktion
+        # ----------------------------------------------------
         def create_tooltip(widget, text):
             tooltip = None
+
             def enter(event):
                 nonlocal tooltip
                 if tooltip or not text:
@@ -838,20 +862,30 @@ class DashBoard(ttk.Frame):
                 tooltip = tk.Toplevel(widget)
                 tooltip.wm_overrideredirect(True)
                 tooltip.wm_geometry(f"+{x}+{y}")
-                label = tk.Label(tooltip, text=text, background="#ffffe0", relief="solid", borderwidth=1, font=("Segoe UI", 9))
+                label = tk.Label(
+                    tooltip,
+                    text=text,
+                    background="#ffffe0",
+                    relief="solid",
+                    borderwidth=1,
+                    font=("Segoe UI", 9)
+                )
                 label.pack()
+
             def leave(event):
                 nonlocal tooltip
                 if tooltip:
                     tooltip.destroy()
                     tooltip = None
+
             widget.bind("<Enter>", enter)
             widget.bind("<Leave>", leave)
 
-        # Ab Zeile 1, da row=0 vom Rahmen und "Alle Aufgaben"-Checkbox belegt
-        for i, (schritt_nr, beschreibung) in enumerate(self.aufgaben_input.items(), start=1):
-            var = tk.BooleanVar(value=True)  # Standard alle aktiv
-
+        # ----------------------------------------------------
+        # UI-Zeilen erzeugen
+        # ----------------------------------------------------
+        for i, (schritt_nr, beschreibung) in enumerate(sorted(self.aufgaben_input.items()), start=1):
+            var = tk.BooleanVar(value=True)
             var.trace_add("write", lambda *args: update_all_tasks_var())
 
             frame = ttk.Frame(self.aufg_frame)
@@ -863,7 +897,6 @@ class DashBoard(ttk.Frame):
             cb = tk.Checkbutton(frame, text=beschreibung, variable=var)
             cb.grid(row=0, column=0, sticky="w")
 
-            # Tooltip zum Checkbox-Text
             create_tooltip(cb, f"Aufgabe {schritt_nr}: {beschreibung}")
 
             spinner_lbl = ttk.Label(frame, text="", font=("Consolas", 12))
@@ -872,33 +905,40 @@ class DashBoard(ttk.Frame):
             self.task_vars[schritt_nr] = var
             self.task_spinner_labels[schritt_nr] = spinner_lbl
 
-            if "(mit ki)" in beschreibung.lower() and text_modelle:
+            # Nur echte KI-Aufgaben bekommen Modell-Auswahl
+            ist_ki_aufgabe = (
+                getattr(config, "NUTZE_KI", True)
+                and schritt_nr in getattr(config, "KI_AUFGABEN", {})
+            )
+
+            if ist_ki_aufgabe and text_modelle:
                 combo = ttk.Combobox(frame, values=text_modelle, state="readonly", width=40)
                 combo.set(text_modelle[0])
                 combo.grid(row=0, column=2, padx=5, sticky="w")
-                self.model_selection_boxes[schritt_nr] = combo
 
-                # Speichere initial ausgewähltes Modell
+                self.model_selection_boxes[schritt_nr] = combo
                 self.selected_models[schritt_nr] = text_modelle[0]
 
-                # Callback zum Speichern der Auswahl
                 def on_model_selected(event, sn=schritt_nr):
                     self.selected_models[sn] = self.model_selection_boxes[sn].get()
+
                 combo.bind("<<ComboboxSelected>>", on_model_selected)
 
-        # Synchronisation: Initial alle Aufgaben aktivieren
+        # Initial alle sichtbaren Aufgaben aktivieren
         toggle_all_tasks()
 
-        # Button außerhalb der Loop in eigenem Frame
+        # ----------------------------------------------------
+        # Button: manuell optimieren
+        # ----------------------------------------------------
         btn_frame = ttk.Frame(self.aufg_frame)
         btn_frame.grid(row=len(self.aufgaben_input) + 1, column=0, sticky="w", pady=5)
+
         btn_kapitel_bearbeiten = ttk.Button(
             btn_frame,
             text="Annotationen manuell optimieren",
             command=self.kapitel_annotation_editor_starten
         )
         btn_kapitel_bearbeiten.grid(row=0, column=0, sticky="w")
-
 
     def lade_docx_aus_globalordner(self):
         ordner = config.GLOBALORDNER
@@ -1187,19 +1227,25 @@ class DashBoard(ttk.Frame):
             bereits_in_queue.add(kapitel)
             self.thread_queue.put(kapitel)
         
-            kapitel_anzahl = len(ausgewaehlte_kapitel)
+        kapitel_anzahl = len(ausgewaehlte_kapitel)
 
-            ki_aktiv = (
-                getattr(config, "NUTZE_KI", True)
-                and any(task_flags.get(aid, False) for aid in config.KI_AUFGABEN)
-            )
+        aktive_ki_aufgaben = getattr(
+            config,
+            "AKTIVE_KI_AUFGABEN",
+            list(config.KI_AUFGABEN.keys())
+        )
 
-            if ki_aktiv:
-                max_threads = 1
-                print("[INFO] KI aktiv: Kapitel werden seriell verarbeitet, um Modell-Doppel-Loads zu vermeiden.", flush=True)
-            else:
-                max_threads = min(self.max_workers, kapitel_anzahl)
-                max_threads = max(1, max_threads)
+        ki_aktiv = (
+            getattr(config, "NUTZE_KI", True)
+            and any(task_flags.get(aid, False) for aid in aktive_ki_aufgaben)
+        )
+
+        if ki_aktiv:
+            max_threads = 1
+            print("[INFO] KI aktiv: Kapitel werden seriell verarbeitet, um Modell-Doppel-Loads zu vermeiden.", flush=True)
+        else:
+            max_threads = min(self.max_workers, kapitel_anzahl)
+            max_threads = max(1, max_threads)
 
         try:
             with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
@@ -1415,9 +1461,15 @@ class DashBoard(ttk.Frame):
                 if not getattr(config, "NUTZE_KI", True):
                     return
 
+                aktive_ki_aufgaben = getattr(
+                    config,
+                    "AKTIVE_KI_AUFGABEN",
+                    list(config.KI_AUFGABEN.keys())
+                )
+
                 alle_task_ids = [
-                    aid for aid in config.KI_AUFGABEN
-                    if task_flags.get(aid, False)
+                    aid for aid in aktive_ki_aufgaben
+                    if aid in config.KI_AUFGABEN and task_flags.get(aid, False)
                 ]
 
                 nicht_noetige = kapitel_daten.get(kapitel_name, {}).get(
@@ -1536,10 +1588,7 @@ class DashBoard(ttk.Frame):
             # ----------------------------------------------------
             # Merge-Aufgaben-Key bestimmen
             # ----------------------------------------------------
-            if getattr(config, "NUTZE_KI", True):
-                next_key = max(config.KI_AUFGABEN.keys()) + 1 if config.KI_AUFGABEN else 3
-            else:
-                next_key = 3
+            next_key = int(getattr(config, "MERGE_AUFGABE_ID", 99))
 
             # ----------------------------------------------------
             # KI-Aufgaben: Kapitel parallel, Aufgaben pro Kapitel seriell
@@ -1549,9 +1598,15 @@ class DashBoard(ttk.Frame):
                     print(f"[INFO] KI-Verarbeitung für Kapitel {kapitel_name} abgebrochen.", flush=True)
                     return
 
+                aktive_ki_aufgaben = getattr(
+                    config,
+                    "AKTIVE_KI_AUFGABEN",
+                    list(config.KI_AUFGABEN.keys())
+                )
+
                 alle_task_ids = [
-                    aid for aid in config.KI_AUFGABEN
-                    if task_flags.get(aid, False)
+                    aid for aid in aktive_ki_aufgaben
+                    if aid in config.KI_AUFGABEN and task_flags.get(aid, False)
                 ]
 
                 nicht_noetige = kapitel_daten.get(kapitel_name, {}).get(

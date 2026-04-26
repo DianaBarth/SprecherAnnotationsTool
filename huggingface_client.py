@@ -519,34 +519,35 @@ class HuggingFaceClient:
             return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def calc_max_new_tokens(
-        self,
+       self,
         prompt_token_count: int,
         requested: Optional[int] = None,
-        min_new_tokens: int = 128,
-        hard_cap: int = 512,
+        min_new_tokens: int = 32,
+        hard_cap: int = 768,
     ) -> int:
-        """
-        Dynamisch:
-        - nutzt config.MAX_TOTAL_TOKENS
-        - begrenzt hart, damit 8GB VRAM nicht explodieren
-        """
         if requested is not None:
             return max(1, int(requested))
 
         total_limit = getattr(config, "MAX_TOTAL_TOKENS", 4096)
-        available = max(min_new_tokens, total_limit - prompt_token_count)
+        available = total_limit - prompt_token_count
 
-        return int(min(available, hard_cap))
+        if available <= 0:
+            return min_new_tokens
+
+        return int(max(1, min(available, hard_cap)))
 
 
     def generate(
         self,
         prompt: str,
         max_new_tokens: Optional[int] = None,
-        hard_cap: int = 2048,
+        hard_cap: Optional[int] = None,
         temperature: float = 0.0,
         stop_strings: Optional[List[str]] = None,
     ) -> str:
+        if hard_cap is None:
+            hard_cap = getattr(config, "KI_MAX_NEW_TOKENS", 768)  
+
         if self.model is None or self.tokenizer is None:
             raise ValueError("Kein Modell geladen. Bitte set_model() aufrufen.")
 

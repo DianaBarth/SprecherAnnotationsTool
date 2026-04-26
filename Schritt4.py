@@ -101,10 +101,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
         aufgaben_name_lower = str(aufgaben_name).lower()
 
         max_tokens_by_task = {
-            "pause": 128,
-            "gedanken": 128,
-            "betonung": 192,
-            "spannung": 128,
+            "kombination": 512,           
             "person": 384,
             "ig": 512,
         }

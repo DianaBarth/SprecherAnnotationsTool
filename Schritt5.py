@@ -164,6 +164,46 @@ def normalisiere_ki_daten(typ, daten, feldname):
        ]
     """
 
+     # ----------------------------------------------------
+    # Kombinationsformat:
+    # {
+    #   "pause": {...},
+    #   "gedanken": {...},
+    #   "betonung": {...},
+    #   "spannung": {...}
+    # }
+    # ----------------------------------------------------
+    if typ == "kombination" and isinstance(daten, dict):
+        kombi_mapping = {
+            "pause": "pause",
+            "gedanken": "gedanken",
+            "betonung": "betonung",
+            "spannung": "spannung",
+        }
+
+        for untertyp, feld in kombi_mapping.items():
+            teil = daten.get(untertyp)
+
+            if not isinstance(teil, dict):
+                continue
+
+            for kategorie, wortnrs in teil.items():
+                if not isinstance(wortnrs, list):
+                    continue
+
+                for wortnr in wortnrs:
+                    try:
+                        wortnr = int(wortnr)
+                    except (ValueError, TypeError):
+                        continue
+
+                    normalisiert.append({
+                        "WortNr": wortnr,
+                        feld: str(kategorie)
+                    })
+
+        return normalisiert
+
     typ = str(typ).lower().strip()
     feldname = str(feldname).strip()
     normalisiert = []
@@ -262,30 +302,52 @@ def normalisiere_ki_daten(typ, daten, feldname):
     return normalisiert
 
 
-def baue_index(liste, feldname):
+def baue_index(liste, feldname=None):
     """
     Baut:
     {
-      WortNr: [wert1, wert2]
+      feldname: {
+        WortNr: [wert1, wert2]
+      }
     }
+
+    Unterstützt normale Einträge:
+      {"WortNr": 12, "pause": "atempause"}
+
+    und Kombi-Einträge:
+      {"WortNr": 12, "pause": "atempause"}
+      {"WortNr": 15, "betonung": "hauptbetonung"}
     """
 
-    index = {}
+    index = defaultdict(dict)
 
     for eintrag in liste:
         if not isinstance(eintrag, dict):
             continue
 
         wortnrs = parse_bereich(eintrag.get("WortNr"))
+        if not wortnrs:
+            continue
 
-        for nr in wortnrs:
-            wert = eintrag.get(feldname, "")
+        # Normalfall: bestimmtes Feld
+        if feldname:
+            feldnamen = [feldname]
+        else:
+            feldnamen = [
+                k for k in eintrag.keys()
+                if k != "WortNr" and eintrag.get(k) not in ("", None, [])
+            ]
 
-            if wert not in (None, "", []):
-                index.setdefault(nr, []).append(wert)
+        for feld in feldnamen:
+            wert = eintrag.get(feld, "")
+
+            if wert in ("", None, []):
+                continue
+
+            for nr in wortnrs:
+                index.setdefault(feld, {}).setdefault(nr, []).append(wert)
 
     return index
-
 
 def bereinige_werte(werte):
     bereinigt = []
@@ -349,18 +411,31 @@ def merge_einen_abschnitt(
             traceback.print_exc()
             continue
 
-    indizes = {}
+    indizes = defaultdict(dict)
 
     for typ, daten in annotationen_daten.items():
         feldname = feldnamen_pro_typ.get(typ)
 
-        if not feldname:
-            continue
+        if typ == "kombination":
+            print(f"[DEBUG] Erstelle Kombi-Index für Typ '{typ}'")
+            teilindizes = baue_index(daten, feldname=None)
 
-        print(f"[DEBUG] Erstelle Index für Typ '{typ}' -> Feld '{feldname}'")
-        indizes[typ] = baue_index(daten, feldname)
+            for feld, nr_index in teilindizes.items():
+                for nr, werte in nr_index.items():
+                    indizes[feld].setdefault(nr, []).extend(werte)
 
-    zusammengefuehrt = []
+        else:
+            if not feldname:
+                continue
+
+            print(f"[DEBUG] Erstelle Index für Typ '{typ}' -> Feld '{feldname}'")
+            teilindizes = baue_index(daten, feldname)
+
+            for feld, nr_index in teilindizes.items():
+                for nr, werte in nr_index.items():
+                    indizes[feld].setdefault(nr, []).extend(werte)
+
+        zusammengefuehrt = []
 
     for eintrag in original_daten:
         wortnr = eintrag.get("WortNr")
@@ -375,11 +450,7 @@ def merge_einen_abschnitt(
 
         neuer_eintrag = dict(eintrag)
 
-        for typ, index in indizes.items():
-            feldname = feldnamen_pro_typ.get(typ)
-            if not feldname:
-                continue
-
+        for feldname, index in indizes.items():
             werte = index.get(wortnr_int, [])
 
             if not werte:

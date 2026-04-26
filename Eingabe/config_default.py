@@ -6,16 +6,27 @@
 GLOBALORDNER = {}
 NUTZE_KI = True  # Schaltet alle KI-Funktionen zentral ein oder aus
 MAX_PARALLELE_KI_TASKS = 2
-
-# Aufgabenübersicht mit IDs und Kurzbezeichnungen
+KI_MAX_NEW_TOKENS = 768
 KI_AUFGABEN = {
-    3: 'person',      # Personenkennung
-    4: 'betonung',    # Betonung (Haupt/Neben)
-    5: 'pause',       # Pausen (Atem/Stau)
-    6: 'gedanken',    # Gedankenstruktur
-    7: 'spannung',    # Spannungsverlauf
-    8: 'ig'           # Ich/Gedanken-Erkennung
+    3: "person",
+    4: "kombination",
+    5: "pause",        # bleibt (wird aber nicht mehr benutzt)
+    6: "gedanken",     # bleibt (wird aber nicht mehr benutzt)
+    7: "spannung",     # bleibt (wird aber nicht mehr benutzt)
+    8: "betonung",     # bleibt (wird aber nicht mehr benutzt)
+    9: "ig",
 }
+
+KOMBI_AUFGABEN_MAPPING = {
+    "kombination": {
+        "betonung": "betonung",
+        "pause": "pause",
+        "gedanken": "gedanken",
+        "spannung": "spannung",
+    }
+}
+
+MERGE_AUFGABE_ID = 99
 
 # Annotationen für jede Aufgabe
 AUFGABEN_ANNOTATIONEN = {
