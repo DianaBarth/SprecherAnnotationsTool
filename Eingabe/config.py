@@ -198,6 +198,12 @@ ANNOTATION_SHORTCUTS = {
 }
 
 UI_SHORTCUTS = {
+    "<Key-m>": {
+        "label": "M",
+        "description": "Sprecher-Modus an/aus",
+        "action": "toggle_speaker_mode",
+    },
+
     "<Control-s>": {
         "label": "Strg+S",
         "description": "Speichern",

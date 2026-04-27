@@ -64,6 +64,8 @@ class AnnotationenEditor(ttk.Frame):
         self.aktuell_gewaehlter_token_idx = None
         self.personen_bereich_ende_idx = None
         self.shortcut_icons = {}   
+        self.sprecher_modus_var = tk.BooleanVar(value=False)
+        self.rechts_frame= None
     
         # Widgets bauen
         self._erstelle_widgets()
@@ -164,6 +166,14 @@ class AnnotationenEditor(ttk.Frame):
         export_button = ttk.Button(top_frame, text="Exportiere als PDF", command=self._exportiere_pdf)
         export_button.grid(row=0, column=4, padx=(10, 0))
 
+        sprecher_button = ttk.Checkbutton(
+            top_frame,
+            text="Sprecher-Modus",
+            variable=self.sprecher_modus_var,
+            command=self._toggle_sprecher_modus
+        )
+        sprecher_button.grid(row=0, column=5, padx=(10, 0))
+
         # ---------------------------
         # 2. Zeile: Zahlwörter
         # ---------------------------
@@ -237,16 +247,16 @@ class AnnotationenEditor(ttk.Frame):
         self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         # Sidebar rechts
-        rechts_frame = ttk.Frame(canvas_frame)
-        rechts_frame.grid(row=0, column=1, sticky='nsew')
+        self.rechts_frame= ttk.Frame(canvas_frame)
+        self.rechts_frame.grid(row=0, column=1, sticky='nsew')
 
-        rechts_frame.columnconfigure(0, weight=1)
-        rechts_frame.rowconfigure(0, weight=1)
+        self.rechts_frame.columnconfigure(0, weight=1)
+        self.rechts_frame.rowconfigure(0, weight=1)
 
-        self.annotation_canvas = tk.Canvas(rechts_frame)
+        self.annotation_canvas = tk.Canvas(self.rechts_frame)
         self.annotation_canvas.grid(row=0, column=0, sticky='nsew')
 
-        scrollbar_rechts = ttk.Scrollbar(rechts_frame, orient='vertical', command=self.annotation_canvas.yview)
+        scrollbar_rechts = ttk.Scrollbar(self.rechts_frame, orient='vertical', command=self.annotation_canvas.yview)
         scrollbar_rechts.grid(row=0, column=1, sticky='ns')
 
         self.annotation_canvas.configure(yscrollcommand=scrollbar_rechts.set)
@@ -756,6 +766,7 @@ class AnnotationenEditor(ttk.Frame):
         self.bind_all("<Key>", self._shortcut_annotation_setzen)
 
         action_map = {
+            "toggle_speaker_mode": lambda e: self._shortcut_toggle_sprecher_modus(),
             "save": lambda e: self._json_speichern(),
             "undo": self._undo,
             "redo": self._redo,
@@ -769,16 +780,21 @@ class AnnotationenEditor(ttk.Frame):
             "section_prev": lambda e: self._wechsle_abschnitt(-1),
             "section_next": lambda e: self._wechsle_abschnitt(1),
             "export_pdf": lambda e: self._exportiere_pdf(),
+            
         }
 
         for sequence, shortcut_def in config.UI_SHORTCUTS.items():
             action_name = shortcut_def.get("action")
             callback = action_map.get(action_name)
 
-            if callback:
+            if not callback:
+                print(f"[Shortcuts] Unbekannte Aktion: {action_name}")
+                continue
+
+            if len(sequence) == 1:
                 self.bind_all(sequence, callback)
             else:
-                print(f"[Shortcuts] Unbekannte Aktion: {action_name}")
+                self.bind_all(sequence, callback)
 
 
     def _loesche_annotationen_aktuelles_wort(self, event=None):
@@ -874,3 +890,17 @@ class AnnotationenEditor(ttk.Frame):
         ziel_idx = gleiche_zeile[0][1]
 
         self._on_token_click(ziel_idx)
+
+    def _toggle_sprecher_modus(self):
+        if not self.rechts_frame:
+            return
+
+        if self.sprecher_modus_var.get():
+            self.rechts_frame.grid_remove()
+        else:
+            self.rechts_frame.grid(row=0, column=1, sticky="nsew")
+
+    def _shortcut_toggle_sprecher_modus(self, event=None):
+        self.sprecher_modus_var.set(not self.sprecher_modus_var.get())
+        self._toggle_sprecher_modus()
+        return "break"
