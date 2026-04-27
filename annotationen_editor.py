@@ -5,6 +5,7 @@ import tkinter as tk
 import ast
 import yaml
 import unicodedata
+import copy
 from datetime import date
 from tkinter import ttk, messagebox
 from reportlab.pdfgen import canvas as pdfcanvas
@@ -54,11 +55,14 @@ class AnnotationenEditor(ttk.Frame):
         # Initialisiere weitere Variablen
         self.renderer = AnnotationRenderer()
         self.json_dicts = []
+        self.undo_stack = []
+        self.redo_stack = []
         self.filter_vars = {}
         self.use_number_words_var = tk.BooleanVar(value=True)
         self.personen_bereich_start_idx = None
         self.aktuell_gewaehlter_token_idx = None
         self.personen_bereich_ende_idx = None
+ 
     
         # Widgets bauen
         self._erstelle_widgets()
@@ -271,6 +275,8 @@ class AnnotationenEditor(ttk.Frame):
         self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='nw')
 
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+      
+        self._registriere_shortcuts()
 
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
@@ -371,6 +377,8 @@ class AnnotationenEditor(ttk.Frame):
             ).grid(row=row_index, column=0, columnspan=2, sticky='w', padx=5, pady=(0, 8))
             row_index += 1
 
+       
+
         personen_werte = self._lade_personen_fuer_aktuellen_abschnitt()
         print("[DEBUG] personen_werte:", personen_werte)
         
@@ -404,6 +412,7 @@ class AnnotationenEditor(ttk.Frame):
 
             def on_combobox_change(event, feldname=feldname, combobox=combobox):
                 neuer_wert = _interner_name(combobox.get()) or ""
+                self._push_undo_state()
 
                 if feldname == "person":
                     start_idx = self.personen_bereich_start_idx
@@ -429,8 +438,52 @@ class AnnotationenEditor(ttk.Frame):
 
             row_index += 1
 
+        shortcut_text = self._baue_shortcut_text()
+
+        shortcut_label = ttk.Label(
+            self.annotation_frame,
+            text=shortcut_text,
+            foreground="gray",
+            font=("Arial", 9),
+            justify="left"
+        )
+
+        shortcut_label.grid(
+            row=row_index,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            padx=5,
+            pady=(10, 5)
+        )
+
+
         self.annotation_canvas.update_idletasks()
         self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
+
+        # Speichern
+        self.bind_all("<Control-s>", lambda e: self._json_speichern())
+
+        # Undo / Redo
+        self.bind_all("<Control-z>", self._undo)
+        self.bind_all("<Control-y>", self._redo)
+        self.bind_all("<Control-Shift-Z>", self._redo)
+
+        # Auswahl / Navigation
+        self.bind_all("<Left>", lambda e: self._waehle_token_delta(-1))
+        self.bind_all("<Right>", lambda e: self._waehle_token_delta(1))
+        self.bind_all("<Control-Left>", lambda e: self._waehle_token_delta(-5))
+        self.bind_all("<Control-Right>", lambda e: self._waehle_token_delta(5))
+
+        # Annotation löschen für aktuelles Wort
+        self.bind_all("<Delete>", self._loesche_annotationen_aktuelles_wort)
+
+        # Abschnitt wechseln
+        self.bind_all("<Alt-Left>", lambda e: self._wechsle_abschnitt(-1))
+        self.bind_all("<Alt-Right>", lambda e: self._wechsle_abschnitt(1))
+
+        # PDF Export
+        self.bind_all("<Control-e>", lambda e: self._exportiere_pdf())
 
     def _json_speichern(self):
         try:
@@ -571,3 +624,137 @@ class AnnotationenEditor(ttk.Frame):
             traceback.print_exc()
 
         return []
+    
+    def _push_undo_state(self):
+        self.undo_stack.append(copy.deepcopy(self.json_dicts))
+        self.redo_stack.clear()
+
+        if len(self.undo_stack) > 50:
+            self.undo_stack.pop(0)
+
+
+    def _undo(self, event=None):
+        if not self.undo_stack:
+            return
+
+        self.redo_stack.append(copy.deepcopy(self.json_dicts))
+        self.json_dicts = self.undo_stack.pop()
+
+        self._zeichne_alle_tokens()
+        self.zeige_default_annotation_label()
+
+
+    def _redo(self, event=None):
+        if not self.redo_stack:
+            return
+
+        self.undo_stack.append(copy.deepcopy(self.json_dicts))
+        self.json_dicts = self.redo_stack.pop()
+
+        self._zeichne_alle_tokens()
+        self.zeige_default_annotation_label()
+
+    def _waehle_token_delta(self, delta):
+        if self.aktuell_gewaehlter_token_idx is None:
+            idx = 0
+        else:
+            idx = self.aktuell_gewaehlter_token_idx + delta
+
+        idx = max(0, min(idx, len(self.json_dicts) - 1))
+        self._on_token_click(idx)
+
+    def _shortcut_annotation_setzen(self, event):
+        key = event.keysym.lower()
+
+        if key not in config.ANNOTATION_SHORTCUTS:
+            return
+
+        if self.aktuell_gewaehlter_token_idx is None:
+            return
+
+        feldname, wert = config.ANNOTATION_SHORTCUTS[key]
+
+        idx = self.aktuell_gewaehlter_token_idx
+        json_dict = self.json_dicts[idx]
+
+        self._push_undo_state()
+
+        if json_dict.get(feldname) == wert:
+            json_dict[feldname] = ""
+        else:
+            json_dict[feldname] = wert
+
+        if feldname == "position":
+            self._zeichne_alle_tokens()
+        else:
+            self.renderer.annotation_aendern(
+                self.canvas,
+                idx,
+                feldname,
+                json_dict
+            )
+
+        self._on_token_click(idx)
+
+    def _baue_shortcut_text(self):
+        lines = ["Annotationen:"]
+
+        for key, (feld, wert) in config.ANNOTATION_SHORTCUTS.items():
+            lines.append(f"  {key.upper()} = {wert}")
+
+        lines.append("")
+        lines.append("Bedienung:")
+
+        for shortcut_def in config.UI_SHORTCUTS.values():
+            label = shortcut_def.get("label", "")
+            desc = shortcut_def.get("description", "")
+            lines.append(f"  {label} = {desc}")
+
+        return "\n".join(lines)
+    
+    def _registriere_shortcuts(self):
+        self.bind_all("<Key>", self._shortcut_annotation_setzen)
+
+        action_map = {
+            "save": lambda e: self._json_speichern(),
+            "undo": self._undo,
+            "redo": self._redo,
+            "token_prev": lambda e: self._waehle_token_delta(-1),
+            "token_next": lambda e: self._waehle_token_delta(1),
+            "token_prev_5": lambda e: self._waehle_token_delta(-5),
+            "token_next_5": lambda e: self._waehle_token_delta(5),
+            "delete_current_annotations": self._loesche_annotationen_aktuelles_wort,
+            "section_prev": lambda e: self._wechsle_abschnitt(-1),
+            "section_next": lambda e: self._wechsle_abschnitt(1),
+            "export_pdf": lambda e: self._exportiere_pdf(),
+        }
+
+        for sequence, shortcut_def in config.UI_SHORTCUTS.items():
+            action_name = shortcut_def.get("action")
+            callback = action_map.get(action_name)
+
+            if callback:
+                self.bind_all(sequence, callback)
+            else:
+                print(f"[Shortcuts] Unbekannte Aktion: {action_name}")
+
+
+    def _loesche_annotationen_aktuelles_wort(self, event=None):
+        idx = self.aktuell_gewaehlter_token_idx
+
+        if idx is None or idx < 0 or idx >= len(self.json_dicts):
+            return
+
+        self._push_undo_state()
+
+        json_dict = self.json_dicts[idx]
+
+        for feldname in config.RECORDING_ANNOTATIONEN.keys():
+            # position bei Delete  NICHT löschen
+            if feldname == "position":
+                continue
+
+            json_dict[feldname] = ""
+
+        self._zeichne_alle_tokens()
+        self._on_token_click(idx)

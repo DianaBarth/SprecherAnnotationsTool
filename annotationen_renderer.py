@@ -9,6 +9,7 @@ from collections import defaultdict
 import importlib
 import colorsys
 
+
 import Eingabe.config as config  # Importiere das komplette config-Modul
 from config_editor import ToolTip
 from config_editor import register_custom_font

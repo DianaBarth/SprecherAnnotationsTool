@@ -178,6 +178,88 @@ ANNOTATIONEN = {
     ],
 }
 
+ANNOTATION_SHORTCUTS = {
+    "h": ("betonung", "Hauptbetonung"),
+    "n": ("betonung", "Nebenbetonung"),
+
+    "a": ("pause", "Atempause"),
+    "s": ("pause", "Staupause"),
+
+    "g": ("gedanken", "gedanken_weiter"),
+    "e": ("gedanken", "gedanken_ende"),
+    "p": ("gedanken", "pause_gedanken"),
+
+    "1": ("spannung", "Starten"),
+    "2": ("spannung", "Halten"),
+    "3": ("spannung", "Stoppen"),
+
+    "c": ("ig", "ich"),
+    "k": ("ig", "ik"),
+}
+
+UI_SHORTCUTS = {
+    "<Control-s>": {
+        "label": "Strg+S",
+        "description": "Speichern",
+        "action": "save",
+    },
+    "<Control-z>": {
+        "label": "Strg+Z",
+        "description": "Rückgängig",
+        "action": "undo",
+    },
+    "<Control-y>": {
+        "label": "Strg+Y",
+        "description": "Wiederholen",
+        "action": "redo",
+    },
+    "<Control-Shift-Z>": {
+        "label": "Strg+Shift+Z",
+        "description": "Wiederholen",
+        "action": "redo",
+    },
+    "<Left>": {
+        "label": "←",
+        "description": "Vorheriges Wort",
+        "action": "token_prev",
+    },
+    "<Right>": {
+        "label": "→",
+        "description": "Nächstes Wort",
+        "action": "token_next",
+    },
+    "<Control-Left>": {
+        "label": "Strg+←",
+        "description": "5 Wörter zurück",
+        "action": "token_prev_5",
+    },
+    "<Control-Right>": {
+        "label": "Strg+→",
+        "description": "5 Wörter vor",
+        "action": "token_next_5",
+    },
+    "<Delete>": {
+        "label": "Entf",
+        "description": "Annotationen aktuelles Wort löschen",
+        "action": "delete_current_annotations",
+    },
+    "<Alt-Left>": {
+        "label": "Alt+←",
+        "description": "Vorheriger Abschnitt",
+        "action": "section_prev",
+    },
+    "<Alt-Right>": {
+        "label": "Alt+→",
+        "description": "Nächster Abschnitt",
+        "action": "section_next",
+    },
+    "<Control-e>": {
+        "label": "Strg+E",
+        "description": "PDF exportieren",
+        "action": "export_pdf",
+    },
+}
+
 
 RECORDING_ANNOTATIONEN = {
     "person": {
