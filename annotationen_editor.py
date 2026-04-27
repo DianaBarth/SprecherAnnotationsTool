@@ -761,6 +761,8 @@ class AnnotationenEditor(ttk.Frame):
             "redo": self._redo,
             "token_prev": lambda e: self._waehle_token_delta(-1),
             "token_next": lambda e: self._waehle_token_delta(1),
+            "line_up": lambda e: self._springe_zeile("hoch"),
+            "line_down": lambda e: self._springe_zeile("runter"),
             "token_prev_5": lambda e: self._waehle_token_delta(-5),
             "token_next_5": lambda e: self._waehle_token_delta(5),
             "delete_current_annotations": self._loesche_annotationen_aktuelles_wort,
@@ -824,3 +826,51 @@ class AnnotationenEditor(ttk.Frame):
             if annot.get("name") == wert:
                 return annot.get("bild")
         return None
+    
+    def _springe_zeile(self, richtung):
+        if self.aktuell_gewaehlter_token_idx is None:
+            return
+
+        aktuelle_idx = self.aktuell_gewaehlter_token_idx
+        aktuelle_pos = self.renderer.canvas_elemente_pro_token.get(aktuelle_idx)
+
+        if not aktuelle_pos:
+            return
+
+        aktuelle_y = aktuelle_pos["y"]
+
+        kandidaten = []
+
+        for idx, pos in self.renderer.canvas_elemente_pro_token.items():
+            y = pos["y"]
+
+            if richtung == "hoch" and y < aktuelle_y:
+                kandidaten.append((abs(y - aktuelle_y), idx, y))
+            elif richtung == "runter" and y > aktuelle_y:
+                kandidaten.append((abs(y - aktuelle_y), idx, y))
+
+        if not kandidaten:
+            return
+
+        # Nächste Zeile finden (kleinster Abstand)
+        kandidaten.sort(key=lambda x: x[0])
+
+        ziel_y = kandidaten[0][2]
+
+        # Jetzt Token auf dieser Zeile wählen (ähnlich gleiche X-Position)
+        aktuelle_x = aktuelle_pos["x"]
+
+        gleiche_zeile = [
+            (abs(pos["x"] - aktuelle_x), idx)
+            for idx, pos in self.renderer.canvas_elemente_pro_token.items()
+            if pos["y"] == ziel_y
+        ]
+
+        if not gleiche_zeile:
+            return
+
+        gleiche_zeile.sort(key=lambda x: x[0])
+
+        ziel_idx = gleiche_zeile[0][1]
+
+        self._on_token_click(ziel_idx)

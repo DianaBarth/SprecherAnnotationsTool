@@ -228,6 +228,17 @@ UI_SHORTCUTS = {
         "description": "Nächstes Wort",
         "action": "token_next",
     },
+    "<Up>": {
+        "label": "↑",
+        "description": "Zeile hoch",
+        "action": "line_up",
+    },
+    "<Down>": {
+        "label": "↓",
+        "description": "Zeile runter",
+        "action": "line_down",
+    },
+
     "<Control-Left>": {
         "label": "Strg+←",
         "description": "5 Wörter zurück",
