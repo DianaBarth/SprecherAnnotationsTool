@@ -120,33 +120,36 @@ class AnnotationenEditor(ttk.Frame):
             self.canvas.delete('all')
             self.default_annotation_label.grid()
 
+
     def _erstelle_widgets(self):
         self.grid(row=0, column=0, sticky="nsew")
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
-        self.rowconfigure(0, weight=0)  # Zeile 0: Buttons + Comboboxen
-        self.rowconfigure(1, weight=0)  # Zeile 1: Zahlwörter Checkbox
-        self.rowconfigure(2, weight=0)  # Zeile 2: Filter Checkboxen
-        self.rowconfigure(3, weight=0)  # Zeile 3: leerer Abstand
-        self.rowconfigure(4, weight=1)  # Zeile 4: Canvas + Annotationen wächst
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=0)
+        self.rowconfigure(2, weight=0)
+        self.rowconfigure(3, weight=0)
+        self.rowconfigure(4, weight=1)
 
-        # 1. Zeile: Hauptkapitel Auswahl + Speichern-Button
+        # ---------------------------
+        # 1. Zeile: Kapitel + Buttons
+        # ---------------------------
         top_frame = ttk.Frame(self)
         top_frame.grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        top_frame.columnconfigure(0, weight=0)
-        top_frame.columnconfigure(1, weight=0)
 
         max_len = max((len(str(k)) for k in self.kapitel_liste), default=5)
-        self.hauptkapitel_combo = ttk.Combobox(top_frame, values=self.kapitel_liste, state="readonly", width=max(max_len, 20))
+
+        self.hauptkapitel_combo = ttk.Combobox(
+            top_frame,
+            values=self.kapitel_liste,
+            state="readonly",
+            width=max(max_len, 20)
+        )
         self.hauptkapitel_combo.current(self.current_hauptkapitel_index)
-        self.hauptkapitel_combo.grid(row=0, column=0, padx=(0,10))
+        self.hauptkapitel_combo.grid(row=0, column=0, padx=(0, 10))
         self.hauptkapitel_combo.bind("<<ComboboxSelected>>", self._hauptkapitel_gewechselt)
 
         self.abschnitt_combo = ttk.Combobox(top_frame, values=[], state="readonly")
-        if self.abschnitt_combo['values']:
-            self.abschnitt_combo.current(self.current_abschnitt_index)
-        else:
-            self.abschnitt_combo.set('')
         self.abschnitt_combo.grid(row=0, column=1)
         self.abschnitt_combo.bind("<<ComboboxSelected>>", self._abschnitt_gewechselt)
 
@@ -156,7 +159,9 @@ class AnnotationenEditor(ttk.Frame):
         export_button = ttk.Button(top_frame, text="Exportiere als PDF", command=self._exportiere_pdf)
         export_button.grid(row=0, column=4, padx=(10, 0))
 
-        # 2. Zeile: zahlwoerter_checkbox
+        # ---------------------------
+        # 2. Zeile: Zahlwörter
+        # ---------------------------
         top_frame_2 = ttk.Frame(self)
         top_frame_2.grid(row=1, column=0, sticky="w", padx=5, pady=(5, 0))
 
@@ -168,7 +173,9 @@ class AnnotationenEditor(ttk.Frame):
         )
         zahlwoerter_checkbox.grid(row=0, column=0, sticky="w")
 
-        # 3. Zeile: Annotationen ausblenden für
+        # ---------------------------
+        # 3. Zeile: Filter (NEU!)
+        # ---------------------------
         top_frame_3 = ttk.Frame(self)
         top_frame_3.grid(row=2, column=0, sticky="w", padx=5, pady=(10, 0))
 
@@ -176,49 +183,67 @@ class AnnotationenEditor(ttk.Frame):
         filter_label.grid(row=0, column=0, sticky="w", padx=(0, 10))
 
         col = 1
-        for aufgabenname in config.KI_AUFGABEN.values():
+
+        self.filter_vars = {}
+
+        for feldname, definition in config.RECORDING_ANNOTATIONEN.items():
             var = tk.BooleanVar(value=False)
-            self.filter_vars[aufgabenname] = var
+            self.filter_vars[feldname] = var
+
             btn = ttk.Checkbutton(
-                top_frame_3, text=aufgabenname, variable=var, command=self._zeichne_alle_tokens
+                top_frame_3,
+                text=definition["label"],
+                variable=var,
+                command=self._zeichne_alle_tokens
             )
             btn.grid(row=0, column=col, sticky="w", padx=2)
             col += 1
 
-        # 4. Zeile: leerer Abstand
+        # ---------------------------
+        # 4. Spacer
+        # ---------------------------
         spacer = ttk.Frame(self)
         spacer.grid(row=3, column=0, sticky="ew", pady=5)
 
-        # 5. Zeile: Canvas + Annotationen (links + rechts)
+        # ---------------------------
+        # 5. Canvas + Sidebar
+        # ---------------------------
         canvas_frame = ttk.Frame(self)
         canvas_frame.grid(row=4, column=0, sticky="nsew", padx=5, pady=5)
-        canvas_frame.columnconfigure(0, weight=25)  # linker Bereich (Canvas)
-        canvas_frame.columnconfigure(1, weight=1)  # rechter Bereich (Annotationen)
+
+        canvas_frame.columnconfigure(0, weight=25)
+        canvas_frame.columnconfigure(1, weight=1)
         canvas_frame.rowconfigure(0, weight=1)
 
-        # Linker Bereich (Canvas + Scrollbar) – Kind von canvas_frame
+        # Canvas links
         linker_frame = ttk.Frame(canvas_frame)
-        linker_frame.grid(row=0, column=0, sticky='nsew', padx=0)
+        linker_frame.grid(row=0, column=0, sticky='nsew')
+
         linker_frame.columnconfigure(0, weight=1)
         linker_frame.rowconfigure(0, weight=1)
 
         self.canvas = tk.Canvas(linker_frame, bg='white')
         self.canvas.grid(row=0, column=0, sticky='nsew')
+
         scrollbar_links = ttk.Scrollbar(linker_frame, orient='vertical', command=self.canvas.yview)
         scrollbar_links.grid(row=0, column=1, sticky='ns')
+
         self.canvas.configure(yscrollcommand=scrollbar_links.set)
         self.canvas.bind("<Configure>", self._on_canvas_resize)
 
-        # Rechter Bereich (Annotationen) – Kind von canvas_frame
+        # Sidebar rechts
         rechts_frame = ttk.Frame(canvas_frame)
         rechts_frame.grid(row=0, column=1, sticky='nsew')
+
         rechts_frame.columnconfigure(0, weight=1)
         rechts_frame.rowconfigure(0, weight=1)
 
         self.annotation_canvas = tk.Canvas(rechts_frame)
         self.annotation_canvas.grid(row=0, column=0, sticky='nsew')
+
         scrollbar_rechts = ttk.Scrollbar(rechts_frame, orient='vertical', command=self.annotation_canvas.yview)
         scrollbar_rechts.grid(row=0, column=1, sticky='ns')
+
         self.annotation_canvas.configure(yscrollcommand=scrollbar_rechts.set)
 
         self.annotation_frame = ttk.Frame(self.annotation_canvas)
@@ -229,20 +254,23 @@ class AnnotationenEditor(ttk.Frame):
 
         self.annotation_frame.bind(
             "<Configure>",
-            lambda e: self.annotation_canvas.configure(scrollregion=self.annotation_canvas.bbox('all'))
+            lambda e: self.annotation_canvas.configure(
+                scrollregion=self.annotation_canvas.bbox('all')
+            )
         )
 
         self.default_annotation_label = ttk.Label(
             self.annotation_frame,
-            text="Bitte Wort auswählen, um dessen Annotationen zu sehen und zu ändern!",
+            text="Bitte Wort auswählen, um Annotationen zu bearbeiten",
             foreground="gray",
             font=('Arial', 12, 'italic'),
             wraplength=150,
             justify='left'
         )
-        self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='nw')
-        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
+        self.default_annotation_label.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='nw')
+
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
@@ -344,22 +372,22 @@ class AnnotationenEditor(ttk.Frame):
             row_index += 1
 
         personen_werte = self._lade_personen_fuer_aktuellen_abschnitt()
-
+        print("[DEBUG] personen_werte:", personen_werte)
+        
         for feldname, definition in config.RECORDING_ANNOTATIONEN.items():
-
             label = ttk.Label(self.annotation_frame, text=definition["label"])
             label.grid(row=row_index, column=0, sticky='w', padx=5, pady=2)
 
-            # 👉 HIER kommt dein Code hin
-            values_def = definition.get("values")
+            values_def = definition.get("values", [])
 
             if values_def == "personen":
                 werte = personen_werte[:]
+            elif values_def and isinstance(values_def[0], dict):
+                werte = [e.get("name", "") for e in values_def if e.get("name")]
             else:
-                werte = [e["name"] for e in values_def if e.get("name")]
+                werte = [str(e) for e in values_def if e is not None]
 
-            # Leere Option ergänzen
-            if werte and werte[-1] != "":
+            if "" not in werte:
                 werte.append("")
 
             aktueller_wert = json_dict.get(feldname, "")
@@ -370,16 +398,13 @@ class AnnotationenEditor(ttk.Frame):
             combobox = ttk.Combobox(
                 self.annotation_frame,
                 values=anzeige_werte,
-                state='readonly'
+                state="readonly"
             )
-
-            if aktueller_wert:
-                combobox.set(anzeige_aktueller_wert)
+            combobox.set(anzeige_aktueller_wert)
 
             def on_combobox_change(event, feldname=feldname, combobox=combobox):
-                neuer_wert = _interner_name(combobox.get())
+                neuer_wert = _interner_name(combobox.get()) or ""
 
-                # Sprecher-Bereich bleibt Spezialfall
                 if feldname == "person":
                     start_idx = self.personen_bereich_start_idx
                     end_idx = self.personen_bereich_ende_idx
@@ -392,88 +417,10 @@ class AnnotationenEditor(ttk.Frame):
                     self._setze_person_im_bereich(start_idx, end_idx, neuer_wert)
                     return
 
-                # Standard: einfach setzen
                 json_dict[feldname] = neuer_wert
 
                 self._zeichne_alle_tokens()
                 self._on_token_click(idx)
-
-            combobox.bind("<<ComboboxSelected>>", on_combobox_change)
-            combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
-
-            row_index += 1
-
-            if werte and werte[-1] != "":
-                werte.append("")
-
-            werte = werte or ['']
-            aktueller_wert = json_dict.get(aufgabenname, "")
-
-            anzeige_werte = [_anzeige_name(w) for w in werte]
-            anzeige_aktueller_wert = _anzeige_name(aktueller_wert)
-
-            combobox = ttk.Combobox(self.annotation_frame, values=anzeige_werte, state='readonly')
-            if aktueller_wert:
-                combobox.set(anzeige_aktueller_wert)
-
-
-            def on_combobox_change(event, feldname=feldname, combobox=combobox):
-                neuer_wert = _interner_name(combobox.get())
-
-                # Leerer Wert sauber setzen (kein del!)
-                if not neuer_wert:
-                    neuer_wert = ""
-
-                # -----------------------------
-                # Spezialfall: Sprecher (Bereich)
-                # -----------------------------
-                if feldname == "person":
-                    start_idx = self.personen_bereich_start_idx
-                    end_idx = self.personen_bereich_ende_idx
-
-                    if start_idx is None:
-                        start_idx = idx
-                    if end_idx is None:
-                        end_idx = idx
-
-                    self._setze_person_im_bereich(start_idx, end_idx, neuer_wert)
-                    return
-
-                # -----------------------------
-                # Standard: einzelnes Wort
-                # -----------------------------
-                json_dict[feldname] = neuer_wert
-
-                # -----------------------------
-                # Spezialfall: position (Layout)
-                # -----------------------------
-                if feldname == "position":
-                    print(f"Position geändert bei Token {idx}: '{neuer_wert}'")
-
-                    start_index = None
-                    end_index = None
-
-                    for i in range(len(self.json_dicts)):
-                        pos = (self.json_dicts[i].get("position") or "").lower()
-
-                        if pos.endswith("start") and start_index is None:
-                            start_index = i
-                        elif pos.endswith("ende") and start_index is not None:
-                            end_index = i
-                            break
-
-                    if start_index is not None and end_index is not None:
-                        self.neu_rendern_bereich(start_index, end_index)
-                    else:
-                        self._zeichne_alle_tokens()
-
-                else:
-                    # Standard-Refresh
-                    self._zeichne_alle_tokens()
-
-                # Re-open Sidebar (UX)
-                self._on_token_click(idx)
-
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
@@ -590,3 +537,33 @@ class AnnotationenEditor(ttk.Frame):
         self._zeichne_alle_tokens()
         self._on_token_click(end_idx)
        
+
+    def _lade_personen_fuer_aktuellen_abschnitt(self):
+        try:
+            dateipfad = getattr(self, "dateipfad_json", None)
+
+            if not dateipfad:
+                print("[AnnotationenEditor] Kein dateipfad_json gesetzt.")
+                return []
+
+            if hasattr(personen_resolver, "lade_personen_fuer_datei"):
+                personen = personen_resolver.lade_personen_fuer_datei(
+                    self.kapitel_config,
+                    dateipfad
+                )
+                print("[AnnotationenEditor] personen_werte:", personen)
+                return personen
+
+            if hasattr(personen_resolver, "lade_personen_fuer_datei_ohne_kapitel_config"):
+                personen = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
+                    dateipfad
+                )
+                print("[AnnotationenEditor] personen_werte:", personen)
+                return personen
+
+        except Exception as e:
+            print(f"[AnnotationenEditor] Personen konnten nicht geladen werden: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return []

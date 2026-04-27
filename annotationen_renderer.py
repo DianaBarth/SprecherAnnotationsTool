@@ -842,50 +842,67 @@ class AnnotationRenderer:
                 tags=tag
             )
 
-
-    def _zeichne_hartkodiert(self, canvas, aufgabenname, token, wert, x, y_pos, w, h, oy, linien_breite, tag="", schrift = None):
-        if aufgabenname == "pause":
+    def _zeichne_hartkodiert(
+        self,
+        canvas,
+        feldname,
+        token,
+        wert,
+        x,
+        y_pos,
+        w,
+        h,
+        oy,
+        linien_breite,
+        tag="",
+        schrift=None
+    ):
+        if feldname == "pause":
             if wert == "Atempause":
                 self._zeichne_pause_atem(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
             elif wert == "Staupause":
                 self._zeichne_pause_stau(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
-        elif aufgabenname == "gedanken":
+
+        elif feldname == "gedanken":
             if wert == "gedanken_weiter":
                 self._zeichne_gedanken_weiter(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
             elif wert == "gedanken_ende":
                 self._zeichne_gedanken_ende(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
             elif wert == "pause_gedanken":
                 self._zeichne_gedanken_pause(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
-        elif aufgabenname == "spannung":
+
+        elif feldname == "spannung":
             if wert == "Starten":
                 self._zeichne_spannung_start(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
             elif wert == "Halten":
                 self._zeichne_spannung_halten(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
             elif wert == "Stoppen":
                 self._zeichne_spannung_stop(canvas, x, y_pos, w, h, oy, linien_breite, tag=tag)
-        elif aufgabenname == "ig":
-            if token.isdigit():  # Vollständig numerisches Token (z.B. "30")
+
+        elif feldname == "ig":
+            if token.isdigit():
                 letzter_wert = wert.split("-")[-1]
                 if letzter_wert == "ik":
-                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag, schrift = schrift)
+                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag, schrift=schrift)
                 elif letzter_wert == "ich":
-                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag, schrift = schrift)
-                return  # Keine weitere Bearbeitung nötig
+                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr=0, numerisch=True, tag=tag, schrift=schrift)
+                return
 
-            # Alle "ig"-Vorkommen im Token finden
             ig_indices = [i for i in range(len(token) - 1) if token[i:i+2] == "ig"]
             if not ig_indices:
-                return  # Kein "ig" im Token → nichts tun
-            # Zerlege den Wert in eine Liste z.B. ["ik", "ik", "ich"]
+                return
+
             ig_werte = wert.split("-")
-            # Für jedes vorkommende "ig" im Token:
+
             for igNr, art in enumerate(ig_werte):
                 if igNr >= len(ig_indices):
-                    break  # Mehr Anweisungen als "ig"-Vorkommen? Ignorieren.
+                    break
+
                 if art == "ik":
-                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag, schrift = schrift)
+                    self._zeichne_ik(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag, schrift=schrift)
                 elif art == "ich":
-                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag, schrift = schrift)
+                    self._zeichne_ich(canvas, x, y_pos, w, h, oy, linien_breite, token, igNr, numerisch=False, tag=tag, schrift=schrift)  
+
 
     def _zeichne_token(self, canvas, index, element, x, y_pos, schrift):
         token = element.get('token', '')
@@ -932,14 +949,14 @@ class AnnotationRenderer:
         if not isinstance(element, dict):
             return
 
-        for aufgabenname in config.RECORDING_RENDER_MARKER:
-            marker_wert = element.get(aufgabenname)
+        for feldname in config.RECORDING_RENDER_MARKER:
+            marker_wert = element.get(feldname)
 
             if not marker_wert:
                 continue
 
-            annot_liste = config.ANNOTATIONEN.get(aufgabenname, [])
-            annot_tag = f'{base_tag}_{aufgabenname}'
+            annot_liste = config.ANNOTATIONEN.get(feldname, [])
+            annot_tag = f'{base_tag}_{feldname}'
 
             for annot in annot_liste:
                 name = annot.get("name")
@@ -948,18 +965,18 @@ class AnnotationRenderer:
                     continue
 
                 if self.ist_PDF:
-                    oy = -1.5 * h if aufgabenname == "ig" else h * 0.8
+                    oy = -1.5 * h if feldname == "ig" else h * 0.8
                 else:
-                    oy = h * 0.2 if aufgabenname == "ig" else -h * 0.8
+                    oy = h * 0.2 if feldname == "ig" else -h * 0.8
 
-                if aufgabenname == "ig" and "ig" not in token and not token.isdigit():
+                if feldname == "ig" and "ig" not in token and not token.isdigit():
                     print(f"WARNUNG: 'ig'-Annotation für Token ohne 'ig': '{token}' (Index {index}) → übersprungen")
                     continue
 
-                if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
+                if self.verwende_hartkodiert_fuer_annotation(feldname, marker_wert):
                     self._zeichne_hartkodiert(
                         canvas,
-                        aufgabenname,
+                        feldname,
                         token,
                         marker_wert,
                         x,
@@ -995,12 +1012,12 @@ class AnnotationRenderer:
                             
         return text_id
 
-    def annotation_aendern(self, canvas, wortnr, aufgabenname, element):
+    def annotation_aendern(self, canvas, wortnr, feldname, element):
         self.ist_PDF = False
 
         tag = f'token_{wortnr}'
         canvas.delete(tag)
-        tag_aufgabe = f'token_{wortnr}_{aufgabenname}'
+        tag_aufgabe = f'token_{wortnr}_{feldname}'
         canvas.delete(tag_aufgabe)
 
         x = self.canvas_elemente_pro_token[wortnr]["x"]
