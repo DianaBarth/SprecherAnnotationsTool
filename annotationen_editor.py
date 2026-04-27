@@ -419,8 +419,10 @@ class AnnotationenEditor(ttk.Frame):
 
                 json_dict[feldname] = neuer_wert
 
-                self._zeichne_alle_tokens()
-                self._on_token_click(idx)
+                if feldname == "position":
+                    self._zeichne_alle_tokens()
+                else:
+                    self.renderer.annotation_aendern(self.canvas, idx, feldname, json_dict)
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
@@ -441,10 +443,12 @@ class AnnotationenEditor(ttk.Frame):
 
 
     def _on_canvas_resize(self, event):
-        neue_breite = event.width
-        print(f"Canvas wurde resized, neue Breite: {neue_breite}")
-        self.renderer.max_breite = neue_breite
-        self._zeichne_alle_tokens()
+        self.renderer.max_breite = event.width
+
+        if hasattr(self, "_resize_after_id"):
+            self.after_cancel(self._resize_after_id)
+
+        self._resize_after_id = self.after(200, self._zeichne_alle_tokens)
 
     def zeige_default_annotation_label(self):
         for child in self.annotation_frame.winfo_children():

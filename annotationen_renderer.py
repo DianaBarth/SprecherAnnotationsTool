@@ -13,6 +13,9 @@ import Eingabe.config as config  # Importiere das komplette config-Modul
 from config_editor import ToolTip
 from config_editor import register_custom_font
 
+
+DEBUG_RENDERER = False
+
 def zu_Hex_farbe(rgb):
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
@@ -82,7 +85,8 @@ class AnnotationRenderer:
         tag = f"token_{wortNr}"
         bbox = canvas.bbox(tag)
         if bbox is None:
-            print(f"Kein Token mit Nummer {wortNr} gefunden (Tag: {tag})")
+            if DEBUG_RENDERER:
+                print(f"Kein Token mit Nummer {wortNr} gefunden (Tag: {tag})")
             return
 
         x1, y1, x2, y2 = bbox
@@ -96,7 +100,8 @@ class AnnotationRenderer:
             width=2,
             tag=("rahmen", f"rahmen_{wortNr}")
         )
-        print(f"Rahmen um Token {wortNr} bei ({x1}, {y1}, {x2}, {y2}) gezeichnet")
+        if DEBUG_RENDERER:
+            print(f"Rahmen um Token {wortNr} bei ({x1}, {y1}, {x2}, {y2}) gezeichnet")
         return rahmen
 
     def rendern(self, index=0, dict_element=None, naechstes_dict_element=None, gui_canvas=None, pdf_canvas=None):
@@ -120,7 +125,8 @@ class AnnotationRenderer:
             return canvas.stringWidth(token, schriftname, schriftgroesse)
     
     def _verschiebe_token_gruppe(self, canvas, token_liste, y_pos, gesamtbreite):
-        print(f"Verschiebe {len(token_liste)} Token(s) {self.ausrichtung} bei y={y_pos}")
+        if DEBUG_RENDERER:
+            print(f"Verschiebe {len(token_liste)} Token(s) {self.ausrichtung} bei y={y_pos}")
 
         zwischenraum = 5
         seitenbreite = getattr(config, "MAX_ZEILENBREITE", 800) if self.ist_PDF else self.max_breite
@@ -134,32 +140,39 @@ class AnnotationRenderer:
         else:
             x_start = linker_rand
 
-        print(f"{self.ausrichtung} mit x_start = {x_start}")
+ 
+        if DEBUG_RENDERER:
+            print(f"{self.ausrichtung} mit x_start = {x_start}")
         x_pos = x_start
 
         for token_dict in token_liste:
             wortNr = token_dict.get("WortNr")
             if wortNr is None:
-                print("⚠️ Keine WortNr vorhanden – übersprungen")
+                if DEBUG_RENDERER:
+                    print("⚠️ Keine WortNr vorhanden – übersprungen")
                 continue
 
             eintrag = self.canvas_elemente_pro_token.get(wortNr)
             if not eintrag:
-                print(f"⚠️ Kein Canvas-Eintrag für WortNr {wortNr}")
+                if DEBUG_RENDERER:
+                    print(f"⚠️ Kein Canvas-Eintrag für WortNr {wortNr}")
                 continue
 
             alte_x = eintrag["x"]
             alte_y = eintrag["y"]
             canvas_id = eintrag["canvas_id"]
             if canvas_id is None:
-                print(f"⚠️ Keine CanvasID für WortNr {wortNr}")
+                if DEBUG_RENDERER:
+                    print(f"⚠️ Keine CanvasID für WortNr {wortNr}")
                 continue
 
             delta_x = x_pos - alte_x
             delta_y = y_pos - alte_y
 
             try:
-                print(f"CanvasID: {canvas_id} → move by Δx={delta_x}, Δy={delta_y}")
+               
+                if DEBUG_RENDERER:
+                    print(f"CanvasID: {canvas_id} → move by Δx={delta_x}, Δy={delta_y}")
                 canvas.move(canvas_id, delta_x, delta_y)
             except Exception as e:
                 print(f"Fehler beim Verschieben von CanvasID {canvas_id}: {e}")
@@ -187,7 +200,8 @@ class AnnotationRenderer:
         annotation = element_kopie.get("annotation", {})
         positions_annot = element_kopie.get("position", "").lower()
 
-        print(f"auf_canvas_rendern aufgerufen: index={index}, token='{token}', ist_PDF={self.ist_PDF}")
+        if DEBUG_RENDERER:
+            print(f"auf_canvas_rendern aufgerufen: index={index}, token='{token}', ist_PDF={self.ist_PDF}")
 
         self._ignoriere_annotationen(element_kopie)
 
@@ -200,7 +214,8 @@ class AnnotationRenderer:
         aktuelle_x = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
         if self._hat_annotation(element_kopie, "zeilenumbruch"):
-            print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
+            if DEBUG_RENDERER:
+                print("Neuer Zeilenumbruch erkannt, Position zurücksetzen")
             self.y_pos += self.zeilen_hoehe
             self.letzte_zeile_y_pos = self.y_pos
             self.x_pos = aktuelle_x
@@ -220,16 +235,19 @@ class AnnotationRenderer:
         if self.x_pos < aktuelle_x:
             self.x_pos = aktuelle_x
 
-        print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
+        if DEBUG_RENDERER:
+            print(f"Token zeichnen bei Position ({self.x_pos}, {self.y_pos})")
         text_id = self._zeichne_token(canvas, index, element_kopie, self.x_pos, self.y_pos, schrift)
         self.canvas_elemente_pro_token[index] = {"x": self.x_pos, "y": self.y_pos, "canvas_id": text_id}
         self.x_pos += text_breite + extra_space
-        print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
+        if DEBUG_RENDERER:
+           print(f"Neue x_pos nach Zeichnen: {self.x_pos}")
 
     def _ignoriere_annotationen(self, element):
         for key in self.ignorierte_annotationen:
             if key in element and element[key]:
-                print(f"Token '{element.get('token')}' Annotation '{key}' wird ignoriert - Zeichne normal")
+                if DEBUG_RENDERER:
+                    print(f"Token '{element.get('token')}' Annotation '{key}' wird ignoriert - Zeichne normal")
                 element[key] = None
 
     def _reset_gruppe(self):
@@ -417,12 +435,14 @@ class AnnotationRenderer:
                 
     def _handle_einrueckung(self, position, token, index):
         if position == "einrueckungsstart":
-            print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
+            if DEBUG_RENDERER:
+                print(f"Einrückung gestartet bei Token '{token}' (Index {index})")
             self.einrueckung_aktiv = True
             self.y_pos += self.zeilen_hoehe
             self.x_pos = self.einrueckung_start_x
         elif position == "einrueckungsende":
-            print(f"Einrückung beendet bei Token '{token}' (Index {index})")
+            if DEBUG_RENDERER:
+                print(f"Einrückung beendet bei Token '{token}' (Index {index})")
             self.einrueckung_aktiv = False
             self.y_pos += self.zeilen_hoehe
             self.x_pos = config.LINKER_SEITENRAND
@@ -441,20 +461,23 @@ class AnnotationRenderer:
     def _handle_umbruch(self, canvas, breite, extra_space):
         if self.ist_PDF:
             if self.x_pos + breite + extra_space > config.MAX_ZEILENBREITE:
-                print(f"Zeilenumbruch PDF: {self.x_pos} + {breite} + {extra_space} > {config.MAX_ZEILENBREITE}")
+                if DEBUG_RENDERER:
+                    print(f"Zeilenumbruch PDF: {self.x_pos} + {breite} + {extra_space} > {config.MAX_ZEILENBREITE}")
                 self.y_pos += self.zeilen_hoehe
                 self.letzte_zeile_y_pos = self.y_pos
                 self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
             if self.y_pos + self.zeilen_hoehe > 792 - 40:
-                print(f"Seitenumbruch bei y_pos={self.y_pos}")
+                if DEBUG_RENDERER:
+                    print(f"Seitenumbruch bei y_pos={self.y_pos}")
                 canvas.showPage()
                 self.x_pos = config.LINKER_SEITENRAND
                 self.y_pos = 40
                 self.letzte_zeile_y_pos = self.y_pos
         else:
             if self.x_pos + breite + extra_space > self.max_breite:
-                print(f"Zeilenumbruch GUI: {self.x_pos} + {breite} + {extra_space} > {self.max_breite}")
+                if DEBUG_RENDERER:
+                    print(f"Zeilenumbruch GUI: {self.x_pos} + {breite} + {extra_space} > {self.max_breite}")
                 self.y_pos += self.zeilen_hoehe
                 self.letzte_zeile_y_pos = self.y_pos
                 self.x_pos = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
@@ -483,8 +506,6 @@ class AnnotationRenderer:
 
 
     def schrift_holen(self, element=None):
-        importlib.reload(config)
-
         element = element or {}
 
         betonung = element.get("betonung", None)
@@ -540,14 +561,17 @@ class AnnotationRenderer:
             success = register_custom_font("", familie)
 
             if not success:
-                print(f"[schrift_holen] ⚠️ Schrift '{familie}' konnte nicht registriert werden – PDF-Fallback wahrscheinlich.")
+                if DEBUG_RENDERER:
+                    print(f"[schrift_holen] ⚠️ Schrift '{familie}' konnte nicht registriert werden – PDF-Fallback wahrscheinlich.")
 
-            print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Farbe: {farbe}, Person: {person}")
+            if DEBUG_RENDERER:
+                print(f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, Farbe: {farbe}, Person: {person}")
             return familie, groesse, farbe
 
         else:
             if familie not in tkFont.families():
-                print(f"[WARNUNG] Font-Familie '{familie}' nicht verfügbar – Fallback wahrscheinlich!")
+                if DEBUG_RENDERER:
+                    print(f"[WARNUNG] Font-Familie '{familie}' nicht verfügbar – Fallback wahrscheinlich!")
 
             schrift = tkFont.Font(
                 family=familie,
@@ -556,8 +580,9 @@ class AnnotationRenderer:
                 slant=slant
             )
 
-            print(
-                f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, "
+            if DEBUG_RENDERER:
+                print(
+                    f"[schrift_holen] → Schriftart: {familie}, Größe: {groesse}, "
                 f"Gewicht: {weight}, Stil: {slant}, Farbe: {farbe}, Person: {person}"
             )
             return schrift, farbe
@@ -568,7 +593,8 @@ class AnnotationRenderer:
             try:
                 canvas.drawImage(pfad, x + w/2, y, height=config.BILDHOEHE_PX, preserveAspectRatio=True, mask='auto')
             except Exception as e:
-                print(f"Fehler beim Einfügen von Bild {pfad}: {e}")
+                if DEBUG_RENDERER:
+                    print(f"Fehler beim Einfügen von Bild {pfad}: {e}")
         else:
             try:
                 if not os.path.exists(pfad):
@@ -587,7 +613,8 @@ class AnnotationRenderer:
                     canvas.create_image(x + w/2, y, anchor='nw', image=tk_img)
 
             except Exception as e:
-                print(f"Fehler beim Zeichnen von Bild {pfad}: {e}")
+                if DEBUG_RENDERER:
+                    print(f"Fehler beim Zeichnen von Bild {pfad}: {e}")
                 # Platzhalter-Rechteck, wenn Bild fehlt
                 self._zeichne_fehlendesBild(canvas,x,y,w,h,annotationsname, tag)
 
@@ -941,7 +968,8 @@ class AnnotationRenderer:
             w = canvas.stringWidth(token, pdf_schriftname, pdf_schriftgroesse)
             h = pdf_schriftgroesse
             marker_y = y_pdf
-            print(f"[PDF] Token #{index} '{token}' bei Position ({x:.1f}, {y_pdf:.1f}), Größe: ({w:.1f}x{h})")
+            if DEBUG_RENDERER:
+                print(f"[PDF] Token #{index} '{token}' bei Position ({x:.1f}, {y_pdf:.1f}), Größe: ({w:.1f}x{h})")
 
         linien_breite = config.LINIENBREITE_STANDARD
 
@@ -970,7 +998,8 @@ class AnnotationRenderer:
                     oy = h * 0.2 if feldname == "ig" else -h * 0.8
 
                 if feldname == "ig" and "ig" not in token and not token.isdigit():
-                    print(f"WARNUNG: 'ig'-Annotation für Token ohne 'ig': '{token}' (Index {index}) → übersprungen")
+                    if DEBUG_RENDERER:
+                        print(f"WARNUNG: 'ig'-Annotation für Token ohne 'ig': '{token}' (Index {index}) → übersprungen")
                     continue
 
                 if self.verwende_hartkodiert_fuer_annotation(feldname, marker_wert):

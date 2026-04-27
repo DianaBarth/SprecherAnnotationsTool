@@ -14,6 +14,7 @@ import Eingabe.config as config
 # ------------------------------------------------------------
 
 def lade_yaml_datei(pfad):
+
     print(f"[PersonenResolver] Lade YAML: {pfad}")
 
     if not pfad or not os.path.exists(pfad):
