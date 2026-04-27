@@ -8,6 +8,7 @@ import unicodedata
 import copy
 from datetime import date
 from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
 from reportlab.pdfgen import canvas as pdfcanvas
 import Eingabe.config as config
 from annotationen_renderer import AnnotationRenderer
@@ -62,7 +63,7 @@ class AnnotationenEditor(ttk.Frame):
         self.personen_bereich_start_idx = None
         self.aktuell_gewaehlter_token_idx = None
         self.personen_bereich_ende_idx = None
- 
+        self.shortcut_icons = {}   
     
         # Widgets bauen
         self._erstelle_widgets()
@@ -438,24 +439,78 @@ class AnnotationenEditor(ttk.Frame):
 
             row_index += 1
 
-        shortcut_text = self._baue_shortcut_text()
-
-        shortcut_label = ttk.Label(
-            self.annotation_frame,
-            text=shortcut_text,
-            foreground="gray",
-            font=("Arial", 9),
-            justify="left"
-        )
-
-        shortcut_label.grid(
+        
+        shortcut_frame = ttk.Frame(self.annotation_frame)
+        shortcut_frame.grid(
             row=row_index,
             column=0,
             columnspan=2,
             sticky="w",
             padx=5,
-            pady=(10, 5)
+            pady=(12, 5)
         )
+
+        ttk.Label(
+            shortcut_frame,
+            text="Annotationen:",
+            foreground="gray",
+            font=("Arial", 9, "bold")
+        ).grid(row=0, column=0, columnspan=3, sticky="w")
+
+        r = 1
+
+        for key, (feldname, wert) in config.ANNOTATION_SHORTCUTS.items():
+            bildname = self._hole_bild_fuer_annotation(feldname, wert)
+            icon = self._lade_shortcut_icon(bildname)
+
+            ttk.Label(
+                shortcut_frame,
+                text=f"{key.upper()} =",
+                foreground="gray",
+                font=("Arial", 9)
+            ).grid(row=r, column=0, sticky="w")
+
+            if icon:
+                ttk.Label(
+                    shortcut_frame,
+                    image=icon
+                ).grid(row=r, column=1, sticky="w", padx=(4, 4))
+
+            ttk.Label(
+                shortcut_frame,
+                text=wert,
+                foreground="gray",
+                font=("Arial", 9)
+            ).grid(row=r, column=2, sticky="w")
+
+            r += 1
+
+        ttk.Label(
+            shortcut_frame,
+            text="",
+        ).grid(row=r, column=0)
+        r += 1
+
+        ttk.Label(
+            shortcut_frame,
+            text="Bedienung:",
+            foreground="gray",
+            font=("Arial", 9, "bold")
+        ).grid(row=r, column=0, columnspan=3, sticky="w")
+        r += 1
+
+        for shortcut_def in config.UI_SHORTCUTS.values():
+            label = shortcut_def.get("label", "")
+            desc = shortcut_def.get("description", "")
+
+            ttk.Label(
+                shortcut_frame,
+                text=f"{label} = {desc}",
+                foreground="gray",
+                font=("Arial", 9)
+            ).grid(row=r, column=0, columnspan=3, sticky="w")
+
+            r += 1
 
 
         self.annotation_canvas.update_idletasks()
@@ -696,22 +751,7 @@ class AnnotationenEditor(ttk.Frame):
 
         self._on_token_click(idx)
 
-    def _baue_shortcut_text(self):
-        lines = ["Annotationen:"]
 
-        for key, (feld, wert) in config.ANNOTATION_SHORTCUTS.items():
-            lines.append(f"  {key.upper()} = {wert}")
-
-        lines.append("")
-        lines.append("Bedienung:")
-
-        for shortcut_def in config.UI_SHORTCUTS.values():
-            label = shortcut_def.get("label", "")
-            desc = shortcut_def.get("description", "")
-            lines.append(f"  {label} = {desc}")
-
-        return "\n".join(lines)
-    
     def _registriere_shortcuts(self):
         self.bind_all("<Key>", self._shortcut_annotation_setzen)
 
@@ -758,3 +798,29 @@ class AnnotationenEditor(ttk.Frame):
 
         self._zeichne_alle_tokens()
         self._on_token_click(idx)
+
+    def _lade_shortcut_icon(self, bildname, size=(14, 14)):
+        if not bildname:
+            return None
+
+        key = (bildname, size)
+        if key in self.shortcut_icons:
+            return self.shortcut_icons[key]
+
+        pfad = os.path.join(config.GLOBALORDNER["Eingabe"], "bilder", bildname)
+
+        try:
+            img = Image.open(pfad)
+            img = img.resize(size)
+            tk_img = ImageTk.PhotoImage(img)
+            self.shortcut_icons[key] = tk_img
+            return tk_img
+        except Exception:
+            return None
+
+
+    def _hole_bild_fuer_annotation(self, feldname, wert):
+        for annot in config.ANNOTATIONEN.get(feldname, []):
+            if annot.get("name") == wert:
+                return annot.get("bild")
+        return None
