@@ -345,14 +345,63 @@ class AnnotationenEditor(ttk.Frame):
 
         personen_werte = self._lade_personen_fuer_aktuellen_abschnitt()
 
-        for aufgabennr, aufgabenname in config.KI_AUFGABEN.items():
-            label = ttk.Label(self.annotation_frame, text=aufgabenname)
+        for feldname, definition in config.RECORDING_ANNOTATIONEN.items():
+
+            label = ttk.Label(self.annotation_frame, text=definition["label"])
             label.grid(row=row_index, column=0, sticky='w', padx=5, pady=2)
 
-            if aufgabennr == 3:
+            # 👉 HIER kommt dein Code hin
+            values_def = definition.get("values")
+
+            if values_def == "personen":
                 werte = personen_werte[:]
             else:
-                werte = [e["name"] for e in config.AUFGABEN_ANNOTATIONEN.get(aufgabennr, []) if e["name"]]
+                werte = [e["name"] for e in values_def if e.get("name")]
+
+            # Leere Option ergänzen
+            if werte and werte[-1] != "":
+                werte.append("")
+
+            aktueller_wert = json_dict.get(feldname, "")
+
+            anzeige_werte = [_anzeige_name(w) for w in werte]
+            anzeige_aktueller_wert = _anzeige_name(aktueller_wert)
+
+            combobox = ttk.Combobox(
+                self.annotation_frame,
+                values=anzeige_werte,
+                state='readonly'
+            )
+
+            if aktueller_wert:
+                combobox.set(anzeige_aktueller_wert)
+
+            def on_combobox_change(event, feldname=feldname, combobox=combobox):
+                neuer_wert = _interner_name(combobox.get())
+
+                # Sprecher-Bereich bleibt Spezialfall
+                if feldname == "person":
+                    start_idx = self.personen_bereich_start_idx
+                    end_idx = self.personen_bereich_ende_idx
+
+                    if start_idx is None:
+                        start_idx = idx
+                    if end_idx is None:
+                        end_idx = idx
+
+                    self._setze_person_im_bereich(start_idx, end_idx, neuer_wert)
+                    return
+
+                # Standard: einfach setzen
+                json_dict[feldname] = neuer_wert
+
+                self._zeichne_alle_tokens()
+                self._on_token_click(idx)
+
+            combobox.bind("<<ComboboxSelected>>", on_combobox_change)
+            combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)
+
+            row_index += 1
 
             if werte and werte[-1] != "":
                 werte.append("")
@@ -367,12 +416,18 @@ class AnnotationenEditor(ttk.Frame):
             if aktueller_wert:
                 combobox.set(anzeige_aktueller_wert)
 
-            def on_combobox_change(event, aufgabennr=aufgabennr, combobox=combobox, aufgabenname=aufgabenname):
-                neuer_wert = combobox.get()
-                neuer_wert = _interner_name(neuer_wert)
 
-                # Aufgabe 3 = sprechende Person -> Bereich anwenden
-                if aufgabennr == 3:
+            def on_combobox_change(event, feldname=feldname, combobox=combobox):
+                neuer_wert = _interner_name(combobox.get())
+
+                # Leerer Wert sauber setzen (kein del!)
+                if not neuer_wert:
+                    neuer_wert = ""
+
+                # -----------------------------
+                # Spezialfall: Sprecher (Bereich)
+                # -----------------------------
+                if feldname == "person":
                     start_idx = self.personen_bereich_start_idx
                     end_idx = self.personen_bereich_ende_idx
 
@@ -384,35 +439,41 @@ class AnnotationenEditor(ttk.Frame):
                     self._setze_person_im_bereich(start_idx, end_idx, neuer_wert)
                     return
 
-                # Standardverhalten für alle anderen Aufgaben
-                if neuer_wert:
-                    json_dict[aufgabenname] = neuer_wert
-                elif aufgabenname in json_dict:
-                    del json_dict[aufgabenname]
+                # -----------------------------
+                # Standard: einzelnes Wort
+                # -----------------------------
+                json_dict[feldname] = neuer_wert
 
-                if aufgabenname.lower() == "position":
+                # -----------------------------
+                # Spezialfall: position (Layout)
+                # -----------------------------
+                if feldname == "position":
                     print(f"Position geändert bei Token {idx}: '{neuer_wert}'")
 
                     start_index = None
                     end_index = None
-                    typ = None
 
                     for i in range(len(self.json_dicts)):
-                        pos = self.json_dicts[i].get("position", "").lower()
-                        if pos in ("zentriertstart", "rechtsbuendigstart") and start_index is None:
+                        pos = (self.json_dicts[i].get("position") or "").lower()
+
+                        if pos.endswith("start") and start_index is None:
                             start_index = i
-                            typ = "zentriert" if "zentriert" in pos else "rechtsbuendig"
-                        elif pos in ("zentriertende", "rechtsbuendigende") and start_index is not None:
+                        elif pos.endswith("ende") and start_index is not None:
                             end_index = i
                             break
 
-                    if start_index is not None and end_index is not None and start_index <= end_index:
+                    if start_index is not None and end_index is not None:
                         self.neu_rendern_bereich(start_index, end_index)
                     else:
-                        print("Kein vollständiges Start/Ende-Paar gefunden – kein Teilrendering möglich.")
+                        self._zeichne_alle_tokens()
+
                 else:
+                    # Standard-Refresh
                     self._zeichne_alle_tokens()
-                    self._on_token_click(idx)
+
+                # Re-open Sidebar (UX)
+                self._on_token_click(idx)
+
 
             combobox.bind("<<ComboboxSelected>>", on_combobox_change)
             combobox.grid(row=row_index, column=1, sticky='ew', padx=10, pady=2)

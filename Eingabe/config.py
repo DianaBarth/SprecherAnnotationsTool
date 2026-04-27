@@ -40,6 +40,193 @@ KOMBI_AUFGABEN_MAPPING = {
 
 AUFGABEN_ANNOTATIONEN = {3: [{'name': None, 'bild': None, 'HartKodiert': 'farbeJePerson', 'VerwendeHartKodiert': True, 'StartZeichen': '„', 'EndeZeichen': '“'}], 4: [{'name': 'Hauptbetonung', 'bild': None, 'HartKodiert': 'fett', 'VerwendeHartKodiert': True}, {'name': 'Nebenbetonung', 'bild': None, 'HartKodiert': 'kursiv', 'VerwendeHartKodiert': True}], 5: [{'name': 'Atempause', 'bild': 'atempause.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'Staupause', 'bild': 'Staupause.png', 'HartKodiert': 'Rechteck', 'VerwendeHartKodiert': False}], 6: [{'name': 'gedanken_weiter', 'bild': 'Gedanken_weiter.png', 'HartKodiert': 'Kreis', 'VerwendeHartKodiert': False}, {'name': 'gedanken_ende', 'bild': 'Gedanken_Ende.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'pause_gedanken', 'bild': 'Gedanken_pause.png', 'HartKodiert': 'Punkte', 'VerwendeHartKodiert': False}], 7: [{'name': 'Starten', 'bild': None, 'HartKodiert': 'ansteigende Linie', 'VerwendeHartKodiert': True}, {'name': 'Halten', 'bild': None, 'HartKodiert': 'waagrechte Linie', 'VerwendeHartKodiert': True}, {'name': 'Stoppen', 'bild': None, 'HartKodiert': 'abfallende Linie', 'VerwendeHartKodiert': True}], 8: [{'name': 'ik', 'HartKodiert': 'unterpunktet', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'ich', 'HartKodiert': 'unterstrichen', 'bild': None, 'VerwendeHartKodiert': True}], 9: [{'name': 'EinrückungsStart', 'bild': None, 'HartKodiert': 'Eingerückt', 'VerwendeHartKodiert': True}, {'name': 'EinrückungsEnde', 'bild': None, 'HartKodiert': 'nichteingerückt', 'VerwendeHartKodiert': True}, {'name': 'ZentriertStart', 'HartKodiert': 'Zentriert', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'ZentriertEnde', 'HartKodiert': 'Zentriert', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigStart', 'HartKodiert': 'Rechtsbuendig', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigEnde', 'HartKodiert': 'Rechtsbuendig', 'bild': None, 'VerwendeHartKodiert': True}]}	# Mögliche Annotationen für jede Aufgabe
 
+# -------------------------------------------------
+# Recording-UI: manuelle Annotationen
+# KEINE Pipeline-/KI-Aufgaben
+# -------------------------------------------------
+
+ANNOTATIONEN = {
+    "person": [
+        {
+            "name": None,
+            "bild": None,
+            "HartKodiert": "farbeJePerson",
+            "VerwendeHartKodiert": True,
+            "StartZeichen": "„",
+            "EndeZeichen": "“",
+        }
+    ],
+    "betonung": [
+        {
+            "name": "Hauptbetonung",
+            "bild": None,
+            "HartKodiert": "fett",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "Nebenbetonung",
+            "bild": None,
+            "HartKodiert": "kursiv",
+            "VerwendeHartKodiert": True,
+        },
+    ],
+    "pause": [
+        {
+            "name": "Atempause",
+            "bild": "atempause.png",
+            "HartKodiert": "Linie",
+            "VerwendeHartKodiert": False,
+        },
+        {
+            "name": "Staupause",
+            "bild": "Staupause.png",
+            "HartKodiert": "Rechteck",
+            "VerwendeHartKodiert": False,
+        },
+    ],
+    "gedanken": [
+        {
+            "name": "gedanken_weiter",
+            "bild": "Gedanken_weiter.png",
+            "HartKodiert": "Kreis",
+            "VerwendeHartKodiert": False,
+        },
+        {
+            "name": "gedanken_ende",
+            "bild": "Gedanken_Ende.png",
+            "HartKodiert": "Linie",
+            "VerwendeHartKodiert": False,
+        },
+        {
+            "name": "pause_gedanken",
+            "bild": "Gedanken_pause.png",
+            "HartKodiert": "Punkte",
+            "VerwendeHartKodiert": False,
+        },
+    ],
+    "spannung": [
+        {
+            "name": "Starten",
+            "bild": None,
+            "HartKodiert": "ansteigende Linie",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "Halten",
+            "bild": None,
+            "HartKodiert": "waagrechte Linie",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "Stoppen",
+            "bild": None,
+            "HartKodiert": "abfallende Linie",
+            "VerwendeHartKodiert": True,
+        },
+    ],
+    "ig": [
+        {
+            "name": "ik",
+            "bild": None,
+            "HartKodiert": "unterpunktet",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "ich",
+            "bild": None,
+            "HartKodiert": "unterstrichen",
+            "VerwendeHartKodiert": True,
+        },
+    ],
+    "position": [
+        {
+            "name": "EinrueckungsStart",
+            "bild": None,
+            "HartKodiert": "Eingerückt",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "EinrueckungsEnde",
+            "bild": None,
+            "HartKodiert": "nichteingerückt",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "ZentriertStart",
+            "bild": None,
+            "HartKodiert": "Zentriert",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "ZentriertEnde",
+            "bild": None,
+            "HartKodiert": "Zentriert",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "RechtsbuendigStart",
+            "bild": None,
+            "HartKodiert": "Rechtsbuendig",
+            "VerwendeHartKodiert": True,
+        },
+        {
+            "name": "RechtsbuendigEnde",
+            "bild": None,
+            "HartKodiert": "Rechtsbuendig",
+            "VerwendeHartKodiert": True,
+        },
+    ],
+}
+
+
+RECORDING_ANNOTATIONEN = {
+    "person": {
+        "label": "Sprecher",
+        "values": "personen",
+        "range_edit": True,
+    },
+    "betonung": {
+        "label": "Betonung",
+        "values": ANNOTATIONEN["betonung"],
+    },
+    "pause": {
+        "label": "Pause",
+        "values": ANNOTATIONEN["pause"],
+    },
+    "gedanken": {
+        "label": "Gedanken",
+        "values": ANNOTATIONEN["gedanken"],
+    },
+    "spannung": {
+        "label": "Spannung",
+        "values": ANNOTATIONEN["spannung"],
+    },
+    "ig": {
+        "label": "Ich/Ik",
+        "values": ANNOTATIONEN["ig"],
+    },
+    "position": {
+        "label": "Position",
+        "values": ANNOTATIONEN["position"],
+    },
+}
+
+
+
+# -------------------------------------------------
+# Recording-UI / Renderer: feldbasierte Annotationen
+# KEINE KI-Aufgaben-IDs
+# -------------------------------------------------
+
+
+RECORDING_RENDER_MARKER = [
+    "pause",
+    "gedanken",
+    "spannung",
+    "ig",
+]
+
+
 SPRACHE = 'de'
 
 # Annotationen für jede Aufgabe

@@ -461,43 +461,25 @@ class AnnotationRenderer:
 
 
     def verwende_hartkodiert_fuer_annotation(self, feldname, annotationswert):
-        print(f"Prüfe verwende_hartkodiert_fuer_annotation: feldname={feldname}, annotationswert={annotationswert}")
-
         if not feldname or not annotationswert:
-            print("Kein feldname oder annotationswert angegeben, Rückgabe False")
             return False
 
         feldname = str(feldname).lower()
         annotationswert = str(annotationswert).lower()
 
-        for aufgaben_id, annot_liste in config.AUFGABEN_ANNOTATIONEN.items():
-            aufgabenname = config.KI_AUFGABEN.get(aufgaben_id)
-            if not aufgabenname:
-                continue
+        annot_liste = config.ANNOTATIONEN.get(feldname, [])
 
-            if str(aufgabenname).lower() != feldname:
-                continue
+        for annot in annot_liste:
+            raw_name = annot.get("name")
+            verwende = annot.get("VerwendeHartKodiert", False)
 
-            for annot in annot_liste:
-                raw_name = annot.get("name")
-                verwende = annot.get("VerwendeHartKodiert", False)
+            if raw_name is None:
+                return bool(verwende)
 
-                # Allgemeine Definition ohne Namen
-                if raw_name is None:
-                    if verwende:
-                        print(f"VerwendeHartKodiert=True für Feld {feldname} ohne Namen (allgemein) erkannt")
-                        return True
-                    continue
+            if str(raw_name).lower() == annotationswert and verwende:
+                return True
 
-                name = str(raw_name).lower()
-
-                if name == annotationswert and verwende:
-                    print(f"VerwendeHartKodiert=True für Feld {feldname} mit Wert {annotationswert} erkannt")
-                    return True
-
-        print("Keine Hartkodierung aktiviert gefunden")
         return False
-
 
 
     def schrift_holen(self, element=None):
@@ -509,18 +491,10 @@ class AnnotationRenderer:
         annotation = element.get("annotation", "") or ""
 
         # Personenfeld dynamisch aus Aufgabe 3 holen
-        personen_feldname = config.KI_AUFGABEN.get(3, "person")
-        person = element.get(personen_feldname, None)
-
-        # Fallback für alte Datenbestände
-        if not person:
-            person = element.get("person", None)
+        person = element.get("person", None)
 
         # Hartkodierung nur noch für Betonung relevant
-        if betonung:
-            verwende_betonung = self.verwende_hartkodiert_fuer_annotation("betonung", betonung)
-        else:
-            verwende_betonung = False
+        verwende_betonung = bool(betonung)
 
         # Schriftgröße / Familie bestimmen
         annotation_lower = str(annotation).lower()
@@ -657,12 +631,6 @@ class AnnotationRenderer:
             canvas.setFont("Helvetica-Bold", schriftgroesse)
             canvas.drawCentredString(x + width / 2, y + height / 2 - schriftgroesse / 3, "?")
 
-
-    def _get_aufgaben_id_by_name(self, name):
-        for aufgaben_id, n in config.KI_AUFGABEN.items():
-            if n == name:
-                return aufgaben_id
-        return None
 
     def _zeichne_pause_atem(self, canvas, x, y_pos, w, h, oy, linien_breite, tag=None):
         farbe = config.FARBE_ATEMPAUSE
@@ -964,39 +932,67 @@ class AnnotationRenderer:
         if not isinstance(element, dict):
             return
 
-        for aufgabenname in config.KI_AUFGABEN.values():
+        for aufgabenname in config.RECORDING_RENDER_MARKER:
             marker_wert = element.get(aufgabenname)
-            if marker_wert is None:
+
+            if not marker_wert:
                 continue
 
-            aufgaben_id = self._get_aufgaben_id_by_name(aufgabenname)
-            annot_liste = config.AUFGABEN_ANNOTATIONEN.get(aufgaben_id, [])
-
+            annot_liste = config.ANNOTATIONEN.get(aufgabenname, [])
             annot_tag = f'{base_tag}_{aufgabenname}'
 
             for annot in annot_liste:
                 name = annot.get("name")
+
                 if name is not None and name != marker_wert:
                     continue
 
-                # Positions-Offsets
                 if self.ist_PDF:
-                    oy = - 1.5 * h if aufgabenname == "ig" else h * 0.8
+                    oy = -1.5 * h if aufgabenname == "ig" else h * 0.8
                 else:
                     oy = h * 0.2 if aufgabenname == "ig" else -h * 0.8
 
-                # 🧠 Schutz: Zeichne 'ig' Marker nur, wenn Token 'ig' enthält
-                if aufgabenname == "ig" and "ig" not in token:
+                if aufgabenname == "ig" and "ig" not in token and not token.isdigit():
                     print(f"WARNUNG: 'ig'-Annotation für Token ohne 'ig': '{token}' (Index {index}) → übersprungen")
                     continue
 
                 if self.verwende_hartkodiert_fuer_annotation(aufgabenname, marker_wert):
-                    self._zeichne_hartkodiert(canvas, aufgabenname, token, marker_wert, x, marker_y, w, h, oy, linien_breite, tag=(annot_tag,), schrift = schrift)
+                    self._zeichne_hartkodiert(
+                        canvas,
+                        aufgabenname,
+                        token,
+                        marker_wert,
+                        x,
+                        marker_y,
+                        w,
+                        h,
+                        oy,
+                        linien_breite,
+                        tag=(annot_tag,),
+                        schrift=schrift
+                    )
                 elif annot.get("bild"):
-                    self._zeichne_bild(canvas,annot["bild"], x, marker_y + oy, w, h, marker_wert, tag=(annot_tag,))
+                    self._zeichne_bild(
+                        canvas,
+                        annot["bild"],
+                        x,
+                        marker_y + oy,
+                        w,
+                        h,
+                        marker_wert,
+                        tag=(annot_tag,)
+                    )
                 elif marker_wert:
-                    self._zeichne_fehlendesBild(canvas, x, marker_y + oy, w, h, marker_wert, tag=(annot_tag,))
-                    
+                    self._zeichne_fehlendesBild(
+                        canvas,
+                        x,
+                        marker_y + oy,
+                        w,
+                        h,
+                        marker_wert,
+                        tag=(annot_tag,)
+                    )
+                            
         return text_id
 
     def annotation_aendern(self, canvas, wortnr, aufgabenname, element):
