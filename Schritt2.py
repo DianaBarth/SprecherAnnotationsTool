@@ -308,3 +308,31 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
   
     if progress_callback:
         progress_callback("Fertig", 100)
+
+def sort_key_kapiteldatei(pfad: Path):
+    """
+    Sortiert Dateien stabil nach Kapitel/Teil.
+    Erwartet Namen wie:
+    Kapitelname_001.txt
+    12_003.txt
+    Prolog_001.txt
+    """
+    stem = pfad.stem
+    m = re.match(r"^(.*?)[_-](\d+)$", stem)
+    if m:
+        basis, teil = m.groups()
+        kapitel = extrahiere_kapitelname(basis)
+        try:
+            kapitel_sort = int(kapitel)
+        except Exception:
+            kapitel_sort = kapitel
+        return str(kapitel_sort).zfill(5), int(teil), stem
+
+    kapitel = extrahiere_kapitelname(stem)
+    try:
+        kapitel_sort = int(kapitel)
+    except Exception:
+        kapitel_sort = kapitel
+    return str(kapitel_sort).zfill(5), 0, stem
+
+

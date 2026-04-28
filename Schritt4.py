@@ -131,13 +131,18 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     "Keine bekannten Sprecher"
                 )
 
+            
         # ----------------------------------------------------
         # Ergebnisdatei bestimmen
         # ----------------------------------------------------
         if ist_ig_aufgabe:
             result_file_name = "ig_wortliste.txt"
         else:
-            result_file_name = f"{aufgaben_name}_{os.path.basename(dateipfad)}"
+            basis_name = Path(dateipfad).stem
+            basis_name = basis_name.replace("_annotierungen", "")
+            basis_name = re.sub(r"_abschnitt_?\d+$", "", basis_name)
+
+            result_file_name = f"{aufgaben_name}_{basis_name}.txt"
 
         result_file_path = ki_ordner / result_file_name
 
