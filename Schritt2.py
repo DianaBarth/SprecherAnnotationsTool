@@ -92,6 +92,26 @@ def extrahiere_kapitelname(kapitelname):
         return "0"
     return kapitelname
 
+def sort_key_kapiteldatei(pfad: Path):
+    stem = pfad.stem
+
+    # z.B. "12_003", "Kapitel 12_003", "Prolog_001"
+    m = re.match(r"^(.*?)[_-](\d+)$", stem)
+    if m:
+        basis, teil = m.groups()
+    else:
+        basis, teil = stem, "0"
+
+    kapitel = extrahiere_kapitelname(basis)
+
+    try:
+        kapitel_sort = int(kapitel)
+        kapitel_key = f"{kapitel_sort:05d}"
+    except Exception:
+        kapitel_key = str(kapitel).lower()
+
+    return kapitel_key, int(teil), stem.lower()
+
 def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewaehlte_kapitel=None, progress_callback=None):
     START_TAGS = {
         "Ueberschrift": "|UeberschriftStart|",
@@ -114,9 +134,12 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
     eingabeordner = Path(eingabeordner)
     ausgabeordner = Path(ausgabeordner)
     ausgabeordner.mkdir(parents=True, exist_ok=True)
-    textdateien = list(eingabeordner.glob("*.txt"))
+    
+    textdateien = sorted(eingabeordner.glob("*.txt"), key=sort_key_kapiteldatei)
+    global_wortnr = 1
 
     if ausgewaehlte_kapitel is not None:
+        print("[WARNUNG] Globale WortNr ist nur stabil, wenn alle Kapitel gemeinsam verarbeitet werden.")
         gefilterte_dateien = []
         for d in textdateien:
             stem = d.stem
@@ -125,7 +148,8 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                     gefilterte_dateien.append(d)
                     break
 
-        textdateien = gefilterte_dateien
+        textdateien = sorted(gefilterte_dateien, key=sort_key_kapiteldatei)
+
         print(f"[DEBUG] Gefilterte Textdateien nach Auswahl: {[d.name for d in textdateien]}")
 
     for datei in textdateien:
@@ -287,10 +311,12 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             vorher_token = cleaned_tokens[idx-1] if idx > 0 else None
             naechstes_token = cleaned_tokens[idx+1] if idx+1 < len(cleaned_tokens) else None
             tokenInklZahlwoerter.append(ersetze_zahl_in_token(token, vorher_token, naechstes_token))
-
+        
+        anzahl_tokens = len(cleaned_tokens)
+        
         df = pd.DataFrame({
             "KapitelNummer": kapitelname,
-            "WortNr": range(1, len(cleaned_tokens) + 1),
+            "WortNr": range(global_wortnr, global_wortnr + anzahl_tokens),
             "token": cleaned_tokens,
             "tokenInklZahlwoerter": tokenInklZahlwoerter,
             "annotation": cleaned_annotations,
@@ -305,34 +331,10 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         json_filename = ausgabeordner / f"{kapitelname_original}_annotierungen.json"
         with open(json_filename, "w", encoding="utf-8") as out_f:
             json.dump(json.loads(df.to_json(orient="records", force_ascii=False)), out_f, indent=2, ensure_ascii=False)
-  
+        
+        global_wortnr += anzahl_tokens
     if progress_callback:
         progress_callback("Fertig", 100)
 
-def sort_key_kapiteldatei(pfad: Path):
-    """
-    Sortiert Dateien stabil nach Kapitel/Teil.
-    Erwartet Namen wie:
-    Kapitelname_001.txt
-    12_003.txt
-    Prolog_001.txt
-    """
-    stem = pfad.stem
-    m = re.match(r"^(.*?)[_-](\d+)$", stem)
-    if m:
-        basis, teil = m.groups()
-        kapitel = extrahiere_kapitelname(basis)
-        try:
-            kapitel_sort = int(kapitel)
-        except Exception:
-            kapitel_sort = kapitel
-        return str(kapitel_sort).zfill(5), int(teil), stem
-
-    kapitel = extrahiere_kapitelname(stem)
-    try:
-        kapitel_sort = int(kapitel)
-    except Exception:
-        kapitel_sort = kapitel
-    return str(kapitel_sort).zfill(5), 0, stem
 
 
