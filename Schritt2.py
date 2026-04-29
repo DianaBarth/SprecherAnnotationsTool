@@ -92,25 +92,38 @@ def extrahiere_kapitelname(kapitelname):
         return "0"
     return kapitelname
 
-def sort_key_kapiteldatei(pfad: Path):
+def lade_kapitel_reihenfolge():
+    config_datei = Path("Eingabe/kapitel_config.json")
+
+    with open(config_datei, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    kapitel_liste = data.get("kapitel_liste", [])
+
+    return {
+        name: idx
+        for idx, name in enumerate(kapitel_liste)
+    }
+
+def sort_key_kapiteldatei(pfad: Path, kapitel_reihenfolge=None):
+    kapitel_reihenfolge = kapitel_reihenfolge or {}
+
     stem = pfad.stem
 
-    # z.B. "12_003", "Kapitel 12_003", "Prolog_001"
+    # entfernt Abschnittsnummer, z.B.
+    # "3. Erste Risse (Kapitel VII–VIII)_001"
+    # -> "3. Erste Risse (Kapitel VII–VIII)"
     m = re.match(r"^(.*?)[_-](\d+)$", stem)
     if m:
         basis, teil = m.groups()
     else:
         basis, teil = stem, "0"
 
-    kapitel = extrahiere_kapitelname(basis)
+    if basis in kapitel_reihenfolge:
+        return kapitel_reihenfolge[basis], int(teil), stem.lower()
 
-    try:
-        kapitel_sort = int(kapitel)
-        kapitel_key = f"{kapitel_sort:05d}"
-    except Exception:
-        kapitel_key = str(kapitel).lower()
-
-    return kapitel_key, int(teil), stem.lower()
+    print(f"[WARNUNG] Kapitel nicht in kapitel_config.json gefunden: {basis!r}")
+    return 999999, int(teil), stem.lower()
 
 def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewaehlte_kapitel=None, progress_callback=None):
     START_TAGS = {
@@ -135,7 +148,13 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
     ausgabeordner = Path(ausgabeordner)
     ausgabeordner.mkdir(parents=True, exist_ok=True)
     
-    textdateien = sorted(eingabeordner.glob("*.txt"), key=sort_key_kapiteldatei)
+    kapitel_reihenfolge = lade_kapitel_reihenfolge()
+
+    textdateien = sorted(
+        eingabeordner.glob("*.txt"),
+        key=lambda p: sort_key_kapiteldatei(p, kapitel_reihenfolge)
+    )
+
     global_wortnr = 1
 
     if ausgewaehlte_kapitel is not None:
@@ -148,7 +167,10 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                     gefilterte_dateien.append(d)
                     break
 
-        textdateien = sorted(gefilterte_dateien, key=sort_key_kapiteldatei)
+        textdateien = sorted(
+            gefilterte_dateien,
+            key=lambda p: sort_key_kapiteldatei(p, kapitel_reihenfolge)
+        )
 
         print(f"[DEBUG] Gefilterte Textdateien nach Auswahl: {[d.name for d in textdateien]}")
 
