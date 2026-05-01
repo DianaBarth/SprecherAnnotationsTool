@@ -14,15 +14,25 @@ import personen_resolver
 MODEL_NAME = ""  # Wird später durch GUI gesetzt/überschrieben
 IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
 
+def log_antwort(dateiname, wortnr_bereich, content):
+    try:
+        print(
+            f"[KI-ANTWORT] Datei={dateiname} | Bereich={wortnr_bereich}\n{content}\n"
+        )
+    except Exception as e:
+        print(f"[WARNUNG] Konnte KI-Antwort nicht loggen: {e}")
 
 def speichere_ki_json_antwort(ki_ordner, aufgaben_name, laufende_nr, json_datei, antwort):
     ki_ordner = Path(ki_ordner)
     ki_ordner.mkdir(parents=True, exist_ok=True)
 
+    aufgaben_name_lower = str(aufgaben_name).lower()
     aufgabe_upper = str(aufgaben_name).upper()
     orig_json_name = Path(json_datei).stem
 
-    daten = parse_ki_json_robust(antwort, fallback_typ="array")
+    fallback_typ = "object" if aufgaben_name_lower == "kombination" else "array"
+
+    daten = parse_ki_json_robust(antwort, fallback_typ=fallback_typ)
 
     if daten is None:
         ausgabe_datei = ki_ordner / f"KI_{aufgabe_upper}_FEHLER_{laufende_nr:03}_{orig_json_name}.json"
@@ -37,7 +47,8 @@ def speichere_ki_json_antwort(ki_ordner, aufgaben_name, laufende_nr, json_datei,
         json.dump(daten, f, ensure_ascii=False, indent=2)
 
     print(f"[INFO] KI-Datei gespeichert: {ausgabe_datei}")
-    
+
+
 def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich="", max_new_tokens=128):
     try:
         system_text = ""
@@ -201,6 +212,7 @@ def ersetze_rede_marker_fuer_person_prompt(prompt, tokens):
 def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False):
     print(f"[DEBUG] schritt4.daten_verarbeiten gestartet für {dateipfad} und {aufgabe}")
     ki_ordner = Path(ki_ordner)
+    ki_ordner.mkdir(parents=True, exist_ok=True)
 
     try:
         if not isinstance(dateipfad, str):
@@ -211,6 +223,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
 
         ist_ig_aufgabe = aufgaben_name_lower == "ig"
         ist_person_aufgabe = aufgaben_name_lower == "person"
+        ist_kombi_aufgabe = aufgaben_name_lower == "kombination"
 
         max_tokens_by_task = {
             "kombination": 512,
@@ -220,7 +233,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
         antwort_max_new_tokens = max_tokens_by_task.get(aufgaben_name_lower, 128)
 
         # ----------------------------------------------------
-        # Sprecherliste injizieren
+        # PERSON: Sprecherliste injizieren
         # ----------------------------------------------------
         if ist_person_aufgabe and "{SPRECHER_LISTE_HIER_EINFÜGEN}" in prompt:
             try:
@@ -237,7 +250,7 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     sprecher_liste_text
                 )
 
-                print(f"[INFO] Sprecherliste injiziert.")
+                print("[INFO] Sprecherliste injiziert.")
 
             except Exception as e:
                 print(f"[WARNUNG] Sprecherliste konnte nicht injiziert werden: {e}")
@@ -246,169 +259,252 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     "Keine bekannten Sprecher"
                 )
 
-        # ----------------------------------------------------
-        # Ergebnisdatei bestimmen
-        # ----------------------------------------------------
+        # ====================================================
+        # IG-SPEZIALFALL
+        # ====================================================
         if ist_ig_aufgabe:
-            result_file_name = "ig_wortliste.txt"
-        else:
-            basis_name = Path(dateipfad).stem
-            basis_name = basis_name.replace("_annotierungen", "")
-            basis_name = re.sub(r"_abschnitt_?\d+$", "", basis_name)
+            tmp_ig_result_file = ki_ordner / "_tmp_ki_ig_rohantwort.txt"
+            ig_woerter_datei = ki_ordner / "ig_woerter.txt"
 
-            result_file_name = f"{aufgaben_name}_{basis_name}.txt"
+            print("[INFO] Erzeuge IG-Wortliste aus JSON-Dateien ...")
 
-        result_file_path = ki_ordner / result_file_name
+            extrahiere_ig_woerter_aus_json(
+                json_ordner=config.GLOBALORDNER["json"],
+                ausgabe_datei=ig_woerter_datei,
+                lowercase=True,
+                min_len=2,
+                verwende_tokenInklZahlwoerter=True,
+            )
 
-        # ----------------------------------------------------
-        # Ergebnis überspringen
-        # ----------------------------------------------------
-        if result_file_path.exists() and not force:
-            print(f"[INFO] Ergebnis existiert bereits → übersprungen.")
+            if not ig_woerter_datei.exists():
+                print(f"[FEHLER] IG-Wortliste wurde nicht erzeugt: {ig_woerter_datei}")
+                return
+
+            with open(ig_woerter_datei, "r", encoding="utf-8") as f:
+                eingabetext = f.read()
+
+            if not eingabetext.strip():
+                print("[WARNUNG] IG-Wortliste ist leer. IG-Analyse wird übersprungen.")
+                return
+
+            zeilen = [z for z in eingabetext.splitlines() if z.strip()]
+            chunk_groesse = 100
+            chunks = [zeilen[i:i + chunk_groesse] for i in range(0, len(zeilen), chunk_groesse)]
+
+            print(f"[INFO] IG-Wortliste enthält {len(zeilen)} Zeilen.")
+            print(f"[INFO] Verarbeite IG in {len(chunks)} Chunk(s).")
+
+            alle_antworten = []
+
+            for chunk_nr, chunk in enumerate(chunks, start=1):
+                chunk_text = "\n".join(chunk)
+
+                messages_Chat = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": chunk_text}
+                ]
+
+                messages_Flat = f"Anweisung:\n{prompt}\n\n{chunk_text}"
+
+                if client.check_chat_model():
+                    antwort = KI_Analyse_Chat(
+                        client,
+                        messages_Chat,
+                        dateiname=os.path.basename(dateipfad),
+                        wortnr_bereich=f"ig_chunk_{chunk_nr:03}",
+                        max_new_tokens=antwort_max_new_tokens,
+                    )
+                else:
+                    antwort = KI_Analyse_Flat(
+                        client,
+                        messages_Flat,
+                        dateiname=os.path.basename(dateipfad),
+                        wortnr_bereich=f"ig_chunk_{chunk_nr:03}",
+                        max_new_tokens=antwort_max_new_tokens,
+                    )
+
+                if antwort:
+                    alle_antworten.append(antwort.strip())
+                else:
+                    print(f"[WARNUNG] Keine IG-Antwort für Chunk {chunk_nr}")
+
+            ki_ergebnis = "\n".join(alle_antworten).strip()
+
+            if not ki_ergebnis:
+                print("[WARNUNG] Kein IG-Ergebnis erhalten.")
+                return
+
+            with open(tmp_ig_result_file, "w", encoding="utf-8") as f:
+                f.write(ki_ergebnis)
+
+            splitte_ig_klassen_json(tmp_ig_result_file, ki_ordner)
+
+            try:
+                tmp_ig_result_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+            print("[INFO] IG-Analyse abgeschlossen.")
             return
 
-        ki_ergebnis = ""
-
         # ====================================================
-        # NORMALFALL (inkl. PERSON)
+        # NORMALFALL: PERSON / KOMBINATION
         # ====================================================
         json_datei = lade_json_zu_txt_datei(dateipfad)
 
         if not json_datei or not json_datei.exists():
-            print(f"[WARNUNG] Kein JSON → Fallback TXT")
+            print(f"[WARNUNG] Keine passende JSON-Datei gefunden: {dateipfad}")
+            return
 
-            with open(dateipfad, "r", encoding="utf-8") as f:
-                eingabetext = f.read()
+        print(f"[INFO] Verwende JSON + Plaintext-Kontext: {json_datei}")
 
-            messages = [
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": eingabetext}
+        with open(json_datei, "r", encoding="utf-8") as f:
+            json_daten = json.load(f)
+
+        if not isinstance(json_daten, list):
+            print(f"[WARNUNG] JSON ist keine Liste: {json_datei}")
+            return
+
+        abschnitte = splitte_in_abschnitte_intelligent(json_daten)
+
+        if abschnitte is None:
+            print("[WARNUNG] splitte_in_abschnitte_intelligent() gab None zurück.")
+            abschnitte = []
+
+        if not isinstance(abschnitte, list):
+            raise TypeError(
+                f"splitte_in_abschnitte_intelligent() muss list zurückgeben, "
+                f"gab aber {type(abschnitte).__name__}"
+            )
+
+        if not abschnitte:
+            print(f"[WARNUNG] Keine Abschnitte erzeugt für {dateipfad}.")
+            return
+
+        print(f"[INFO] Verarbeite {len(abschnitte)} Abschnitt(e).")
+
+        einzelantwort_nr = 1
+
+        for abschnitt_nr, abschnitt in enumerate(abschnitte, start=1):
+            tokens = abschnitt.get("tokens", [])
+            prompt_fuer_abschnitt = str(prompt)
+            reden = []
+
+            start_wortnr = int(abschnitt.get("start_wortnr", 0))
+            end_wortnr = int(abschnitt.get("end_wortnr", 0))
+            wortnr_bereich = f"{start_wortnr}-{end_wortnr}"
+
+            # ------------------------------------------------
+            # PERSON: Rededaten injizieren
+            # ------------------------------------------------
+            if ist_person_aufgabe:
+                prompt_fuer_abschnitt, reden = ersetze_rede_marker_fuer_person_prompt(
+                    prompt_fuer_abschnitt,
+                    tokens
+                )
+
+                if "{REDE_DATEN}" in prompt_fuer_abschnitt:
+                    print("[WARNUNG] Prompt enthält nach Ersetzung noch {REDE_DATEN}!")
+
+                if not reden:
+                    print(f"[INFO] Abschnitt {abschnitt_nr}: keine Rede → übersprungen.")
+                    continue
+
+                print(f"[INFO] Abschnitt {abschnitt_nr}: {len(reden)} Rede(n) extrahiert.")
+
+            # ------------------------------------------------
+            # Prompt für Abschnitt bauen
+            # ------------------------------------------------
+            kompakt = ist_kombi_aufgabe
+
+            abschnitt_prompt = baue_ki_prompt(
+                abschnitt_text=abschnitt["text"],
+                tokens=tokens,
+                aufgabe_prompt=None,
+                kompakt=kompakt
+            )
+
+            print(
+                f"[INFO] Abschnitt {abschnitt_nr}/{len(abschnitte)} "
+                f"Aufgabe={aufgaben_name} WortNr={wortnr_bereich}"
+            )
+
+            messages_Chat = [
+                {"role": "system", "content": prompt_fuer_abschnitt},
+                {"role": "user", "content": abschnitt_prompt}
             ]
 
-            ki_ergebnis = KI_Analyse_Chat(client, messages)
+            messages_Flat = (
+                f"Anweisung:\n{prompt_fuer_abschnitt}\n\n"
+                f"{abschnitt_prompt}"
+            )
 
-        else:
-            with open(json_datei, "r", encoding="utf-8") as f:
-                json_daten = json.load(f)
-
-            abschnitte = splitte_in_abschnitte_intelligent(json_daten)
-
-            alle_antworten = []
-            einzelantwort_nr = 1  
-            
-            for abschnitt_nr, abschnitt in enumerate(abschnitte, start=1):
-
-                tokens = abschnitt.get("tokens", [])
-
-                # --------------------------------------------
-                # PERSON: Reden extrahieren
-                # --------------------------------------------
-                # WICHTIG: immer vom bereits vorbereiteten prompt ausgehen
-                prompt_fuer_abschnitt = str(prompt)
-
-                if ist_person_aufgabe:
-                    prompt_fuer_abschnitt, reden = ersetze_rede_marker_fuer_person_prompt(
-                        prompt_fuer_abschnitt,
-                        tokens
-                    )
-
-                    if "{REDE_DATEN}" in prompt_fuer_abschnitt:
-                        print("[WARNUNG] Prompt enthält nach Ersetzung noch {REDE_DATEN}!")
-
-                    if not reden:
-                        print(f"[INFO] Abschnitt {abschnitt_nr}: keine Rede → skip")
-                        continue
-
-                    print(f"[INFO] Abschnitt {abschnitt_nr}: {len(reden)} Reden extrahiert")
-                                # --------------------------------------------
-                    # Prompt bauen
-                    # --------------------------------------------
-                abschnitt_prompt = baue_ki_prompt(
-                    abschnitt_text=abschnitt["text"],
-                    tokens=tokens,
-                    aufgabe_prompt=None,
-                    kompakt=False
-                )
-
-                messages = [
-                    {"role": "system", "content": prompt_fuer_abschnitt},
-                    {"role": "user", "content": abschnitt_prompt}
-                ]
-
+            if client.check_chat_model():
                 antwort = KI_Analyse_Chat(
                     client,
-                    messages,
+                    messages_Chat,
                     dateiname=os.path.basename(dateipfad),
-                    wortnr_bereich=f"{abschnitt.get('start_wortnr')}-{abschnitt.get('end_wortnr')}",
-                    max_new_tokens=antwort_max_new_tokens
+                    wortnr_bereich=wortnr_bereich,
+                    max_new_tokens=antwort_max_new_tokens,
+                )
+            else:
+                antwort = KI_Analyse_Flat(
+                    client,
+                    messages_Flat,
+                    dateiname=os.path.basename(dateipfad),
+                    wortnr_bereich=wortnr_bereich,
+                    max_new_tokens=antwort_max_new_tokens,
                 )
 
-                start_wortnr = int(abschnitt.get("start_wortnr", 0))
-                end_wortnr = int(abschnitt.get("end_wortnr", 0))
+            if not antwort:
+                print(f"[WARNUNG] Keine Antwort für Abschnitt {abschnitt_nr}")
+                continue
 
-                if antwort and aufgaben_name_lower == "person":
-                    bereinigte_person, fehler = validiere_person_antwort(antwort, reden)
+            # ------------------------------------------------
+            # PERSON validieren
+            # ------------------------------------------------
+            if ist_person_aufgabe:
+                bereinigte_person, fehler = validiere_person_antwort(
+                    antwort,
+                    reden
+                )
 
-                    if fehler:
-                        print(f"[WARNUNG][PERSON] Ungültige Antwort: {fehler}")
-                    else:
-                        antwort = json.dumps(bereinigte_person, ensure_ascii=False, indent=2)
+                if fehler:
+                    print(f"[WARNUNG][PERSON] Ungültige Antwort Abschnitt {abschnitt_nr}: {fehler}")
+                    continue
 
-                if antwort and aufgaben_name_lower == "kombination":
-                    antwort, warnung = validiere_kombination_antwort(
-                        antwort,
-                        start_wortnr=start_wortnr,
-                        end_wortnr=end_wortnr
-                    )
+                antwort = json.dumps(bereinigte_person, ensure_ascii=False, indent=2)
 
-                    if warnung:
-                        print(f"[WARNUNG][KOMBINATION] {warnung}")
+            # ------------------------------------------------
+            # KOMBINATION validieren
+            # ------------------------------------------------
+            if ist_kombi_aufgabe:
+                antwort, warnung = validiere_kombination_antwort(
+                    antwort,
+                    start_wortnr=start_wortnr,
+                    end_wortnr=end_wortnr
+                )
 
-                if antwort:
-                    # Filter (bleibt unverändert)
-                    if aufgaben_name_lower == "betonung":
-                        antwort = filtere_wortnr_json(...)
+                if warnung:
+                    print(f"[WARNUNG][KOMBINATION] Abschnitt {abschnitt_nr}: {warnung}")
 
-                    elif aufgaben_name_lower == "pause":
-                        antwort = filtere_wortnr_json(...)
+            # ------------------------------------------------
+            # Einzeldatei speichern
+            # ------------------------------------------------
+            if ist_person_aufgabe or ist_kombi_aufgabe:
+                speichere_ki_json_antwort(
+                    ki_ordner=ki_ordner,
+                    aufgaben_name=aufgaben_name,
+                    laufende_nr=einzelantwort_nr,
+                    json_datei=json_datei,
+                    antwort=antwort
+                )
+                einzelantwort_nr += 1
 
-                    elif aufgaben_name_lower == "gedanken":
-                        antwort = filtere_wortnr_json(...)
-
-                    elif aufgaben_name_lower == "spannung":
-                        antwort = filtere_wortnr_json(...)
-
-                    # 🔥 NEU: Einzeldatei speichern
-                    if antwort and aufgaben_name_lower in {"person", "kombination"}:
-                        speichere_ki_json_antwort(
-                            ki_ordner=ki_ordner,
-                            aufgaben_name=aufgaben_name,
-                            laufende_nr=einzelantwort_nr,
-                            json_datei=json_datei,
-                            antwort=antwort
-                        )
-                        einzelantwort_nr += 1
-
-                    # 🔥 WICHTIG: NICHT mehr sammeln!
-                    if aufgaben_name_lower not in {"person", "kombination"}:
-                        if antwort:
-                            alle_antworten.append(antwort.strip())
-
-                ki_ergebnis = "\n".join(alle_antworten)
-
-        # ----------------------------------------------------
-        # Ergebnis speichern
-        # ----------------------------------------------------
-        if ki_ergebnis:
-            with open(result_file_path, "w", encoding="utf-8") as f:
-                f.write(ki_ergebnis)
-
-            print(f"[INFO] Ergebnis gespeichert: {result_file_path}")
-        else:
-            print("[WARNUNG] Kein Ergebnis.")
+        print(f"[INFO] {aufgaben_name}-Analyse abgeschlossen für {json_datei.name}")
 
     except Exception as e:
-        print(f"[FEHLER] {e}")
+        print(f"[FEHLER] Fehler bei der Verarbeitung von {dateipfad}: {e}")
         traceback.print_exc()
 
     finally:
@@ -491,7 +587,11 @@ def parse_ki_json_robust(text, fallback_typ="array"):
 
     return None
 
-def validiere_kombination_antwort(antwort, start_wortnr, end_wortnr):
+def validiere_kombination_antwort(
+    antwort,
+    start_wortnr,
+    end_wortnr
+):
     daten = parse_ki_json_robust(antwort, fallback_typ="object")
 
     ziel = leeres_kombi_json()
@@ -499,19 +599,35 @@ def validiere_kombination_antwort(antwort, start_wortnr, end_wortnr):
     if not isinstance(daten, dict):
         return json.dumps(ziel, ensure_ascii=False, indent=2), "Antwort ist kein JSON-Objekt"
 
-    max_pro_liste = 3
+    # 🔥 Limits pro Kategorie
+    limits = {
+        ("pause", "atempause"): 3,
+        ("pause", "staupause"): 2,
+
+        ("gedanken", "gedanken_weiter"): 3,
+        ("gedanken", "gedanken_ende"): 3,
+        ("gedanken", "pause_gedanken"): 2,
+
+        ("betonung", "hauptbetonung"): 4,
+        ("betonung", "nebenbetonung"): 4,
+
+        ("spannung", "Starten"): 2,
+        ("spannung", "Halten"): 2,
+        ("spannung", "Stoppen"): 2,
+    }
+
     max_gesamt = 12
     gesamt = 0
     warnungen = []
 
-    for hauptkey, subkeys in ziel.items():
+    for hauptkey, subdict in ziel.items():
         teil = daten.get(hauptkey, {})
 
         if not isinstance(teil, dict):
             warnungen.append(f"{hauptkey} ist kein Dict")
             continue
 
-        for subkey in subkeys:
+        for subkey in subdict:
             werte = teil.get(subkey, [])
 
             if not isinstance(werte, list):
@@ -519,6 +635,7 @@ def validiere_kombination_antwort(antwort, start_wortnr, end_wortnr):
                 continue
 
             sauber = []
+            limit = limits.get((hauptkey, subkey), 3)
 
             for nr in werte:
                 try:
@@ -526,94 +643,59 @@ def validiere_kombination_antwort(antwort, start_wortnr, end_wortnr):
                 except Exception:
                     continue
 
+                # ❌ außerhalb Bereich → raus
                 if not (start_wortnr <= nr_int <= end_wortnr):
-                    warnungen.append(f"WortNr außerhalb Bereich entfernt: {nr_int}")
+                    warnungen.append(f"{nr_int} außerhalb Bereich entfernt")
                     continue
 
-                if nr_int not in sauber:
-                    sauber.append(nr_int)
+                # ❌ Duplikate vermeiden
+                if nr_int in sauber:
+                    continue
 
-                if len(sauber) >= max_pro_liste:
+                sauber.append(nr_int)
+
+                # 🔥 Limit pro Liste
+                if len(sauber) >= limit:
                     break
 
+            # 🔥 globales Limit
             for nr in sauber:
                 if gesamt >= max_gesamt:
                     break
                 ziel[hauptkey][subkey].append(nr)
                 gesamt += 1
 
+    # 🔥 Sortierung für Stabilität
+    for hauptkey in ziel:
+        for subkey in ziel[hauptkey]:
+            ziel[hauptkey][subkey] = sorted(ziel[hauptkey][subkey])
+
     return json.dumps(ziel, ensure_ascii=False, indent=2), "; ".join(warnungen)
 
-def log_antwort(dateiname, wortnr_bereich, content):
-    try:
-        print(
-            f"[KI-ANTWORT] Datei={dateiname} | Bereich={wortnr_bereich}\n{content}\n"
-        )
-    except Exception as e:
-        print(f"[WARNUNG] Konnte KI-Antwort nicht loggen: {e}")
 
-def extrahiere_json_objekt(text):
-    if not text:
-        return None
-
-    start = text.find("{")
-    ende = text.rfind("}")
-
-    if start == -1 or ende == -1 or ende <= start:
-        return None
-
-    try:
-        return json.loads(text[start:ende + 1])
-    except Exception:
-        return None
-
-
-def filtere_wortnr_json(antwort_text, erlaubte_keys, start_wortnr, end_wortnr, max_pro_key=None):
-    daten = extrahiere_json_objekt(antwort_text)
-
-    if not isinstance(daten, dict):
-        print("[WARNUNG][KI-JSON] Antwort ist kein gültiges JSON-Objekt.")
-        return None
-
-    bereinigt = {}
-
-    for key in erlaubte_keys:
-        werte = daten.get(key, [])
-
-        if not isinstance(werte, list):
-            werte = []
-
-        gefiltert = []
-
-        for nr in werte:
-            try:
-                nr_int = int(nr)
-            except Exception:
-                continue
-
-            if start_wortnr <= nr_int <= end_wortnr:
-                if nr_int not in gefiltert:
-                    gefiltert.append(nr_int)
-            else:
-                print(
-                    f"[WARNUNG][KI-JSON] Entferne WortNr außerhalb Abschnitt: "
-                    f"{nr_int} nicht in {start_wortnr}-{end_wortnr}"
-                )
-
-        if max_pro_key is not None:
-            gefiltert = gefiltert[:max_pro_key]
-
-        bereinigt[key] = gefiltert
-
-    return json.dumps(bereinigt, ensure_ascii=False, indent=2)   
+def leeres_kombi_json():
+    return {
+        "pause": {
+            "atempause": [],
+            "staupause": []
+        },
+        "gedanken": {
+            "gedanken_weiter": [],
+            "gedanken_ende": [],
+            "pause_gedanken": []
+        },
+        "betonung": {
+            "hauptbetonung": [],
+            "nebenbetonung": []
+        },
+        "spannung": {
+            "Starten": [],
+            "Halten": [],
+            "Stoppen": []
+        }
+    }
 
 def normalisiere_ig_token(token, lowercase=True):
-    """
-    Vereinheitlicht Token für IG-Listen:
-    - trimmt Leerzeichen
-    - optional alles klein
-    - Unicode normalisieren
-    """
     token = (token or "").strip()
     token = unicodedata.normalize("NFC", token)
 
@@ -622,104 +704,17 @@ def normalisiere_ig_token(token, lowercase=True):
 
     return token
 
-import re
-from pathlib import Path
-
-def splitte_ig_klassen_json(eingabe_datei, ki_ordner):
-    ik_set = set()
-    ich_set = set()
-    kein_set = set()
-    sonder_set = set()
-
-    def ist_mehrfach_klasse(klasse):
-        return re.fullmatch(r"(ik|ich)(-(ik|ich))+", klasse) is not None
-
-    with open(eingabe_datei, "r", encoding="utf-8") as f:
-        for zeile in f:
-            zeile = zeile.strip()
-            if not zeile:
-                continue
-
-            teile = zeile.split("\t")
-            if len(teile) < 2:
-                continue
-
-            wort = teile[0].strip().lower()
-            klasse = teile[1].strip().lower()
-
-            klasse = (
-                klasse
-                .replace("ig_ich", "ig-ich")
-                .replace("ig/ich", "ig-ich")
-                .replace("ig ich", "ig-ich")
-            )
-
-            if ist_mehrfach_klasse(klasse):
-                sonder_set.add(f"{wort}\t{klasse}")
-            elif klasse == "ik":
-                ik_set.add(wort)
-            elif klasse == "ich":
-                ich_set.add(wort)
-            elif klasse == "kein":
-                kein_set.add(wort)
-            else:
-                kein_set.add(wort)
-
-    ausgaben = {
-        "KI_IG_Gesamt_ICH.json": sorted(ich_set),
-        "KI_IG_Gesamt_IK.json": sorted(ik_set),
-        "KI_IG_Gesamt_KEIN.json": sorted(kein_set),
-        "KI_IG_Gesamt_SONDERFAELLE.json": sorted(sonder_set),
-    }
-
-    for dateiname, daten in ausgaben.items():
-        pfad = Path(ki_ordner) / dateiname
-        with open(pfad, "w", encoding="utf-8") as f:
-            json.dump(daten, f, ensure_ascii=False, indent=2)
-
-        print(f"[INFO] IG-Datei gespeichert: {pfad}")
-
-def ist_echtes_wort(token):
-    """
-    True nur für echte Wörter.
-    Erlaubt Buchstaben inkl. Umlaute, Bindestrich und Apostroph.
-    Keine Zahlen, keine Satzzeichen-only, keine Tags.
-    """
-    token = (token or "").strip()
-
-    if not token:
-        return False
-
-    if token.startswith("|") and token.endswith("|"):
-        return False
-
-    # Mindestens ein Buchstabe
-    if not regex.search(r"\p{L}", token):
-        return False
-
-    # Nur Buchstaben, kombinierende Zeichen, Bindestrich, Apostroph
-    return regex.fullmatch(r"[\p{L}\p{M}'’\-]+", token) is not None
 
 def extrahiere_ig_woerter_aus_json(
     json_ordner,
     ausgabe_datei,
     lowercase=True,
     sort_case_insensitive=True,
-    min_len=1,
+    min_len=2,
     verwende_tokenInklZahlwoerter=True,
     ignoriere_spezialtokens=True,
     nur_tokens_mit_ig=True,
 ):
-    """
-    Extrahiert IG-Wörter aus *_annotierungen.json-Dateien.
-
-    Ausgabeformat:
-        ein Wort pro Zeile
-
-    Keine Häufigkeit.
-    Keine Flexionsbündelung.
-    Keine Basisformen.
-    """
     json_ordner = Path(json_ordner)
     ausgabe_datei = Path(ausgabe_datei)
 
@@ -728,11 +723,10 @@ def extrahiere_ig_woerter_aus_json(
         return
 
     json_dateien = sorted(json_ordner.glob("*_annotierungen.json"))
+
     if not json_dateien:
         print(f"[WARNUNG] Keine *_annotierungen.json-Dateien gefunden in: {json_ordner}")
         return
-
-    print(f"[INFO] Starte IG-Extraktion aus {len(json_dateien)} JSON-Dateien ...")
 
     woerter_set = set()
 
@@ -767,9 +761,6 @@ def extrahiere_ig_woerter_aus_json(
 
                 clean_token = re.sub(r"[^\wäöüÄÖÜß]", "", token).strip()
 
-                if not clean_token:
-                    continue
-
                 if len(clean_token) < min_len:
                     continue
 
@@ -795,119 +786,69 @@ def extrahiere_ig_woerter_aus_json(
     print(f"[INFO] IG-Wörter extrahiert: {len(sortierte_woerter)}")
     print(f"[✓] IG-Wortliste gespeichert: {ausgabe_datei}")
 
+def splitte_ig_klassen_json(eingabe_datei, ki_ordner):
+    ki_ordner = Path(ki_ordner)
+    ki_ordner.mkdir(parents=True, exist_ok=True)
 
-def extrahiere_json_objekt_robust(text):
-    if not text:
-        return None
+    ik_set = set()
+    ich_set = set()
+    kein_set = set()
+    sonder_set = set()
 
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-    text = re.sub(r"^```(?:json)?", "", text.strip(), flags=re.IGNORECASE)
-    text = re.sub(r"```$", "", text.strip()).strip()
+    def ist_mehrfach_klasse(klasse):
+        return re.fullmatch(r"(ik|ich)(-(ik|ich))+", klasse) is not None
 
-    start = text.find("{")
-    if start == -1:
-        return None
+    with open(eingabe_datei, "r", encoding="utf-8") as f:
+        for zeile in f:
+            zeile = zeile.strip()
 
-    tiefe = 0
-    in_string = False
-    escape = False
-
-    for i in range(start, len(text)):
-        ch = text[i]
-
-        if escape:
-            escape = False
-            continue
-
-        if ch == "\\":
-            escape = True
-            continue
-
-        if ch == '"':
-            in_string = not in_string
-            continue
-
-        if in_string:
-            continue
-
-        if ch == "{":
-            tiefe += 1
-        elif ch == "}":
-            tiefe -= 1
-            if tiefe == 0:
-                try:
-                    return json.loads(text[start:i + 1])
-                except Exception:
-                    return None
-
-    return None
-
-
-def leeres_kombi_json():
-    return {
-        "pause": {
-            "atempause": [],
-            "staupause": []
-        },
-        "gedanken": {
-            "gedanken_weiter": [],
-            "gedanken_ende": [],
-            "pause_gedanken": []
-        },
-        "betonung": {
-            "hauptbetonung": [],
-            "nebenbetonung": []
-        },
-        "spannung": {
-            "Starten": [],
-            "Halten": [],
-            "Stoppen": []
-        }
-    }
-
-
-def merge_kombi_antworten(antworten):
-    merged = leeres_kombi_json()
-
-    for antwort in antworten:
-        daten = extrahiere_json_objekt_robust(antwort)
-
-        if not isinstance(daten, dict):
-            print("[WARNUNG] Kombi-Antwort konnte nicht als JSON gelesen werden.")
-            continue
-
-        for hauptkey, kategorien in merged.items():
-            teil = daten.get(hauptkey, {})
-
-            if not isinstance(teil, dict):
+            if not zeile:
                 continue
 
-            for subkey in kategorien.keys():
-                werte = teil.get(subkey, [])
+            teile = zeile.split("\t")
 
-                if not isinstance(werte, list):
-                    continue
+            if len(teile) < 2:
+                continue
 
-                for nr in werte:
-                    try:
-                        nr_int = int(nr)
-                    except Exception:
-                        continue
+            wort = teile[0].strip().lower()
+            klasse = teile[1].strip().lower()
 
-                    if nr_int not in merged[hauptkey][subkey]:
-                        merged[hauptkey][subkey].append(nr_int)
+            klasse = (
+                klasse
+                .replace("ig_ich", "ig-ich")
+                .replace("ig/ich", "ig-ich")
+                .replace("ig ich", "ig-ich")
+                .replace("ich-ig", "ig-ich")
+            )
 
-    for hauptkey in merged:
-        for subkey in merged[hauptkey]:
-            merged[hauptkey][subkey] = sorted(merged[hauptkey][subkey])
+            if ist_mehrfach_klasse(klasse):
+                sonder_set.add({
+                    "wort": wort,
+                    "klasse": klasse
+                })
+            elif klasse == "ik":
+                ik_set.add(wort)
+            elif klasse == "ich":
+                ich_set.add(wort)
+            elif klasse == "kein":
+                kein_set.add(wort)
+            else:
+                kein_set.add(wort)
 
-    return json.dumps(merged, ensure_ascii=False, indent=2)
+    ausgaben = {
+        "KI_IG_Gesamt_ICH.json": sorted(ich_set),
+        "KI_IG_Gesamt_IK.json": sorted(ik_set),
+        "KI_IG_Gesamt_KEIN.json": sorted(kein_set),
+        "KI_IG_Gesamt_SONDERFAELLE.json": sorted(
+            sonder_set,
+            key=lambda x: x["wort"]
+        ),
+    }
 
-if __name__ == "__main__":
-    extrahiere_ig_woerter_aus_json(
-        json_ordner=config.GLOBALORDNER["json"],
-        ausgabe_datei=Path(config.GLOBALORDNER["ki"]) / "ig_woerter.txt",
-        lowercase=True,    
-        min_len=2,
-        verwende_tokenInklZahlwoerter=True,
-    )
+    for dateiname, daten in ausgaben.items():
+        pfad = ki_ordner / dateiname
+
+        with open(pfad, "w", encoding="utf-8") as f:
+            json.dump(daten, f, ensure_ascii=False, indent=2)
+
+        print(f"[INFO] IG-Datei gespeichert: {pfad}")

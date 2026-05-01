@@ -1,6 +1,7 @@
 Du analysierst einen literarischen Textabschnitt für ein Hörbuch.
 
 Du erhältst:
+
 1. Einen Abschnitt als Fließtext
 2. Eine Tokenliste mit WortNr-Zuordnung
 
@@ -13,111 +14,149 @@ Deine Aufgabe ist es, gleichzeitig folgende Annotationen zu erkennen:
 
 ---
 
-WICHTIG: Ausgabeformat
+WICHTIG: AUSGABEFORMAT
 
 Gib ausschließlich ein gültiges JSON-Objekt zurück:
 
 {
-  "pause": {
-    "atempause": [],
-    "staupause": []
-  },
-  "gedanken": {
-    "gedanken_weiter": [],
-    "gedanken_ende": [],
-    "pause_gedanken": []
-  },
-  "betonung": {
-    "hauptbetonung": [],
-    "nebenbetonung": []
-  },
-  "spannung": {
-    "Starten": [],
-    "Halten": [],
-    "Stoppen": []
-  }
+"pause": {
+"atempause": [],
+"staupause": []
+},
+"gedanken": {
+"gedanken_weiter": [],
+"gedanken_ende": [],
+"pause_gedanken": []
+},
+"betonung": {
+"hauptbetonung": [],
+"nebenbetonung": []
+},
+"spannung": {
+"Starten": [],
+"Halten": [],
+"Stoppen": []
+}
 }
 
 ---
 
 ALLGEMEINE REGELN
 
-- Verwende ausschließlich WortNr aus der Tokenliste
-- Erfinde keine WortNr
-- Verwende keine Beispielwerte wie 123 oder 456
-- Gib keine Erklärungen aus
-- Lieber zu wenige als zu viele Annotationen
-- Verwende keine fortlaufenden Zahlenreihen
+* Verwende ausschließlich WortNr aus der Tokenliste
+* Erfinde keine WortNr
+* Verwende keine fortlaufenden Zahlenreihen
+* Gib keine Erklärungen aus
+* Lieber zu wenige als zu viele Annotationen
+* Wenn unsicher: KEINE Annotation setzen
+
+---
+
+WICHTIG: SPARSAMKEIT
+
+* Annotationen sind seltene Markierungen, nicht Standard
+* Setze NICHT automatisch bei jedem Satzzeichen eine Annotation
+* Viele Abschnitte haben sehr wenige oder gar keine Annotationen
+* Leere Listen sind korrekt und erwünscht
 
 ---
 
 REGELN: PAUSEN
 
-- atempause:
-  - natürliche Sprechpausen (oft bei Kommas)
-- staupause:
-  - Spannung, Bruch, Satzende
+* atempause:
 
-- Setze Pausen nur bei:
-  - Komma
-  - Satzende (. ! ?)
-  - Gedankenstrich
+  * nur bei echten Sprechpausen
+  * meist bei längeren Sätzen
+  * bevorzugt bei Kommas mit Sinnabschnitt
 
-- Maximal:
-  - ca. alle 10–15 Silben eine Atempause
-  - maximal 1 Staupause pro Satz
+* staupause:
+
+  * nur bei starkem Bruch oder Satzende mit Wirkung
+  * nicht bei jedem Punkt
+
+* Setze Pausen nur wenn wirklich notwendig
+
+Maximal:
+
+* pro Satz: höchstens 1 atempause
+* pro Abschnitt: höchstens 3 atempause
+* pro Abschnitt: höchstens 2 staupause
 
 ---
 
 REGELN: GEDANKEN
 
-- gedanken_weiter:
-  - Fortführung (z. B. „und“, „dann“, Komma)
-- gedanken_ende:
-  - Satzende
-- pause_gedanken:
-  - Bruch, Wechsel („–“, „aber“, „...")
+* gedanken_weiter:
+
+  * nur bei klarer Fortführung
+
+* gedanken_ende:
+
+  * nur bei tatsächlichem Abschluss
+
+* pause_gedanken:
+
+  * nur bei deutlichem Bruch (z. B. „–“, „aber“, „…“)
+
+Maximal:
+
+* pro Abschnitt: höchstens 3 gedanken_weiter
+* pro Abschnitt: höchstens 3 gedanken_ende
+* pro Abschnitt: höchstens 2 pause_gedanken
 
 ---
 
 REGELN: BETONUNG
 
-- Maximal:
-  - 1 Hauptbetonung pro Sinneinheit
-  - 1 Nebenbetonung pro Sinneinheit
+* hauptbetonung:
 
-- Wähle:
-  - wichtige Verben
-  - zentrale Substantive
-  - Kontraste
+  * nur zentrale Wörter (Verb oder Schlüsselbegriff)
 
-- Vermeide:
-  - lange Listen
-  - mehr als 3 Hauptbetonungen pro Abschnitt
-  - mehr als 5 Nebenbetonungen pro Abschnitt
+* nebenbetonung:
+
+  * unterstützende wichtige Wörter
+
+* Keine langen Listen
+
+Maximal:
+
+* pro Abschnitt: höchstens 4 hauptbetonung
+* pro Abschnitt: höchstens 4 nebenbetonung
 
 ---
 
 REGELN: SPANNUNG
 
-- Starten:
-  - Beginn einer spannenden Situation
-- Halten:
-  - Spannung bleibt oder steigt
-- Stoppen:
-  - Auflösung
+* Starten:
 
-- Setze bevorzugt auf:
-  - Verben
-  - zentrale Begriffe
+  * Beginn einer spannenden Situation
+
+* Halten:
+
+  * Spannung wird fortgeführt
+
+* Stoppen:
+
+  * Auflösung
+
+* Wenn keine Spannung vorhanden: alle Listen leer lassen
+
+Maximal:
+
+* pro Abschnitt: höchstens 2 Starten
+* pro Abschnitt: höchstens 2 Halten
+* pro Abschnitt: höchstens 2 Stoppen
 
 ---
 
-Wenn keine Annotationen gefunden werden:
+WICHTIGER ABSCHLUSS
 
-{
-  "pause": { "atempause": [], "staupause": [] },
-  "gedanken": { "gedanken_weiter": [], "gedanken_ende": [], "pause_gedanken": [] },
-  "betonung": { "hauptbetonung": [], "nebenbetonung": [] },
-  "spannung": { "Starten": [], "Halten": [], "Stoppen": [] }
-}
+* Keine zusätzlichen Felder erzeugen
+* Keine Kommentare schreiben
+* Nur das JSON zurückgeben
+* Keine Formatabweichungen
+
+---
+
+Wenn keine Annotationen für einen Typ sinnvoll sind, gib  ein leeres Array im json zurück.
+
