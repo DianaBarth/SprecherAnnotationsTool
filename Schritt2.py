@@ -77,21 +77,6 @@ def ersetze_zahl_in_token(token, vorher_token=None, naechstes_token=None):
         print(f"DEBUG: Normale Kardinalzahl='{wort}'")
         return wort
 
-def extrahiere_kapitelname(kapitelname):
-    match_arabisch = regex.match(r"^(\d+)", kapitelname)
-    if match_arabisch:
-        return match_arabisch.group(1)
-    match_roemisch = regex.match(
-        r"^(M{0,4}(CM)?(CD)?(D)?(C{0,3})(XC)?(XL)?(L)?(X{0,3})(IX)?(IV)?(V)?(I{0,3}))",
-        kapitelname,
-        flags=re.IGNORECASE,
-    )
-    if match_roemisch and match_roemisch.group(1):
-        return str(roemisch_zu_int(match_roemisch.group(1)))
-    if "Prolog" in kapitelname:
-        return "0"
-    return kapitelname
-
 def lade_kapitel_reihenfolge():
     config_datei = Path("Eingabe/kapitel_config.json")
 
@@ -176,7 +161,10 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
 
     for datei in textdateien:
         kapitelname_original = datei.stem
-        kapitelname = extrahiere_kapitelname(kapitelname_original)
+        kapitelname = kapitelnummer_aus_config_index(
+            kapitelname_original,
+            kapitel_reihenfolge
+        )
 
         with open(datei, "r", encoding="utf-8") as f:
             text = f.read()
@@ -359,4 +347,25 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         progress_callback("Fertig", 100)
 
 
+def basisname_ohne_abschnitt(stem):
+    """
+    Entfernt Abschnittsnummer:
+    'Vorwort_001' -> 'Vorwort'
+    '2. Aufbau der Welt (Kapitel IV–VI)_001' -> '2. Aufbau der Welt (Kapitel IV–VI)'
+    """
+    m = re.match(r"^(.*?)[_-](\d+)$", stem)
+    if m:
+        return m.group(1)
+    return stem
 
+
+def kapitelnummer_aus_config_index(kapitelname_original, kapitel_reihenfolge):
+    basis = basisname_ohne_abschnitt(kapitelname_original)
+
+    if basis not in kapitel_reihenfolge:
+        raise ValueError(
+            f"Kapitel nicht in kapitel_config.json gefunden: {basis!r} "
+            f"(aus Datei: {kapitelname_original!r})"
+        )
+
+    return str(kapitel_reihenfolge[basis])

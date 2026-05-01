@@ -1,162 +1,99 @@
 Du analysierst einen literarischen Textabschnitt für ein Hörbuch.
 
-Du erhältst:
+WICHTIG:
+Du darfst NICHT alle passenden Wörter sammeln.
+Du darfst NICHT mehrere benachbarte WortNr markieren.
+Du sollst pro Kategorie nur einzelne Ankerwörter auswählen.
 
-1. Einen Abschnitt als Fließtext
-2. Eine Tokenliste mit WortNr-Zuordnung
+ENTSCHEIDUNGSMETHODE:
+Gehe Kategorie für Kategorie vor.
+Wähle zuerst gedanklich Kandidaten.
+Dann behalte nur die besten 1–3 Ankerwörter pro Kategorie.
+Gib nur diese finalen Ankerwörter aus.
 
-Deine Aufgabe ist es, gleichzeitig folgende Annotationen zu erkennen:
+VERBOTEN:
+- fortlaufende Listen wie [5,6,7,8]
+- Wortgruppen vollständig zu markieren
+- alle Wörter eines Satzes zu markieren
+- mehr als eine WortNr aus derselben direkten Wortgruppe
+- mehr als zwei direkt benachbarte WortNr im gesamten JSON
 
-1. Pausen
-2. Gedankenübergänge
-3. Betonungen
-4. Spannungsphasen
+Wenn mehrere benachbarte Wörter passend wirken, wähle nur das wichtigste Wort.
 
----
+BEISPIEL FALSCH:
+"hauptbetonung": [5,6,7,8,9,10]
 
-WICHTIG: AUSGABEFORMAT
+BEISPIEL RICHTIG:
+"hauptbetonung": [7]
 
-Gib ausschließlich ein gültiges JSON-Objekt zurück:
+AUSGABEFORMAT:
+Gib ausschließlich dieses JSON zurück:
 
 {
-"pause": {
-"atempause": [],
-"staupause": []
-},
-"gedanken": {
-"gedanken_weiter": [],
-"gedanken_ende": [],
-"pause_gedanken": []
-},
-"betonung": {
-"hauptbetonung": [],
-"nebenbetonung": []
-},
-"spannung": {
-"Starten": [],
-"Halten": [],
-"Stoppen": []
+  "pause": {
+    "atempause": [],
+    "staupause": []
+  },
+  "gedanken": {
+    "gedanken_weiter": [],
+    "gedanken_ende": [],
+    "pause_gedanken": []
+  },
+  "betonung": {
+    "hauptbetonung": [],
+    "nebenbetonung": []
+  },
+  "spannung": {
+    "Starten": [],
+    "Halten": [],
+    "Stoppen": []
+  }
 }
-}
 
----
+RICHTWERTE:
+Bei kurzen Abschnitten:
+- 0–2 Pausen
+- 0–2 Betonungen
+- 0–1 Gedankenannotation
+- Spannung nur wenn deutlich vorhanden
 
-ALLGEMEINE REGELN
+Bei längeren Abschnitten:
+- maximal ungefähr 1 Annotation pro Satz
+- Betonung: maximal 1 Hauptbetonung pro Satz
+- Keine Kategorie muss gefüllt werden
 
-* Verwende ausschließlich WortNr aus der Tokenliste
-* Erfinde keine WortNr
-* Verwende keine fortlaufenden Zahlenreihen
-* Gib keine Erklärungen aus
-* Lieber zu wenige als zu viele Annotationen
-* Wenn unsicher: KEINE Annotation setzen
+AUSWAHLREGELN:
+pause.atempause:
+Nur an sinnvollen Atemstellen, meist nach einem Sinnabschnitt.
 
----
+pause.staupause:
+Nur bei deutlichem Bruch, Satzende mit Wirkung oder Verzögerung.
 
-WICHTIG: SPARSAMKEIT
+gedanken.gedanken_weiter:
+Nur bei klarer gedanklicher Fortführung.
 
-* Annotationen sind seltene Markierungen, nicht Standard
-* Setze NICHT automatisch bei jedem Satzzeichen eine Annotation
-* Viele Abschnitte haben sehr wenige oder gar keine Annotationen
-* Leere Listen sind korrekt und erwünscht
+gedanken.gedanken_ende:
+Nur bei deutlichem Abschluss eines Gedankens.
 
----
+gedanken.pause_gedanken:
+Nur bei starkem innerem Bruch.
 
-REGELN: PAUSEN
+betonung.hauptbetonung:
+Nur das wichtigste Schlüsselwort eines Satzes.
 
-* atempause:
+betonung.nebenbetonung:
+Nur wenige unterstützende Schlüsselwörter.
 
-  * nur bei echten Sprechpausen
-  * meist bei längeren Sätzen
-  * bevorzugt bei Kommas mit Sinnabschnitt
+spannung.Starten:
+Nur Beginn einer klaren Spannung.
 
-* staupause:
+spannung.Halten:
+Nur Fortführung einer klaren Spannung.
 
-  * nur bei starkem Bruch oder Satzende mit Wirkung
-  * nicht bei jedem Punkt
+spannung.Stoppen:
+Nur Auflösung einer klaren Spannung.
 
-* Setze Pausen nur wenn wirklich notwendig
-
-Maximal:
-
-* pro Satz: höchstens 1 atempause
-* pro Abschnitt: höchstens 3 atempause
-* pro Abschnitt: höchstens 2 staupause
-
----
-
-REGELN: GEDANKEN
-
-* gedanken_weiter:
-
-  * nur bei klarer Fortführung
-
-* gedanken_ende:
-
-  * nur bei tatsächlichem Abschluss
-
-* pause_gedanken:
-
-  * nur bei deutlichem Bruch (z. B. „–“, „aber“, „…“)
-
-Maximal:
-
-* pro Abschnitt: höchstens 3 gedanken_weiter
-* pro Abschnitt: höchstens 3 gedanken_ende
-* pro Abschnitt: höchstens 2 pause_gedanken
-
----
-
-REGELN: BETONUNG
-
-* hauptbetonung:
-
-  * nur zentrale Wörter (Verb oder Schlüsselbegriff)
-
-* nebenbetonung:
-
-  * unterstützende wichtige Wörter
-
-* Keine langen Listen
-
-Maximal:
-
-* pro Abschnitt: höchstens 4 hauptbetonung
-* pro Abschnitt: höchstens 4 nebenbetonung
-
----
-
-REGELN: SPANNUNG
-
-* Starten:
-
-  * Beginn einer spannenden Situation
-
-* Halten:
-
-  * Spannung wird fortgeführt
-
-* Stoppen:
-
-  * Auflösung
-
-* Wenn keine Spannung vorhanden: alle Listen leer lassen
-
-Maximal:
-
-* pro Abschnitt: höchstens 2 Starten
-* pro Abschnitt: höchstens 2 Halten
-* pro Abschnitt: höchstens 2 Stoppen
-
----
-
-WICHTIGER ABSCHLUSS
-
-* Keine zusätzlichen Felder erzeugen
-* Keine Kommentare schreiben
-* Nur das JSON zurückgeben
-* Keine Formatabweichungen
-
----
-
-Wenn keine Annotationen für einen Typ sinnvoll sind, gib  ein leeres Array im json zurück.
-
+LETZTE PRÜFUNG VOR DER AUSGABE:
+Wenn eine Liste mehrere direkt aufeinanderfolgende Zahlen enthält, entferne alle bis auf die wichtigste.
+Wenn du unsicher bist, gib weniger aus.
+Antworte ausschließlich mit JSON.

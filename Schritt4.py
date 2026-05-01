@@ -28,31 +28,40 @@ def speichere_ki_json_antwort(ki_ordner, aufgaben_name, laufende_nr, json_datei,
 
     aufgaben_name_lower = str(aufgaben_name).lower()
     aufgabe_upper = str(aufgaben_name).upper()
-    orig_json_name = Path(json_datei).stem
+
+    kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
 
     fallback_typ = "object" if aufgaben_name_lower == "kombination" else "array"
-
     daten = parse_ki_json_robust(antwort, fallback_typ=fallback_typ)
 
     if daten is None:
-        ausgabe_datei = ki_ordner / f"KI_{aufgabe_upper}_FEHLER_{laufende_nr:03}_{orig_json_name}.json"
+        ausgabe_datei = ki_ordner / (
+            f"KI_{aufgabe_upper}_FEHLER_"
+            f"{kapitel_id}_{abschnitt_id}_{laufende_nr:03}.json"
+        )
         daten = {
             "fehler": "KI-Antwort konnte nicht als JSON repariert werden.",
-            "raw": antwort
+            "raw": antwort,
+            "quelle": Path(json_datei).name,
+            "KapitelID": kapitel_id,
+            "AbschnittID": abschnitt_id,
+            "TeilNr": laufende_nr,
         }
     else:
-        ausgabe_datei = ki_ordner / f"KI_{aufgabe_upper}_{laufende_nr:03}_{orig_json_name}.json"
+        ausgabe_datei = ki_ordner / (
+            f"KI_{aufgabe_upper}_"
+            f"{kapitel_id}_{abschnitt_id}_{laufende_nr:03}.json"
+        )
 
     with open(ausgabe_datei, "w", encoding="utf-8") as f:
         json.dump(daten, f, ensure_ascii=False, indent=2)
 
     print(f"[INFO] KI-Datei gespeichert: {ausgabe_datei}")
 
-
 def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich="", max_new_tokens=128):
     try:
         system_text = ""
-        user_text = ""
+        user_text = "Wichtig für diese Tokenliste: Wähle nur einzelne Anker-WortNr.Keine Zahlenreihen. Keine benachbarten WortNr. Wenn mehrere Wörter nebeneinander passen, nimm nur eins."
 
         for msg in messages:
             if msg["role"] == "system":
@@ -62,7 +71,7 @@ def KI_Analyse_Chat(client, messages, dateiname="", wortnr_bereich="", max_new_t
 
         prompt = client.build_prompt(system_text, user_text)
 
-        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient STREAM …")
+        print("[INFO] Anfrage an lokales Modell über HuggingFaceClient steam SYSTEM:" + system_text + "USER:" + user_text)
 
         def on_token(piece):
             print(piece, end="", flush=True)
@@ -415,14 +424,27 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
             # ------------------------------------------------
             # Prompt für Abschnitt bauen
             # ------------------------------------------------
-            kompakt = ist_kombi_aufgabe
+            if ist_kombi_aufgabe:
+                abschnitt_prompt = (
+                    "ABSCHNITT ALS FLIESSTEXT:\n"
+                    f"{abschnitt.get('text', '')}\n\n"
+                    "TOKENLISTE MIT WORTNR:\n"
+                    + "\n".join(
+                        f"{t.get('WortNr')}: {t.get('tokenInklZahlwoerter') or t.get('token') or ''}"
+                        for t in tokens
+                        if t.get("tokenInklZahlwoerter") or t.get("token")
+                    )
+                )
+            else:
+                abschnitt_prompt = baue_ki_prompt(
+                    abschnitt_text=abschnitt["text"],
+                    tokens=tokens,
+                    aufgabe_prompt=None,
+                    kompakt=False
+                )
 
-            abschnitt_prompt = baue_ki_prompt(
-                abschnitt_text=abschnitt["text"],
-                tokens=tokens,
-                aufgabe_prompt=None,
-                kompakt=kompakt
-            )
+            print("[DEBUG][KOMBINATION] Abschnitt-Prompt:")
+            print(abschnitt_prompt[:3000])
 
             print(
                 f"[INFO] Abschnitt {abschnitt_nr}/{len(abschnitte)} "
@@ -482,7 +504,8 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                 antwort, warnung = validiere_kombination_antwort(
                     antwort,
                     start_wortnr=start_wortnr,
-                    end_wortnr=end_wortnr
+                    end_wortnr=end_wortnr,
+                    tokens=tokens
                 )
 
                 if warnung:
@@ -590,7 +613,8 @@ def parse_ki_json_robust(text, fallback_typ="array"):
 def validiere_kombination_antwort(
     antwort,
     start_wortnr,
-    end_wortnr
+    end_wortnr,
+    tokens=None
 ):
     daten = parse_ki_json_robust(antwort, fallback_typ="object")
 
@@ -599,27 +623,37 @@ def validiere_kombination_antwort(
     if not isinstance(daten, dict):
         return json.dumps(ziel, ensure_ascii=False, indent=2), "Antwort ist kein JSON-Objekt"
 
-    # 🔥 Limits pro Kategorie
-    limits = {
-        ("pause", "atempause"): 3,
-        ("pause", "staupause"): 2,
 
-        ("gedanken", "gedanken_weiter"): 3,
-        ("gedanken", "gedanken_ende"): 3,
-        ("gedanken", "pause_gedanken"): 2,
-
-        ("betonung", "hauptbetonung"): 4,
-        ("betonung", "nebenbetonung"): 4,
-
-        ("spannung", "Starten"): 2,
-        ("spannung", "Halten"): 2,
-        ("spannung", "Stoppen"): 2,
-    }
-
-    max_gesamt = 12
     gesamt = 0
     warnungen = []
 
+    satzanzahl = schaetze_satzanzahl(tokens or [])
+
+    if satzanzahl <= 2:
+        max_gesamt = 8
+    elif satzanzahl <= 5:
+        max_gesamt = 16
+    elif satzanzahl <= 10:
+        max_gesamt = 28
+    else:
+        max_gesamt = 40
+
+    limits = {
+        ("pause", "atempause"): max(2, satzanzahl),
+        ("pause", "staupause"): max(1, min(satzanzahl, satzanzahl // 2 + 1)),
+
+        ("gedanken", "gedanken_weiter"): max(1, satzanzahl // 2),
+        ("gedanken", "gedanken_ende"): max(1, satzanzahl // 2),
+        ("gedanken", "pause_gedanken"): max(1, satzanzahl // 3),
+
+        ("betonung", "hauptbetonung"): max(2, satzanzahl),
+        ("betonung", "nebenbetonung"): max(2, satzanzahl),
+
+        ("spannung", "Starten"): 1,
+        ("spannung", "Halten"): min(2, max(1, satzanzahl // 3)),
+        ("spannung", "Stoppen"): 1,
+    }
+        
     for hauptkey, subdict in ziel.items():
         teil = daten.get(hauptkey, {})
 
@@ -669,6 +703,11 @@ def validiere_kombination_antwort(
     for hauptkey in ziel:
         for subkey in ziel[hauptkey]:
             ziel[hauptkey][subkey] = sorted(ziel[hauptkey][subkey])
+
+    print("[DEBUG][KOMBINATION] Roh geparst:")
+    print(json.dumps(daten, ensure_ascii=False, indent=2))
+    print(f"[DEBUG][KOMBINATION] Bereich: {start_wortnr}-{end_wortnr}")
+
 
     return json.dumps(ziel, ensure_ascii=False, indent=2), "; ".join(warnungen)
 
@@ -822,10 +861,7 @@ def splitte_ig_klassen_json(eingabe_datei, ki_ordner):
             )
 
             if ist_mehrfach_klasse(klasse):
-                sonder_set.add({
-                    "wort": wort,
-                    "klasse": klasse
-                })
+               sonder_set.add((wort, klasse))
             elif klasse == "ik":
                 ik_set.add(wort)
             elif klasse == "ich":
@@ -839,10 +875,10 @@ def splitte_ig_klassen_json(eingabe_datei, ki_ordner):
         "KI_IG_Gesamt_ICH.json": sorted(ich_set),
         "KI_IG_Gesamt_IK.json": sorted(ik_set),
         "KI_IG_Gesamt_KEIN.json": sorted(kein_set),
-        "KI_IG_Gesamt_SONDERFAELLE.json": sorted(
-            sonder_set,
-            key=lambda x: x["wort"]
-        ),
+       "KI_IG_Gesamt_SONDERFAELLE.json": [
+        {"wort": wort, "klasse": klasse}
+        for wort, klasse in sorted(sonder_set, key=lambda x: x[0])
+    ],
     }
 
     for dateiname, daten in ausgaben.items():
@@ -852,3 +888,45 @@ def splitte_ig_klassen_json(eingabe_datei, ki_ordner):
             json.dump(daten, f, ensure_ascii=False, indent=2)
 
         print(f"[INFO] IG-Datei gespeichert: {pfad}")
+
+def ermittle_kapitel_abschnitt_id(json_datei):
+    json_datei = Path(json_datei)
+
+    with open(json_datei, "r", encoding="utf-8") as f:
+        daten = json.load(f)
+
+    kapitelnummer = None
+
+    if isinstance(daten, list):
+        for eintrag in daten:
+            if isinstance(eintrag, dict) and eintrag.get("KapitelNummer") not in (None, ""):
+                kapitelnummer = eintrag.get("KapitelNummer")
+                break
+
+    if kapitelnummer is None:
+        raise ValueError(f"Keine KapitelNummer in Datei gefunden: {json_datei.name}")
+
+    kapitel_id = f"{int(kapitelnummer):03d}"
+
+    # Abschnitt aus altem Quelldateinamen lesen:
+    # z.B. "2. Aufbau der Welt (Kapitel IV–VI)_001_annotierungen.json"
+    match = re.search(r"_(\d+)_annotierungen\.json$", json_datei.name)
+
+    if match:
+        abschnitt_id = f"{int(match.group(1)):03d}"
+    else:
+        # Fallback für evtl. andere Namen
+        abschnitt_id = "001"
+
+    return kapitel_id, abschnitt_id
+
+def schaetze_satzanzahl(tokens):
+    count = 0
+
+    for t in tokens:
+        annotation = str(t.get("annotation", "") or "")
+
+        if "satzzeichenOhneSpaceDavor" in annotation:
+            count += 1
+
+    return max(1, count)

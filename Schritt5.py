@@ -2,619 +2,486 @@ import json
 import re
 import traceback
 from pathlib import Path
-from collections import defaultdict
 
 
-# ------------------------------------------------------------
-# Konfiguration
-# ------------------------------------------------------------
+SATZENDE_TOKENS = {".", "!", "?", "…"}
+KOMMA_TOKENS = {","}
+GEDANKEN_PAUSE_TOKENS = {"–", "—", "...", "…"}
+KONNEKTOREN = {"und", "aber", "doch", "denn"}
+SPANNUNG_STARTER = {"plötzlich", "dann"}
 
-ERLAUBTE_FELDER_PRO_PASS = {
-    "prosodie": {"betonung", "pause", "gedanken", "spannung"},
-    "sprecher": {"person"},
-    "person": {"person"},
-    "ig": {"ig"},
+STOPWOERTER = {
+    "der", "die", "das", "den", "dem", "des",
+    "ein", "eine", "einer", "einem", "einen", "eines",
+    "und", "oder", "aber", "doch", "denn",
+    "ich", "du", "er", "sie", "es", "wir", "ihr",
+    "mich", "dich", "sich", "uns", "euch",
+    "mein", "dein", "sein", "ihr", "unser", "euer",
+    "ist", "war", "bin", "bist", "sind", "seid", "waren",
+    "hat", "habe", "hast", "haben", "hatte", "hatten",
+    "zu", "in", "im", "am", "an", "auf", "mit", "von", "für",
+    "nicht", "nur", "noch", "schon", "so", "da", "dort",
 }
 
-NIEMALS_KI_UEBERSCHREIBEN = {
-    "token",
-    "tokenInklZahlwoerter",
-    "annotation",
-    "position",
-    "kombination",
-}
 
-
-# ------------------------------------------------------------
-# Hilfsfunktionen
-# ------------------------------------------------------------
-
-def merge_ig_wortlisten(original_daten, ki_ordner):
-    ki_ordner = Path(ki_ordner)
-
-    mapping = {
-        "KI_IG_Gesamt_ICH.json": "ich",
-        "KI_IG_Gesamt_IK.json": "ik",
-        "KI_IG_Gesamt_KEIN.json": "",
-        "KI_IG_Gesamt_SONDERFAELLE.json": "sonderfall",
+def leeres_kombi_json():
+    return {
+        "pause": {
+            "atempause": [],
+            "staupause": []
+        },
+        "gedanken": {
+            "gedanken_weiter": [],
+            "gedanken_ende": [],
+            "pause_gedanken": []
+        },
+        "betonung": {
+            "hauptbetonung": [],
+            "nebenbetonung": []
+        },
+        "spannung": {
+            "Starten": [],
+            "Halten": [],
+            "Stoppen": []
+        }
     }
 
-    wort_zu_ig = {}
 
-    for dateiname, klasse in mapping.items():
-        pfad = ki_ordner / dateiname
+def token_text(eintrag):
+    return str(
+        eintrag.get("tokenInklZahlwoerter")
+        or eintrag.get("token")
+        or ""
+    ).strip()
 
-        if not pfad.exists():
-            continue
 
-        try:
-            daten = lade_json_robust(pfad)
-        except Exception as e:
-            print(f"[WARNUNG] IG-Datei konnte nicht gelesen werden: {pfad.name} | {e}")
-            continue
+def token_norm(eintrag):
+    return token_text(eintrag).lower().strip()
 
-        if not isinstance(daten, list):
-            print(f"[WARNUNG] IG-Datei ist keine Liste: {pfad.name}")
-            continue
 
-        for eintrag in daten:
-            if isinstance(eintrag, str):
-                wort = eintrag.split("\t")[0].strip().lower()
-            else:
-                continue
-
-            if wort:
-                wort_zu_ig[wort] = klasse
-
-    geschrieben = 0
-
-    for eintrag in original_daten:
-        token = (
-            eintrag.get("tokenInklZahlwoerter")
-            or eintrag.get("token")
-            or ""
-        ).strip().lower()
-
-        if not token:
-            continue
-
-        clean_token = re.sub(r"[^\wäöüÄÖÜß]", "", token).strip().lower()
-
-        if clean_token in wort_zu_ig:
-            eintrag["ig"] = wort_zu_ig[clean_token]
-            eintrag["ig_source"] = "ki_ig"
-            geschrieben += 1
-
-    return original_daten, {"geschrieben": geschrieben}
-
-def parse_bereich(wert):
-    if wert in (None, ""):
-        return []
-
-    wert = str(wert).strip()
-
-    if ":" in wert:
-        try:
-            start, ende = map(int, wert.split(":", 1))
-            if start > ende:
-                start, ende = ende, start
-            return list(range(start, ende + 1))
-        except ValueError:
-            return []
-
+def wortnr(eintrag):
     try:
-        return [int(wert)]
-    except ValueError:
-        return []
-
-
-def lade_json_robust(dateipfad):
-    text = Path(dateipfad).read_text(encoding="utf-8").strip()
-
-    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
-    text = re.sub(r"```$", "", text).strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Erstes JSON-Objekt extrahieren
-    start = text.find("{")
-    if start == -1:
-        raise ValueError("Kein JSON-Objekt gefunden.")
-
-    tiefe = 0
-    in_string = False
-    escape = False
-
-    for i in range(start, len(text)):
-        ch = text[i]
-
-        if escape:
-            escape = False
-            continue
-
-        if ch == "\\":
-            escape = True
-            continue
-
-        if ch == '"':
-            in_string = not in_string
-            continue
-
-        if in_string:
-            continue
-
-        if ch == "{":
-            tiefe += 1
-        elif ch == "}":
-            tiefe -= 1
-            if tiefe == 0:
-                return json.loads(text[start:i + 1])
-
-    raise ValueError("Kein vollständiges JSON-Objekt gefunden.")
-
-
-def key_fuer_wort(eintrag):
-    try:
-        return str(eintrag["KapitelNummer"]), int(eintrag["WortNr"])
+        nr = eintrag.get("WortNr")
+        if nr is None or nr == "":
+            return None
+        return int(nr)
     except Exception:
         return None
 
 
+def ist_satzzeichen_ohne_space_davor(eintrag):
+    annotation = str(eintrag.get("annotation", "") or "")
+    return "satzzeichenOhneSpaceDavor" in annotation
 
 
-# ------------------------------------------------------------
-# KI-Output normalisieren
-# ------------------------------------------------------------
-
-def normalisiere_ki_output(daten, pass_typ, default_kapitelnummer=None):
-    """
-    Gibt eine flache Update-Liste zurück:
-
-    [
-      {
-        "KapitelNummer": "1",
-        "WortNr": 874,
-        "feld": "betonung",
-        "wert": "hauptbetonung"
-      }
-    ]
-    """
-
-    pass_typ = str(pass_typ).lower().strip()
-    erlaubte_felder = ERLAUBTE_FELDER_PRO_PASS.get(pass_typ)
-
-    if not erlaubte_felder:
-        raise ValueError(f"Unbekannter KI-Pass: {pass_typ}")
-
-    updates = []
-    warnungen = []
-
-    # --------------------------------------------------------
-    # Format:
-    # {
-    #   "pause": {"atempause": [1, 2]},
-    #   "betonung": {"hauptbetonung": [3]}
-    # }
-    # --------------------------------------------------------
-    if isinstance(daten, dict):
-        for feld, kategorien in daten.items():
-            feld = str(feld).strip()
-
-            if feld not in erlaubte_felder:
-                warnungen.append(f"Ungültiges Feld für Pass '{pass_typ}': {feld}")
-                continue
-
-            if not isinstance(kategorien, dict):
-                warnungen.append(f"Feld '{feld}' enthält kein Kategorie-Dict.")
-                continue
-
-            for wert, wortnrs in kategorien.items():
-                if not isinstance(wortnrs, list):
-                    warnungen.append(f"'{feld}.{wert}' ist keine Liste.")
-                    continue
-
-                for wortnr in wortnrs:
-                    try:
-                        wortnr = int(wortnr)
-                    except Exception:
-                        warnungen.append(f"Ungültige WortNr bei '{feld}.{wert}': {wortnr}")
-                        continue
-
-                    updates.append({
-                        "KapitelNummer": str(default_kapitelnummer) if default_kapitelnummer is not None else None,
-                        "WortNr": wortnr,
-                        "feld": feld,
-                        "wert": str(wert),
-                    })
-
-        return updates, warnungen
-
-    # --------------------------------------------------------
-    # Sprecherformat:
-    # [
-    #   {"Sprecher": "Anna", "RedeStart": 5, "RedeEnde": 8}
-    # ]
-    # --------------------------------------------------------
-    if pass_typ in {"sprecher", "person"} and isinstance(daten, list):
-        for eintrag in daten:
-            if not isinstance(eintrag, dict):
-                warnungen.append("Sprecher-Eintrag ist kein Dict.")
-                continue
-
-            sprecher = (
-                eintrag.get("Sprecher")
-                or eintrag.get("sprecher")
-                or eintrag.get("Person")
-                or eintrag.get("person")
-            )
-
-            start = eintrag.get("RedeStart")
-            ende = eintrag.get("RedeEnde")
-
-            if not sprecher or start is None or ende is None:
-                warnungen.append(f"Unvollständiger Sprecher-Eintrag: {eintrag}")
-                continue
-
-            try:
-                start = int(start)
-                ende = int(ende)
-            except Exception:
-                warnungen.append(f"Ungültiger Sprecher-Bereich: {eintrag}")
-                continue
-
-            if start > ende:
-                start, ende = ende, start
-
-            kapitelnummer = eintrag.get("KapitelNummer", default_kapitelnummer)
-
-            for wortnr in range(start, ende + 1):
-                updates.append({
-                    "KapitelNummer": str(kapitelnummer) if kapitelnummer is not None else None,
-                    "WortNr": wortnr,
-                    "feld": "person",
-                    "wert": str(sprecher),
-                })
-
-        return updates, warnungen
-
-    # --------------------------------------------------------
-    # Altes Listenformat:
-    # [
-    #   {"KapitelNummer": "1", "WortNr": 12, "ig": "ich"}
-    # ]
-    # --------------------------------------------------------
-    if isinstance(daten, list):
-        for eintrag in daten:
-            if not isinstance(eintrag, dict):
-                warnungen.append("Listen-Eintrag ist kein Dict.")
-                continue
-
-            wortnrs = parse_bereich(eintrag.get("WortNr"))
-            if not wortnrs:
-                warnungen.append(f"Fehlende/ungültige WortNr: {eintrag}")
-                continue
-
-            kapitelnummer = eintrag.get("KapitelNummer", default_kapitelnummer)
-
-            for feld, wert in eintrag.items():
-                if feld in {"KapitelNummer", "WortNr"}:
-                    continue
-
-                if feld not in erlaubte_felder:
-                    warnungen.append(f"Ungültiges Feld für Pass '{pass_typ}': {feld}")
-                    continue
-
-                if wert in ("", None, []):
-                    continue
-
-                for wortnr in wortnrs:
-                    updates.append({
-                        "KapitelNummer": str(kapitelnummer) if kapitelnummer is not None else None,
-                        "WortNr": wortnr,
-                        "feld": feld,
-                        "wert": wert,
-                    })
-
-        return updates, warnungen
-
-    raise ValueError(f"Nicht unterstütztes KI-Format für Pass '{pass_typ}'.")
+def ist_satzende(eintrag):
+    return (
+        ist_satzzeichen_ohne_space_davor(eintrag)
+        and token_text(eintrag) in SATZENDE_TOKENS
+    )
 
 
-# ------------------------------------------------------------
-# Robuster feldbasierter Merge
-# ------------------------------------------------------------
+def ist_wort(eintrag):
+    tok = token_text(eintrag)
+    return bool(re.fullmatch(r"[A-Za-zÄÖÜäöüß]+", tok))
 
-def merge_ki_updates(
-    original_daten,
-    ki_updates,
-    pass_typ,
-    default_kapitelnummer=None,
-    schuetze_manuelle_aenderungen=True,
-    source_suffix="_source",
-    ki_source_name="ki",
-):
-    """
-    original_daten:
-        Liste deiner Wortobjekte.
 
-    ki_updates:
-        Bereits normalisierte Updates ODER roher KI-Output.
+def ist_stopwort(eintrag):
+    return token_norm(eintrag) in STOPWOERTER
 
-    pass_typ:
-        "prosodie", "sprecher", "person" oder "ig".
 
-    schuetze_manuelle_aenderungen:
-        Wenn True, werden Felder mit z.B. pause_source == "manual"
-        nicht durch KI überschrieben.
-    """
+def ist_inhaltswort(eintrag):
+    return ist_wort(eintrag) and not ist_stopwort(eintrag)
 
-    pass_typ = str(pass_typ).lower().strip()
-    erlaubte_felder = ERLAUBTE_FELDER_PRO_PASS.get(pass_typ)
 
-    if not erlaubte_felder:
-        raise ValueError(f"Unbekannter KI-Pass: {pass_typ}")
+def splitte_saetze(tokens):
+    saetze = []
+    aktueller_satz = []
 
-    report = {
-        "geschrieben": 0,
-        "uebersprungen_manual": 0,
-        "unbekannte_wortnr": [],
-        "doppelte_updates": [],
-        "fehlende_felder": [],
-        "ungueltige_felder": [],
-        "doppelte_original_keys": [],
-        "warnungen": [],
-    }
-
-    # Original indexieren
-    index = {}
-
-    for eintrag in original_daten:
+    for eintrag in tokens:
         if not isinstance(eintrag, dict):
             continue
 
-        key = key_fuer_wort(eintrag)
+        aktueller_satz.append(eintrag)
 
-        if key is None:
-            report["fehlende_felder"].append(f"Original ohne gültige KapitelNummer/WortNr: {eintrag}")
+        if ist_satzende(eintrag):
+            saetze.append(aktueller_satz)
+            aktueller_satz = []
+
+    if aktueller_satz:
+        saetze.append(aktueller_satz)
+
+    return saetze
+
+
+def gueltige_wortnr_set(tokens):
+    return {
+        wortnr(t)
+        for t in tokens
+        if isinstance(t, dict) and wortnr(t) is not None
+    }
+
+
+def erste_inhaltswort_nr(satz):
+    for t in satz:
+        if ist_inhaltswort(t):
+            return wortnr(t)
+    return None
+
+
+def letzte_wortnr(satz):
+    for t in reversed(satz):
+        nr = wortnr(t)
+        if nr is not None:
+            return nr
+    return None
+
+
+def wort_tokens(satz):
+    return [
+        t for t in satz
+        if ist_wort(t) and wortnr(t) is not None
+    ]
+
+
+def inhaltswort_tokens(satz):
+    return [
+        t for t in satz
+        if ist_inhaltswort(t) and wortnr(t) is not None
+    ]
+
+
+def satz_wortanzahl(satz):
+    return len(wort_tokens(satz))
+
+
+def erstes_wort_norm(satz):
+    for t in satz:
+        if ist_wort(t):
+            return token_norm(t)
+    return ""
+
+
+def satz_beginnt_mit_auf_einmal(satz):
+    woerter = [token_norm(t) for t in satz if ist_wort(t)]
+    return len(woerter) >= 2 and woerter[0] == "auf" and woerter[1] == "einmal"
+
+
+def finde_vorherige_wortnr(tokens, index):
+    for i in range(index - 1, -1, -1):
+        if not isinstance(tokens[i], dict):
             continue
 
-        if key in index:
-            report["doppelte_original_keys"].append(key)
+        if ist_wort(tokens[i]):
+            nr = wortnr(tokens[i])
+            if nr is not None:
+                return nr
+
+    return None
+
+
+def fuege_eindeutig(ziel_liste, nr, gueltige_nr):
+    if nr is None:
+        return
+
+    try:
+        nr = int(nr)
+    except Exception:
+        return
+
+    if nr not in gueltige_nr:
+        return
+
+    if nr not in ziel_liste:
+        ziel_liste.append(nr)
+
+
+def regelbasierte_kombination(tokens):
+    result = leeres_kombi_json()
+
+    if not isinstance(tokens, list) or not tokens:
+        return result
+
+    gueltige_nr = gueltige_wortnr_set(tokens)
+    saetze = splitte_saetze(tokens)
+
+    spannung_aktiv = False
+
+    for satz_index, satz in enumerate(saetze, start=1):
+        if not satz:
             continue
 
-        index[key] = eintrag
+        wortanzahl = satz_wortanzahl(satz)
+        erstes_wort = erstes_wort_norm(satz)
+        endet_mit_satzende = any(ist_satzende(t) for t in satz)
 
-    # Falls roher KI-Output übergeben wurde: normalisieren
-    if not (
-        isinstance(ki_updates, list)
-        and all(isinstance(x, dict) and {"WortNr", "feld", "wert"} <= set(x.keys()) for x in ki_updates)
-    ):
-        ki_updates, warnungen = normalisiere_ki_output(
-            ki_updates,
-            pass_typ=pass_typ,
-            default_kapitelnummer=default_kapitelnummer,
-        )
-        report["warnungen"].extend(warnungen)
-
-    # Doppelte Updates erkennen
-    gesehen = {}
-
-    for upd in ki_updates:
-        feld = upd.get("feld")
-        wert = upd.get("wert")
-        wortnr = upd.get("WortNr")
-        kapitelnummer = upd.get("KapitelNummer", default_kapitelnummer)
-
-        if feld not in erlaubte_felder:
-            report["ungueltige_felder"].append(upd)
-            continue
-
-        if feld in NIEMALS_KI_UEBERSCHREIBEN:
-            report["ungueltige_felder"].append(upd)
-            continue
-
-        if wortnr is None:
-            report["fehlende_felder"].append(upd)
-            continue
-
-        try:
-            wortnr = int(wortnr)
-        except Exception:
-            report["fehlende_felder"].append(upd)
-            continue
-
-        if kapitelnummer is None:
-            # Fallback: Wenn es nur ein Kapitel im Original gibt
-            kapitel_set = {k[0] for k in index.keys()}
-            if len(kapitel_set) == 1:
-                kapitelnummer = next(iter(kapitel_set))
-            else:
-                report["fehlende_felder"].append(f"KapitelNummer fehlt bei Update: {upd}")
-                continue
-
-        key = (str(kapitelnummer), wortnr)
-        update_key = (str(kapitelnummer), wortnr, feld)
-
-        if update_key in gesehen:
-            alter_wert = gesehen[update_key]
-
-            if alter_wert != wert:
-                report["doppelte_updates"].append({
-                    "KapitelNummer": str(kapitelnummer),
-                    "WortNr": wortnr,
-                    "feld": feld,
-                    "werte": [alter_wert, wert],
-                })
-
-            # Bei Duplikaten gewinnt hier der letzte Wert.
-            # Falls du lieber den ersten behalten willst: continue
-        gesehen[update_key] = wert
-
-        if key not in index:
-            report["unbekannte_wortnr"].append({
-                "KapitelNummer": str(kapitelnummer),
-                "WortNr": wortnr,
-                "feld": feld,
-                "wert": wert,
-            })
-            continue
-
-        ziel = index[key]
-
-        source_feld = f"{feld}{source_suffix}"
-
-        if (
-            schuetze_manuelle_aenderungen
-            and ziel.get(source_feld) == "manual"
-            and ziel.get(feld) not in ("", None, [])
-        ):
-            report["uebersprungen_manual"] += 1
-            continue
-
-        ziel[feld] = wert
-        ziel[source_feld] = ki_source_name
-        report["geschrieben"] += 1
-
-    return original_daten, report
-
-
-# ------------------------------------------------------------
-# Beispielaufrufe
-# ------------------------------------------------------------
-
-def merge_prosodie(original_daten, prosodie_json, kapitelnummer=None):
-    return merge_ki_updates(
-        original_daten=original_daten,
-        ki_updates=prosodie_json,
-        pass_typ="prosodie",
-        default_kapitelnummer=kapitelnummer,
-        schuetze_manuelle_aenderungen=True,
-        ki_source_name="ki_prosodie",
-    )
-
-
-def merge_sprecher(original_daten, sprecher_json, kapitelnummer=None):
-    return merge_ki_updates(
-        original_daten=original_daten,
-        ki_updates=sprecher_json,
-        pass_typ="sprecher",
-        default_kapitelnummer=kapitelnummer,
-        schuetze_manuelle_aenderungen=True,
-        ki_source_name="ki_sprecher",
-    )
-
-
-def merge_ig(original_daten, ig_json, kapitelnummer=None):
-    return merge_ki_updates(
-        original_daten=original_daten,
-        ki_updates=ig_json,
-        pass_typ="ig",
-        default_kapitelnummer=kapitelnummer,
-        schuetze_manuelle_aenderungen=True,
-        ki_source_name="ki_ig",
-    )
-
-
-
-def Merge_annotationen(
-    quellordner_kapitel,
-    quellordner_annotationen,
-    ziel_ordner,
-    ausgewaehlte_kapitel=None,
-    progress_callback=None,
-):
-    quellordner_kapitel = Path(quellordner_kapitel)
-    quellordner_annotationen = Path(quellordner_annotationen)
-    ziel_ordner = Path(ziel_ordner)
-    ziel_ordner.mkdir(parents=True, exist_ok=True)
-
-    dateien = sorted(quellordner_kapitel.glob("*_annotierungen.json"))
-
-    if ausgewaehlte_kapitel:
-        ausgewaehlte = {str(k) for k in ausgewaehlte_kapitel}
-        dateien = [
-            p for p in dateien
-            if any(k in p.name for k in ausgewaehlte)
+        # ----------------------------------------------------
+        # PAUSEN
+        # ----------------------------------------------------
+        komma_kandidaten = [
+            t for t in satz
+            if ist_satzzeichen_ohne_space_davor(t)
+            and token_text(t) in KOMMA_TOKENS
+            and wortnr(t) is not None
         ]
 
-    gesamt = len(dateien)
+        if komma_kandidaten:
+            satz_start_nr = erste_inhaltswort_nr(satz) or wortnr(satz[0]) or 0
 
-    for i, pfad in enumerate(dateien, start=1):
-        if progress_callback:
-            progress_callback(round((i - 1) / max(gesamt, 1) * 100, 1))
-
-        print(f"[INFO] Merge Kapiteldatei: {pfad.name}")
-
-        with open(pfad, encoding="utf-8") as f:
-            daten = json.load(f)
-
-        kapitelnummer = daten[0].get("KapitelNummer") if daten else None
-        stem = pfad.stem
-
-        # --------------------------------------------------
-        # 1) PERSON-Einzeldateien
-        # Beispiel:
-        # KI_PERSON_001_TOOL-TEST_001_annotierungen.json
-        # --------------------------------------------------
-        person_dateien = sorted(
-            quellordner_annotationen.glob(f"KI_PERSON_*_{stem}.json")
-        )
-
-        for ki_pfad in person_dateien:
-            try:
-                print(f"[INFO] Merge PERSON: {ki_pfad.name}")
-                ki_json = lade_json_robust(ki_pfad)
-                daten, report = merge_sprecher(daten, ki_json, kapitelnummer)
-                print(f"[INFO] PERSON geschrieben: {report.get('geschrieben', 0)}")
-            except Exception as e:
-                print(f"[FEHLER] PERSON {ki_pfad.name}: {e}")
-                traceback.print_exc()
-                continue
-
-        # --------------------------------------------------
-        # 2) KOMBINATION-Einzeldateien
-        # Beispiel:
-        # KI_KOMBINATION_001_TOOL-TEST_001_annotierungen.json
-        # --------------------------------------------------
-        kombi_dateien = sorted(
-            quellordner_annotationen.glob(f"KI_KOMBINATION_*_{stem}.json")
-        )
-
-        for ki_pfad in kombi_dateien:
-            try:
-                print(f"[INFO] Merge KOMBINATION: {ki_pfad.name}")
-                ki_json = lade_json_robust(ki_pfad)
-                daten, report = merge_prosodie(daten, ki_json, kapitelnummer)
-                print(f"[INFO] KOMBINATION geschrieben: {report.get('geschrieben', 0)}")
-            except Exception as e:
-                print(f"[FEHLER] KOMBINATION {ki_pfad.name}: {e}")
-                traceback.print_exc()
-                continue
-
-        # --------------------------------------------------
-        # 3) IG global nach Wortlisten mergen
-        # --------------------------------------------------
-        try:
-            daten, report = merge_ig_wortlisten(
-                original_daten=daten,
-                ki_ordner=quellordner_annotationen
+            bestes_komma = max(
+                komma_kandidaten,
+                key=lambda t: abs((wortnr(t) or 0) - satz_start_nr)
             )
-            print(f"[INFO] IG geschrieben: {report.get('geschrieben', 0)}")
-        except Exception as e:
-            print(f"[FEHLER] IG-Merge fehlgeschlagen für {pfad.name}: {e}")
-            traceback.print_exc()
 
-        zielpfad = ziel_ordner / pfad.name
+            fuege_eindeutig(
+                result["pause"]["atempause"],
+                wortnr(bestes_komma),
+                gueltige_nr
+            )
 
-        with open(zielpfad, "w", encoding="utf-8") as f:
-            json.dump(daten, f, ensure_ascii=False, indent=2)
+        if endet_mit_satzende and wortanzahl > 6:
+            fuege_eindeutig(
+                result["pause"]["staupause"],
+                letzte_wortnr(satz),
+                gueltige_nr
+            )
 
-        print(f"[✓] Gespeichert: {zielpfad}")
+        # ----------------------------------------------------
+        # GEDANKEN
+        # ----------------------------------------------------
+        if erstes_wort in KONNEKTOREN:
+            fuege_eindeutig(
+                result["gedanken"]["gedanken_weiter"],
+                erste_inhaltswort_nr(satz),
+                gueltige_nr
+            )
 
-        if progress_callback:
-            progress_callback(round(i / max(gesamt, 1) * 100, 1))
+        if endet_mit_satzende and satz_index % 3 == 0:
+            fuege_eindeutig(
+                result["gedanken"]["gedanken_ende"],
+                letzte_wortnr(satz),
+                gueltige_nr
+            )
 
-    print("[✓] Merge abgeschlossen")
+        # ----------------------------------------------------
+        # BETONUNG
+        # ----------------------------------------------------
+        betonungs_kandidaten = inhaltswort_tokens(satz)
+
+        if betonungs_kandidaten:
+            sortiert = sorted(
+                betonungs_kandidaten,
+                key=lambda t: (
+                    len(token_text(t)),
+                    -(wortnr(t) or 0)
+                ),
+                reverse=True
+            )
+
+            fuege_eindeutig(
+                result["betonung"]["hauptbetonung"],
+                wortnr(sortiert[0]),
+                gueltige_nr
+            )
+
+            if wortanzahl > 6 and len(sortiert) > 1:
+                fuege_eindeutig(
+                    result["betonung"]["nebenbetonung"],
+                    wortnr(sortiert[1]),
+                    gueltige_nr
+                )
+
+        # ----------------------------------------------------
+        # SPANNUNG
+        # ----------------------------------------------------
+        startet_spannung = (
+            erstes_wort in SPANNUNG_STARTER
+            or satz_beginnt_mit_auf_einmal(satz)
+        )
+
+        if startet_spannung:
+            fuege_eindeutig(
+                result["spannung"]["Starten"],
+                erste_inhaltswort_nr(satz),
+                gueltige_nr
+            )
+            spannung_aktiv = True
+
+        if wortanzahl > 12:
+            woerter = wort_tokens(satz)
+            if woerter:
+                mitte = woerter[len(woerter) // 2]
+                fuege_eindeutig(
+                    result["spannung"]["Halten"],
+                    wortnr(mitte),
+                    gueltige_nr
+                )
+
+        if endet_mit_satzende and spannung_aktiv:
+            fuege_eindeutig(
+                result["spannung"]["Stoppen"],
+                letzte_wortnr(satz),
+                gueltige_nr
+            )
+            spannung_aktiv = False
+
+    # --------------------------------------------------------
+    # GEDANKENPAUSEN BEI GEDANKENSTRICH / ELLIPSE
+    # --------------------------------------------------------
+    for idx, t in enumerate(tokens):
+        if not isinstance(t, dict):
+            continue
+
+        if token_text(t) in GEDANKEN_PAUSE_TOKENS:
+            nr_davor = finde_vorherige_wortnr(tokens, idx)
+
+            fuege_eindeutig(
+                result["gedanken"]["pause_gedanken"],
+                nr_davor,
+                gueltige_nr
+            )
+
+    # --------------------------------------------------------
+    # FINAL: sortieren, Duplikate entfernen
+    # --------------------------------------------------------
+    for hauptkey in result:
+        for subkey in result[hauptkey]:
+            result[hauptkey][subkey] = sorted(set(result[hauptkey][subkey]))
+
+    return result
+
+
+def ermittle_kapitel_abschnitt_id(json_datei):
+    json_datei = Path(json_datei)
+
+    with open(json_datei, "r", encoding="utf-8") as f:
+        daten = json.load(f)
+
+    kapitelnummer = None
+
+    if isinstance(daten, list):
+        for eintrag in daten:
+            if (
+                isinstance(eintrag, dict)
+                and eintrag.get("KapitelNummer") not in (None, "")
+            ):
+                kapitelnummer = eintrag.get("KapitelNummer")
+                break
+
+    if kapitelnummer is None:
+        raise ValueError(f"Keine KapitelNummer in Datei gefunden: {json_datei.name}")
+
+    kapitel_id = f"{int(kapitelnummer):03d}"
+
+    match = re.search(r"_(\d+)_annotierungen\.json$", json_datei.name)
+
+    if match:
+        abschnitt_id = f"{int(match.group(1)):03d}"
+    else:
+        abschnitt_id = "001"
+
+    return kapitel_id, abschnitt_id
+
+
+def speichere_regel_json(ki_ordner, json_datei, daten, laufende_nr=1):
+    ki_ordner = Path(ki_ordner)
+    ki_ordner.mkdir(parents=True, exist_ok=True)
+
+    kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+    ausgabe_datei = ki_ordner / (
+        f"KI_KOMBINATION_{kapitel_id}_{abschnitt_id}_{laufende_nr:03}.json"
+    )
+
+    with open(ausgabe_datei, "w", encoding="utf-8") as f:
+        json.dump(daten, f, ensure_ascii=False, indent=2)
+
+    print(f"[INFO] Regelbasierte Kombinationsdatei gespeichert: {ausgabe_datei}")
+
+    return ausgabe_datei
+
+
+def verarbeite_regelbasiert(dateipfad, ki_ordner, force=False):
+    print(f"[DEBUG] Schritt5_regelbasiert gestartet für {dateipfad}")
+
+    try:
+        json_datei = Path(dateipfad)
+
+        if not json_datei.exists():
+            print(f"[WARNUNG] JSON-Datei existiert nicht: {json_datei}")
+            return None
+
+        if not json_datei.name.endswith("_annotierungen.json"):
+            print(f"[WARNUNG] Keine Annotierungsdatei, überspringe: {json_datei.name}")
+            return None
+
+        ki_ordner = Path(ki_ordner)
+        ki_ordner.mkdir(parents=True, exist_ok=True)
+
+        kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+        ziel_datei = ki_ordner / (
+            f"KI_KOMBINATION_{kapitel_id}_{abschnitt_id}_001.json"
+        )
+
+        if ziel_datei.exists() and not force:
+            print(f"[INFO] Regel-Datei existiert bereits, überspringe: {ziel_datei}")
+            return ziel_datei
+
+        with open(json_datei, "r", encoding="utf-8") as f:
+            tokens = json.load(f)
+
+        if not isinstance(tokens, list):
+            print(f"[WARNUNG] JSON ist keine Tokenliste: {json_datei}")
+            return None
+
+        daten = regelbasierte_kombination(tokens)
+
+        ausgabe_datei = speichere_regel_json(
+            ki_ordner=ki_ordner,
+            json_datei=json_datei,
+            daten=daten,
+            laufende_nr=1
+        )
+
+        print(f"[INFO] Regelbasierte Annotation abgeschlossen: {json_datei.name}")
+
+        return ausgabe_datei
+
+    except Exception as e:
+        print(f"[FEHLER] Fehler in Schritt5_regelbasiert bei {dateipfad}: {e}")
+        traceback.print_exc()
+        return None
+
+
+def verarbeite_ordner_regelbasiert(json_ordner, ki_ordner, force=False):
+    json_ordner = Path(json_ordner)
+    ki_ordner = Path(ki_ordner)
+
+    if not json_ordner.exists():
+        print(f"[FEHLER] JSON-Ordner existiert nicht: {json_ordner}")
+        return []
+
+    json_dateien = sorted(json_ordner.glob("*_annotierungen.json"))
+
+    if not json_dateien:
+        print(f"[WARNUNG] Keine *_annotierungen.json-Dateien gefunden in: {json_ordner}")
+        return []
+
+    print(f"[INFO] Starte regelbasierte Annotation für {len(json_dateien)} Datei(en).")
+
+    erzeugte_dateien = []
+
+    for json_datei in json_dateien:
+        result = verarbeite_regelbasiert(
+            dateipfad=json_datei,
+            ki_ordner=ki_ordner,
+            force=force
+        )
+
+        if result:
+            erzeugte_dateien.append(result)
+
+    print(f"[INFO] Schritt5 regelbasiert abgeschlossen. Dateien: {len(erzeugte_dateien)}")
+
+    return erzeugte_dateien
