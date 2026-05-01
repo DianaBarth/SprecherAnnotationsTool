@@ -140,21 +140,20 @@ class AnnotationenEditor(ttk.Frame):
 
     def _kapitel_id_aus_name(self, kapitel):
         """
-        Aus UI-Kapitelname wie:
-        '2. Aufbau der Welt (Kapitel IV–VI)'
-        wird:
-        '002'
+        Nutzt den Index aus kapitel_liste.
+        Vorwort -> 000
+        1. Einstieg ... -> 001
+        Nachwort -> z.B. 009
         """
         kapitel = str(kapitel).strip()
 
-        match = re.match(r"^(\d+)", kapitel)
-        if not match:
-            print(f"[Editor WARNUNG] Keine führende Kapitelnummer erkannt: {kapitel}")
+        try:
+            idx = list(self.kapitel_liste).index(kapitel)
+            return f"{idx:03d}"
+        except ValueError:
+            print(f"[Editor WARNUNG] Kapitel nicht in kapitel_liste gefunden: {kapitel!r}")
             return None
-
-        return f"{int(match.group(1)):03d}"
-
-
+        
     def _lade_alle_kapiteldateien(self, kapitel):
         merge_ordner = config.GLOBALORDNER["merge"]
         manuell_ordner = config.GLOBALORDNER["manuell"]
@@ -1036,13 +1035,19 @@ class AnnotationenEditor(ttk.Frame):
     
     def _aktuelle_kapitelnummer_kandidaten(self):
         kapitelname = str(self.kapitel_liste[self.current_hauptkapitel_index])
+        idx = int(self.current_hauptkapitel_index)
 
         kandidaten = {
             kapitelname,
             kapitelname.strip(),
-            str(self.current_hauptkapitel_index + 1),
-            int(self.current_hauptkapitel_index + 1),
+            str(idx),
+            idx,
+            f"{idx:03d}",
         }
+
+        # Fallback für alte Daten, falls früher 1-basiert gespeichert wurde
+        kandidaten.add(str(idx + 1))
+        kandidaten.add(idx + 1)
 
         match = re.search(r"(\d+)", kapitelname)
         if match:
@@ -1052,7 +1057,6 @@ class AnnotationenEditor(ttk.Frame):
             kandidaten.add(int(nummer))
 
         return kandidaten
-
 
     def _eintrag_gehoert_zu_aktuellem_kapitel(self, eintrag):
         # Wenn kein KapitelNummer-Feld vorhanden ist:
