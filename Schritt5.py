@@ -29,6 +29,64 @@ NIEMALS_KI_UEBERSCHREIBEN = {
 # Hilfsfunktionen
 # ------------------------------------------------------------
 
+def merge_ig_wortlisten(original_daten, ki_ordner):
+    ki_ordner = Path(ki_ordner)
+
+    mapping = {
+        "KI_IG_Gesamt_ICH.json": "ich",
+        "KI_IG_Gesamt_IK.json": "ik",
+        "KI_IG_Gesamt_KEIN.json": "",
+        "KI_IG_Gesamt_SONDERFAELLE.json": "sonderfall",
+    }
+
+    wort_zu_ig = {}
+
+    for dateiname, klasse in mapping.items():
+        pfad = ki_ordner / dateiname
+
+        if not pfad.exists():
+            continue
+
+        try:
+            daten = lade_json_robust(pfad)
+        except Exception as e:
+            print(f"[WARNUNG] IG-Datei konnte nicht gelesen werden: {pfad.name} | {e}")
+            continue
+
+        if not isinstance(daten, list):
+            print(f"[WARNUNG] IG-Datei ist keine Liste: {pfad.name}")
+            continue
+
+        for eintrag in daten:
+            if isinstance(eintrag, str):
+                wort = eintrag.split("\t")[0].strip().lower()
+            else:
+                continue
+
+            if wort:
+                wort_zu_ig[wort] = klasse
+
+    geschrieben = 0
+
+    for eintrag in original_daten:
+        token = (
+            eintrag.get("tokenInklZahlwoerter")
+            or eintrag.get("token")
+            or ""
+        ).strip().lower()
+
+        if not token:
+            continue
+
+        clean_token = re.sub(r"[^\wäöüÄÖÜß]", "", token).strip().lower()
+
+        if clean_token in wort_zu_ig:
+            eintrag["ig"] = wort_zu_ig[clean_token]
+            eintrag["ig_source"] = "ki_ig"
+            geschrieben += 1
+
+    return original_daten, {"geschrieben": geschrieben}
+
 def parse_bereich(wert):
     if wert in (None, ""):
         return []
@@ -103,6 +161,8 @@ def key_fuer_wort(eintrag):
         return str(eintrag["KapitelNummer"]), int(eintrag["WortNr"])
     except Exception:
         return None
+
+
 
 
 # ------------------------------------------------------------
@@ -457,6 +517,8 @@ def merge_ig(original_daten, ig_json, kapitelnummer=None):
         ki_source_name="ki_ig",
     )
 
+
+
 def Merge_annotationen(
     quellordner_kapitel,
     quellordner_annotationen,
@@ -464,9 +526,6 @@ def Merge_annotationen(
     ausgewaehlte_kapitel=None,
     progress_callback=None,
 ):
-    from pathlib import Path
-    import json
-
     quellordner_kapitel = Path(quellordner_kapitel)
     quellordner_annotationen = Path(quellordner_annotationen)
     ziel_ordner = Path(ziel_ordner)
@@ -474,49 +533,86 @@ def Merge_annotationen(
 
     dateien = sorted(quellordner_kapitel.glob("*_annotierungen.json"))
 
+    if ausgewaehlte_kapitel:
+        ausgewaehlte = {str(k) for k in ausgewaehlte_kapitel}
+        dateien = [
+            p for p in dateien
+            if any(k in p.name for k in ausgewaehlte)
+        ]
+
     gesamt = len(dateien)
 
     for i, pfad in enumerate(dateien, start=1):
         if progress_callback:
             progress_callback(round((i - 1) / max(gesamt, 1) * 100, 1))
 
+        print(f"[INFO] Merge Kapiteldatei: {pfad.name}")
+
         with open(pfad, encoding="utf-8") as f:
             daten = json.load(f)
 
-        kapitelnummer = None
-        if daten:
-            kapitelnummer = daten[0].get("KapitelNummer")
-
-        # --------------------------------------------------
-        # KI-Dateien finden (sehr simpel gehalten)
-        # --------------------------------------------------
+        kapitelnummer = daten[0].get("KapitelNummer") if daten else None
         stem = pfad.stem
 
-        ki_dateien = list(quellordner_annotationen.glob(f"*_{stem}_*.json"))
+        # --------------------------------------------------
+        # 1) PERSON-Einzeldateien
+        # Beispiel:
+        # KI_PERSON_001_TOOL-TEST_001_annotierungen.json
+        # --------------------------------------------------
+        person_dateien = sorted(
+            quellordner_annotationen.glob(f"KI_PERSON_*_{stem}.json")
+        )
 
-        for ki_pfad in ki_dateien:
-            name = ki_pfad.name.lower()
-
+        for ki_pfad in person_dateien:
             try:
+                print(f"[INFO] Merge PERSON: {ki_pfad.name}")
                 ki_json = lade_json_robust(ki_pfad)
-
-                if "betonung" in name or "pause" in name or "spannung" in name:
-                    daten, _ = merge_prosodie(daten, ki_json, kapitelnummer)
-
-                elif "person" in name:
-                    daten, _ = merge_sprecher(daten, ki_json, kapitelnummer)
-
-                elif "ig" in name:
-                    daten, _ = merge_ig(daten, ki_json, kapitelnummer)
-
+                daten, report = merge_sprecher(daten, ki_json, kapitelnummer)
+                print(f"[INFO] PERSON geschrieben: {report.get('geschrieben', 0)}")
             except Exception as e:
-                print(f"[FEHLER] {ki_pfad.name}: {e}")
+                print(f"[FEHLER] PERSON {ki_pfad.name}: {e}")
+                traceback.print_exc()
                 continue
+
+        # --------------------------------------------------
+        # 2) KOMBINATION-Einzeldateien
+        # Beispiel:
+        # KI_KOMBINATION_001_TOOL-TEST_001_annotierungen.json
+        # --------------------------------------------------
+        kombi_dateien = sorted(
+            quellordner_annotationen.glob(f"KI_KOMBINATION_*_{stem}.json")
+        )
+
+        for ki_pfad in kombi_dateien:
+            try:
+                print(f"[INFO] Merge KOMBINATION: {ki_pfad.name}")
+                ki_json = lade_json_robust(ki_pfad)
+                daten, report = merge_prosodie(daten, ki_json, kapitelnummer)
+                print(f"[INFO] KOMBINATION geschrieben: {report.get('geschrieben', 0)}")
+            except Exception as e:
+                print(f"[FEHLER] KOMBINATION {ki_pfad.name}: {e}")
+                traceback.print_exc()
+                continue
+
+        # --------------------------------------------------
+        # 3) IG global nach Wortlisten mergen
+        # --------------------------------------------------
+        try:
+            daten, report = merge_ig_wortlisten(
+                original_daten=daten,
+                ki_ordner=quellordner_annotationen
+            )
+            print(f"[INFO] IG geschrieben: {report.get('geschrieben', 0)}")
+        except Exception as e:
+            print(f"[FEHLER] IG-Merge fehlgeschlagen für {pfad.name}: {e}")
+            traceback.print_exc()
 
         zielpfad = ziel_ordner / pfad.name
 
         with open(zielpfad, "w", encoding="utf-8") as f:
             json.dump(daten, f, ensure_ascii=False, indent=2)
+
+        print(f"[✓] Gespeichert: {zielpfad}")
 
         if progress_callback:
             progress_callback(round(i / max(gesamt, 1) * 100, 1))

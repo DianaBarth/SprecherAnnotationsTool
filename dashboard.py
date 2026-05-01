@@ -32,7 +32,7 @@ from Schritt2 import verarbeite_kapitel_und_speichere_json
 from Schritt3 import daten_aufteilen
 from Schritt4 import daten_verarbeiten
 from Schritt5 import Merge_annotationen
-from Schritt6 import visualisiere_annotationen
+# from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
 from system_ressourcen import Systemressourcen
@@ -654,7 +654,7 @@ class DashBoard(ttk.Frame):
         ttk.Label(praefix_frame, text="Präfix:").grid(row=0, column=0, sticky="w")
         praefix_var = tk.StringVar(value="Kapitel")
         ttk.Entry(praefix_frame, textvariable=praefix_var).grid(row=0, column=1, sticky="ew", padx=5)
-        nur_pref_var = tk.BooleanVar(value=False)
+        nur_pref_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(praefix_frame, text="nur Präfix berücksichtigen", variable=nur_pref_var)\
             .grid(row=0, column=2, sticky="w", padx=(5, 0))
 
@@ -1402,6 +1402,9 @@ class DashBoard(ttk.Frame):
 
 
     def ki_task_mit_client(self, client, kapitel_name, aufgaben_id, prompt, ordner, mp_progress_queue=None):
+        if mp_progress_queue is None:
+            mp_progress_queue = self.master.progress_queue
+
         global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
 
         print(
@@ -1426,8 +1429,7 @@ class DashBoard(ttk.Frame):
                     print("[INFO] IG-Analyse wurde in diesem Lauf bereits erledigt → überspringe.", flush=True)
 
                     if mp_progress_queue:
-                        mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                        mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+                        mp_progress_queue.put((kapitel_name, aufgaben_id, 100))                      
 
                     return "IG bereits erledigt"
 
@@ -1814,15 +1816,15 @@ class DashBoard(ttk.Frame):
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Visualisierung.", flush=True)
                     return
 
-                print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, f"{next_key}.2", 0.1))
+                # print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
+                # progress_queue.put((kapitel_name, f"{next_key}.2", 0.1))
 
-                visualisiere_annotationen(
-                    ordner_nur_str["merge"],
-                    ordner_nur_str["pdf"],
-                    [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, "final 2", w))
-                )
+                # visualisiere_annotationen(
+                #     ordner_nur_str["merge"],
+                #     ordner_nur_str["pdf"],
+                #     [kapitel_name],
+                #     lambda w: progress_queue.put((kapitel_name, "final 2", w))
+                # )
 
             progress_queue.put((kapitel_name, "Fertig", 100))
             print(f"[INFO] Kapitel abgeschlossen: {kapitel_name}", flush=True)
