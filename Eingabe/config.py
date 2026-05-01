@@ -2,15 +2,15 @@
 
 
 
+
+
+
+
 # Konfigurationsdatei (config.py), Automatisch generiert am 2026-04-19T15:40:24.808736
 
 
 
-# ---------------------------------------------
-
-
-
-GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/pdf2', 'audio': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/audio', 'audioanalyse': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Hörbuch-Extra/audioanalyse'}	# Ordnerstruktur für Ein- und Ausgabe
+GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf2', 'audio': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/audio', 'audioanalyse': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/audioanalyse'}	# Ordnerstruktur für Ein- und Ausgabe
 
 NUTZE_KI = True	# Schaltet alle KI-Funktionen zentral ein/aus
 KI_AUFGABEN = {3: 'person', 4: 'kombination', 5: 'pause', 6: 'gedanken', 7: 'spannung', 8: 'betonung', 9: 'ig'}	# Aufgabenübersicht mit Aktivierungsstatus und Parametern
@@ -18,7 +18,7 @@ AUFGABEN_ANNOTATIONEN = {3: [{'name': None, 'bild': None, 'HartKodiert': 'farbeJ
 
 AKTIVE_KI_AUFGABEN = [3, 9]
 KI_MAX_NEW_TOKENS = 768
-REGEL_AUFGABE_ID =98
+REGEL_AUFGABE_ID = 98
 MERGE_AUFGABE_ID = 99
 KOMBI_AUFGABEN_MAPPING = {'kombination': {'betonung': 'betonung', 'pause': 'pause', 'gedanken': 'gedanken', 'spannung': 'spannung'}}
 

@@ -78,12 +78,41 @@ def ersetze_zahl_in_token(token, vorher_token=None, naechstes_token=None):
         return wort
 
 def lade_kapitel_reihenfolge():
-    config_datei = Path("Eingabe/kapitel_config.json")
+    config_pfade = []
+
+    try:
+        eingabe_ordner = config.GLOBALORDNER.get("Eingabe")
+        if eingabe_ordner:
+            projekt_config = Path(eingabe_ordner).parent / "kapitel_config.json"
+            config_pfade.append(projekt_config)
+    except Exception:
+        pass
+
+    config_pfade.append(Path("Eingabe/kapitel_config.json"))
+
+    config_datei = None
+
+    for pfad in config_pfade:
+        if pfad and pfad.exists():
+            config_datei = pfad
+            break
+
+    if config_datei is None:
+        raise FileNotFoundError(
+            "Keine kapitel_config.json gefunden. Geprüft: "
+            + ", ".join(str(p) for p in config_pfade)
+        )
+
+    print(f"[INFO][Schritt2] Lade Kapitel-Reihenfolge aus: {config_datei}")
 
     with open(config_datei, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     kapitel_liste = data.get("kapitel_liste", [])
+
+    print("[DEBUG][Schritt2] Kapitel aus Config:")
+    for idx, name in enumerate(kapitel_liste):
+        print(f"  {idx:03d}: {name!r}")
 
     return {
         name: idx
