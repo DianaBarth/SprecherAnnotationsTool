@@ -1,331 +1,47 @@
 # ---------------------------------------------
 
+
+
+
+
+
+
 # Konfigurationsdatei (config.py), Automatisch generiert am 2026-04-19T15:40:24.808736
 
-# ---------------------------------------------
 
 
-
-GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
-
-
-
-GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf2'}	# Ordnerstruktur für Ein- und Ausgabe
+GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf2', 'audio': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/audio', 'audioanalyse': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/audioanalyse'}	# Ordnerstruktur für Ein- und Ausgabe
 
 NUTZE_KI = True	# Schaltet alle KI-Funktionen zentral ein/aus
-AKTIVE_KI_AUFGABEN = [3, 4, 9]
-KI_MAX_NEW_TOKENS = 768
-
-# KI_AUFGABEN = {3: 'person', 4: 'betonung', 5: 'pause', 6: 'gedanken', 7: 'spannung', 8: 'ig', 9: 'position'}	# Aufgabenübersicht mit Aktivierungsstatus und Parametern
-KI_AUFGABEN = {
-    3: "person",
-    4: "kombination",
-    5: "pause",        # bleibt (wird aber nicht mehr benutzt)
-    6: "gedanken",     # bleibt (wird aber nicht mehr benutzt)
-    7: "spannung",     # bleibt (wird aber nicht mehr benutzt)
-    8: "betonung",     # bleibt (wird aber nicht mehr benutzt)
-    9: "ig",
-}
-
-MERGE_AUFGABE_ID = 99
-
-KOMBI_AUFGABEN_MAPPING = {
-    "kombination": {
-        "betonung": "betonung",
-        "pause": "pause",
-        "gedanken": "gedanken",
-        "spannung": "spannung",
-    }
-}
-
+KI_AUFGABEN = {3: 'person', 4: 'kombination', 5: 'pause', 6: 'gedanken', 7: 'spannung', 8: 'betonung', 9: 'ig'}	# Aufgabenübersicht mit Aktivierungsstatus und Parametern
 AUFGABEN_ANNOTATIONEN = {3: [{'name': None, 'bild': None, 'HartKodiert': 'farbeJePerson', 'VerwendeHartKodiert': True, 'StartZeichen': '„', 'EndeZeichen': '“'}], 4: [{'name': 'Hauptbetonung', 'bild': None, 'HartKodiert': 'fett', 'VerwendeHartKodiert': True}, {'name': 'Nebenbetonung', 'bild': None, 'HartKodiert': 'kursiv', 'VerwendeHartKodiert': True}], 5: [{'name': 'Atempause', 'bild': 'atempause.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'Staupause', 'bild': 'Staupause.png', 'HartKodiert': 'Rechteck', 'VerwendeHartKodiert': False}], 6: [{'name': 'gedanken_weiter', 'bild': 'Gedanken_weiter.png', 'HartKodiert': 'Kreis', 'VerwendeHartKodiert': False}, {'name': 'gedanken_ende', 'bild': 'Gedanken_Ende.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'pause_gedanken', 'bild': 'Gedanken_pause.png', 'HartKodiert': 'Punkte', 'VerwendeHartKodiert': False}], 7: [{'name': 'Starten', 'bild': None, 'HartKodiert': 'ansteigende Linie', 'VerwendeHartKodiert': True}, {'name': 'Halten', 'bild': None, 'HartKodiert': 'waagrechte Linie', 'VerwendeHartKodiert': True}, {'name': 'Stoppen', 'bild': None, 'HartKodiert': 'abfallende Linie', 'VerwendeHartKodiert': True}], 8: [{'name': 'ik', 'HartKodiert': 'unterpunktet', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'ich', 'HartKodiert': 'unterstrichen', 'bild': None, 'VerwendeHartKodiert': True}], 9: [{'name': 'EinrückungsStart', 'bild': None, 'HartKodiert': 'Eingerückt', 'VerwendeHartKodiert': True}, {'name': 'EinrückungsEnde', 'bild': None, 'HartKodiert': 'nichteingerückt', 'VerwendeHartKodiert': True}, {'name': 'ZentriertStart', 'HartKodiert': 'Zentriert', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'ZentriertEnde', 'HartKodiert': 'Zentriert', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigStart', 'HartKodiert': 'Rechtsbuendig', 'bild': None, 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigEnde', 'HartKodiert': 'Rechtsbuendig', 'bild': None, 'VerwendeHartKodiert': True}]}	# Mögliche Annotationen für jede Aufgabe
 
+AKTIVE_KI_AUFGABEN = [3, 9]
+KI_MAX_NEW_TOKENS = 768
+REGEL_AUFGABE_ID = 98
+MERGE_AUFGABE_ID = 99
+KOMBI_AUFGABEN_MAPPING = {'kombination': {'betonung': 'betonung', 'pause': 'pause', 'gedanken': 'gedanken', 'spannung': 'spannung'}}
+
 # -------------------------------------------------
+
 # Recording-UI: manuelle Annotationen
+
 # KEINE Pipeline-/KI-Aufgaben
-# -------------------------------------------------
-
-ANNOTATIONEN = {
-    "person": [
-        {
-            "name": None,
-            "bild": None,
-            "HartKodiert": "farbeJePerson",
-            "VerwendeHartKodiert": True,
-            "StartZeichen": "„",
-            "EndeZeichen": "“",
-        }
-    ],
-    "betonung": [
-        {
-            "name": "Hauptbetonung",
-            "bild": None,
-            "HartKodiert": "fett",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "Nebenbetonung",
-            "bild": None,
-            "HartKodiert": "kursiv",
-            "VerwendeHartKodiert": True,
-        },
-    ],
-    "pause": [
-        {
-            "name": "Atempause",
-            "bild": "atempause.png",
-            "HartKodiert": "Linie",
-            "VerwendeHartKodiert": False,
-        },
-        {
-            "name": "Staupause",
-            "bild": "Staupause.png",
-            "HartKodiert": "Rechteck",
-            "VerwendeHartKodiert": False,
-        },
-    ],
-    "gedanken": [
-        {
-            "name": "gedanken_weiter",
-            "bild": "Gedanken_weiter.png",
-            "HartKodiert": "Kreis",
-            "VerwendeHartKodiert": False,
-        },
-        {
-            "name": "gedanken_ende",
-            "bild": "Gedanken_Ende.png",
-            "HartKodiert": "Linie",
-            "VerwendeHartKodiert": False,
-        },
-        {
-            "name": "pause_gedanken",
-            "bild": "Gedanken_pause.png",
-            "HartKodiert": "Punkte",
-            "VerwendeHartKodiert": False,
-        },
-    ],
-    "spannung": [
-        {
-            "name": "Starten",
-            "bild": None,
-            "HartKodiert": "ansteigende Linie",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "Halten",
-            "bild": None,
-            "HartKodiert": "waagrechte Linie",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "Stoppen",
-            "bild": None,
-            "HartKodiert": "abfallende Linie",
-            "VerwendeHartKodiert": True,
-        },
-    ],
-    "ig": [
-        {
-            "name": "ik",
-            "bild": None,
-            "HartKodiert": "unterpunktet",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "ich",
-            "bild": None,
-            "HartKodiert": "unterstrichen",
-            "VerwendeHartKodiert": True,
-        },
-    ],
-    "position": [
-        {
-            "name": "EinrueckungsStart",
-            "bild": None,
-            "HartKodiert": "Eingerückt",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "EinrueckungsEnde",
-            "bild": None,
-            "HartKodiert": "nichteingerückt",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "ZentriertStart",
-            "bild": None,
-            "HartKodiert": "Zentriert",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "ZentriertEnde",
-            "bild": None,
-            "HartKodiert": "Zentriert",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "RechtsbuendigStart",
-            "bild": None,
-            "HartKodiert": "Rechtsbuendig",
-            "VerwendeHartKodiert": True,
-        },
-        {
-            "name": "RechtsbuendigEnde",
-            "bild": None,
-            "HartKodiert": "Rechtsbuendig",
-            "VerwendeHartKodiert": True,
-        },
-    ],
-}
-
-ANNOTATION_SHORTCUTS = {
-    "h": ("betonung", "Hauptbetonung"),
-    "n": ("betonung", "Nebenbetonung"),
-
-    "a": ("pause", "Atempause"),
-    "s": ("pause", "Staupause"),
-
-    "g": ("gedanken", "gedanken_weiter"),
-    "e": ("gedanken", "gedanken_ende"),
-    "p": ("gedanken", "pause_gedanken"),
-
-    "1": ("spannung", "Starten"),
-    "2": ("spannung", "Halten"),
-    "3": ("spannung", "Stoppen"),
-
-    "c": ("ig", "ich"),
-    "k": ("ig", "ik"),
-}
-
-UI_SHORTCUTS = {
-    "<Key-m>": {
-        "label": "M",
-        "description": "Sprecher-Modus an/aus",
-        "action": "toggle_speaker_mode",
-    },
-
-    "<Control-s>": {
-        "label": "Strg+S",
-        "description": "Speichern",
-        "action": "save",
-    },
-    "<Control-z>": {
-        "label": "Strg+Z",
-        "description": "Rückgängig",
-        "action": "undo",
-    },
-    "<Control-y>": {
-        "label": "Strg+Y",
-        "description": "Wiederholen",
-        "action": "redo",
-    },
-    "<Control-Shift-Z>": {
-        "label": "Strg+Shift+Z",
-        "description": "Wiederholen",
-        "action": "redo",
-    },
-    "<Left>": {
-        "label": "←",
-        "description": "Vorheriges Wort",
-        "action": "token_prev",
-    },
-    "<Right>": {
-        "label": "→",
-        "description": "Nächstes Wort",
-        "action": "token_next",
-    },
-    "<Up>": {
-        "label": "↑",
-        "description": "Zeile hoch",
-        "action": "line_up",
-    },
-    "<Down>": {
-        "label": "↓",
-        "description": "Zeile runter",
-        "action": "line_down",
-    },
-
-    "<Control-Left>": {
-        "label": "Strg+←",
-        "description": "5 Wörter zurück",
-        "action": "token_prev_5",
-    },
-    "<Control-Right>": {
-        "label": "Strg+→",
-        "description": "5 Wörter vor",
-        "action": "token_next_5",
-    },
-    "<Delete>": {
-        "label": "Entf",
-        "description": "Annotationen aktuelles Wort löschen",
-        "action": "delete_current_annotations",
-    },
-    "<Alt-Left>": {
-        "label": "Alt+←",
-        "description": "Vorheriger Abschnitt",
-        "action": "section_prev",
-    },
-    "<Alt-Right>": {
-        "label": "Alt+→",
-        "description": "Nächster Abschnitt",
-        "action": "section_next",
-    },
-    "<Control-e>": {
-        "label": "Strg+E",
-        "description": "PDF exportieren",
-        "action": "export_pdf",
-    },
-}
-
-
-RECORDING_ANNOTATIONEN = {
-    "person": {
-        "label": "Sprecher",
-        "values": "personen",
-        "range_edit": True,
-    },
-    "betonung": {
-        "label": "Betonung",
-        "values": ANNOTATIONEN["betonung"],
-    },
-    "pause": {
-        "label": "Pause",
-        "values": ANNOTATIONEN["pause"],
-    },
-    "gedanken": {
-        "label": "Gedanken",
-        "values": ANNOTATIONEN["gedanken"],
-    },
-    "spannung": {
-        "label": "Spannung",
-        "values": ANNOTATIONEN["spannung"],
-    },
-    "ig": {
-        "label": "Ich/Ik",
-        "values": ANNOTATIONEN["ig"],
-    },
-    "position": {
-        "label": "Position",
-        "values": ANNOTATIONEN["position"],
-    },
-}
-
-
 
 # -------------------------------------------------
+ANNOTATIONEN = {'person': [{'name': None, 'bild': None, 'HartKodiert': 'farbeJePerson', 'VerwendeHartKodiert': True, 'StartZeichen': '„', 'EndeZeichen': '“'}], 'betonung': [{'name': 'Hauptbetonung', 'bild': None, 'HartKodiert': 'fett', 'VerwendeHartKodiert': True}, {'name': 'Nebenbetonung', 'bild': None, 'HartKodiert': 'kursiv', 'VerwendeHartKodiert': True}], 'pause': [{'name': 'Atempause', 'bild': 'atempause.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'Staupause', 'bild': 'Staupause.png', 'HartKodiert': 'Rechteck', 'VerwendeHartKodiert': False}], 'gedanken': [{'name': 'gedanken_weiter', 'bild': 'Gedanken_weiter.png', 'HartKodiert': 'Kreis', 'VerwendeHartKodiert': False}, {'name': 'gedanken_ende', 'bild': 'Gedanken_Ende.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'pause_gedanken', 'bild': 'Gedanken_pause.png', 'HartKodiert': 'Punkte', 'VerwendeHartKodiert': False}], 'spannung': [{'name': 'Starten', 'bild': None, 'HartKodiert': 'ansteigende Linie', 'VerwendeHartKodiert': True}, {'name': 'Halten', 'bild': None, 'HartKodiert': 'waagrechte Linie', 'VerwendeHartKodiert': True}, {'name': 'Stoppen', 'bild': None, 'HartKodiert': 'abfallende Linie', 'VerwendeHartKodiert': True}], 'ig': [{'name': 'ik', 'bild': None, 'HartKodiert': 'unterpunktet', 'VerwendeHartKodiert': True}, {'name': 'ich', 'bild': None, 'HartKodiert': 'unterstrichen', 'VerwendeHartKodiert': True}], 'position': [{'name': 'EinrueckungsStart', 'bild': None, 'HartKodiert': 'Eingerückt', 'VerwendeHartKodiert': True}, {'name': 'EinrueckungsEnde', 'bild': None, 'HartKodiert': 'nichteingerückt', 'VerwendeHartKodiert': True}, {'name': 'ZentriertStart', 'bild': None, 'HartKodiert': 'Zentriert', 'VerwendeHartKodiert': True}, {'name': 'ZentriertEnde', 'bild': None, 'HartKodiert': 'Zentriert', 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigStart', 'bild': None, 'HartKodiert': 'Rechtsbuendig', 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigEnde', 'bild': None, 'HartKodiert': 'Rechtsbuendig', 'VerwendeHartKodiert': True}]}
+ANNOTATION_SHORTCUTS = {'h': ('betonung', 'Hauptbetonung'), 'n': ('betonung', 'Nebenbetonung'), 'a': ('pause', 'Atempause'), 's': ('pause', 'Staupause'), 'g': ('gedanken', 'gedanken_weiter'), 'e': ('gedanken', 'gedanken_ende'), 'p': ('gedanken', 'pause_gedanken'), '1': ('spannung', 'Starten'), '2': ('spannung', 'Halten'), '3': ('spannung', 'Stoppen'), 'c': ('ig', 'ich'), 'k': ('ig', 'ik')}
+UI_SHORTCUTS = {'<Key-m>': {'label': 'M', 'description': 'Sprecher-Modus an/aus', 'action': 'toggle_speaker_mode'}, '<Control-s>': {'label': 'Strg+S', 'description': 'Speichern', 'action': 'save'}, '<Control-z>': {'label': 'Strg+Z', 'description': 'Rückgängig', 'action': 'undo'}, '<Control-y>': {'label': 'Strg+Y', 'description': 'Wiederholen', 'action': 'redo'}, '<Control-Shift-Z>': {'label': 'Strg+Shift+Z', 'description': 'Wiederholen', 'action': 'redo'}, '<Left>': {'label': '←', 'description': 'Vorheriges Wort', 'action': 'token_prev'}, '<Right>': {'label': '→', 'description': 'Nächstes Wort', 'action': 'token_next'}, '<Up>': {'label': '↑', 'description': 'Zeile hoch', 'action': 'line_up'}, '<Down>': {'label': '↓', 'description': 'Zeile runter', 'action': 'line_down'}, '<Control-Left>': {'label': 'Strg+←', 'description': '5 Wörter zurück', 'action': 'token_prev_5'}, '<Control-Right>': {'label': 'Strg+→', 'description': '5 Wörter vor', 'action': 'token_next_5'}, '<Delete>': {'label': 'Entf', 'description': 'Annotationen aktuelles Wort löschen', 'action': 'delete_current_annotations'}, '<Alt-Left>': {'label': 'Alt+←', 'description': 'Vorheriger Abschnitt', 'action': 'section_prev'}, '<Alt-Right>': {'label': 'Alt+→', 'description': 'Nächster Abschnitt', 'action': 'section_next'}, '<Control-e>': {'label': 'Strg+E', 'description': 'PDF exportieren', 'action': 'export_pdf'}}
+RECORDING_ANNOTATIONEN = {'person': {'label': 'Sprecher', 'values': 'personen', 'range_edit': True}, 'betonung': {'label': 'Betonung', 'values': [{'name': 'Hauptbetonung', 'bild': None, 'HartKodiert': 'fett', 'VerwendeHartKodiert': True}, {'name': 'Nebenbetonung', 'bild': None, 'HartKodiert': 'kursiv', 'VerwendeHartKodiert': True}]}, 'pause': {'label': 'Pause', 'values': [{'name': 'Atempause', 'bild': 'atempause.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'Staupause', 'bild': 'Staupause.png', 'HartKodiert': 'Rechteck', 'VerwendeHartKodiert': False}]}, 'gedanken': {'label': 'Gedanken', 'values': [{'name': 'gedanken_weiter', 'bild': 'Gedanken_weiter.png', 'HartKodiert': 'Kreis', 'VerwendeHartKodiert': False}, {'name': 'gedanken_ende', 'bild': 'Gedanken_Ende.png', 'HartKodiert': 'Linie', 'VerwendeHartKodiert': False}, {'name': 'pause_gedanken', 'bild': 'Gedanken_pause.png', 'HartKodiert': 'Punkte', 'VerwendeHartKodiert': False}]}, 'spannung': {'label': 'Spannung', 'values': [{'name': 'Starten', 'bild': None, 'HartKodiert': 'ansteigende Linie', 'VerwendeHartKodiert': True}, {'name': 'Halten', 'bild': None, 'HartKodiert': 'waagrechte Linie', 'VerwendeHartKodiert': True}, {'name': 'Stoppen', 'bild': None, 'HartKodiert': 'abfallende Linie', 'VerwendeHartKodiert': True}]}, 'ig': {'label': 'Ich/Ik', 'values': [{'name': 'ik', 'bild': None, 'HartKodiert': 'unterpunktet', 'VerwendeHartKodiert': True}, {'name': 'ich', 'bild': None, 'HartKodiert': 'unterstrichen', 'VerwendeHartKodiert': True}]}, 'position': {'label': 'Position', 'values': [{'name': 'EinrueckungsStart', 'bild': None, 'HartKodiert': 'Eingerückt', 'VerwendeHartKodiert': True}, {'name': 'EinrueckungsEnde', 'bild': None, 'HartKodiert': 'nichteingerückt', 'VerwendeHartKodiert': True}, {'name': 'ZentriertStart', 'bild': None, 'HartKodiert': 'Zentriert', 'VerwendeHartKodiert': True}, {'name': 'ZentriertEnde', 'bild': None, 'HartKodiert': 'Zentriert', 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigStart', 'bild': None, 'HartKodiert': 'Rechtsbuendig', 'VerwendeHartKodiert': True}, {'name': 'RechtsbuendigEnde', 'bild': None, 'HartKodiert': 'Rechtsbuendig', 'VerwendeHartKodiert': True}]}}
+
+# -------------------------------------------------
+
 # Recording-UI / Renderer: feldbasierte Annotationen
+
 # KEINE KI-Aufgaben-IDs
+
 # -------------------------------------------------
-
-
-RECORDING_RENDER_MARKER = [
-    "pause",
-    "gedanken",
-    "spannung",
-    "ig",
-]
-
-
+RECORDING_RENDER_MARKER = ['pause', 'gedanken', 'spannung', 'ig']
 SPRACHE = 'de'
 
 # Annotationen für jede Aufgabe
@@ -342,8 +58,6 @@ ANZAHL_ÜBERSCHRIFTENZEILEN = 2
 BILDHOEHE_PX = 19
 PDF_SEITENFORMAT = 'A4'
 DATUMSFORMAT = '%Y-%m-%d_%H-%M-%S'
-
-
 
 # Layout-Einstellungen
 ZEICHENBREITE = 6

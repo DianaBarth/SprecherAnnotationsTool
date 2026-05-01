@@ -99,10 +99,6 @@ def txt_dateien_aufteilen(kapitelname, eingabe_ordner, ausgabe_ordner, progress_
     print(f"[DEBUG -------------------------Schritt 3 abgeschlossen für Kapitel {kapitelname}]")
 
 
-
-#-----------------------
-
-
 def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_callback=None, semikolon_format=True):
     json_ordner = Path(json_ordner)
     ausgabe_ordner = Path(ausgabe_ordner)
@@ -134,7 +130,7 @@ def extrahiere_ig_tokens(kapitelname, json_ordner, ausgabe_ordner, progress_call
 
     abschnittsnummer = 1
     aktueller_abschnitt = []
-    aktueller_token_text = ""
+
 
     def speichere_abschnitt(abschnitt_tokens, abschnitt_nr):
         abschnitt_text = ";".join(abschnitt_tokens) if semikolon_format else "\n".join(abschnitt_tokens)

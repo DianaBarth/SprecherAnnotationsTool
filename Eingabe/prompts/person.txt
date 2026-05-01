@@ -1,30 +1,31 @@
-Du erkennst Sprecher wörtlicher Rede in literarischem Text.
+Du ordnest jeder bereits extrahierten Rede genau einen Sprecher zu.
 
 Mögliche Sprecher:
 {SPRECHER_LISTE_HIER_EINFÜGEN}
 
-Eingabe:
-- Abschnitt als Fließtext
-- Tokenliste mit WortNr
+Gegebene Reden (in fester Reihenfolge):
+<<<REDE_DATEN_START>>>
+{REDE_DATEN}
+<<<REDE_DATEN_ENDE>>>
 
 Aufgabe:
-Finde alle wörtlichen Reden und bestimme den Sprecher.
+Gib für jede Rede genau einen Sprecher zurück.
+
+WICHTIG:
+
+* Die Reihenfolge der Reden ist verbindlich.
+* Die Anzahl der Namen MUSS exakt der Anzahl der Reden entsprechen.
+* Jeder Name gehört zur entsprechenden Rede an derselben Position.
+* Bestimme ausschließlich den Sprecher.
 
 Regeln:
-- Gib ausschließlich ein gültiges JSON-Array zurück.
-- Keine Erklärungen, kein Markdown.
-- Nutze nur WortNr aus der Tokenliste.
-- RedeStart/RedeEnde beziehen sich nur auf den Redeinhalt, ohne Anführungszeichen.
-- Sprecher bevorzugt aus der Sprecherliste.
-- Wenn unklar: "Unbekannt".
-- Wenn keine wörtliche Rede vorhanden ist: []
 
-Format:
-[
-  {
-    "Sprecher": "Name",
-    "RedeStart": 123,
-    "RedeEnde": 456,
-    "Rede": "exakt zitierter Text"
-  }
-]
+* Gib ausschließlich ein gültiges JSON-Array zurück.
+* KEINE Objekte, nur Strings.
+* Keine Erklärungen, kein Markdown.
+* Sprecher bevorzugt aus der Liste wählen.
+* Wenn unklar: "Unbekannt".
+* Wenn keine Reden vorhanden sind: []
+
+Beispiel:
+["Anna", "Peter", "Unbekannt"]

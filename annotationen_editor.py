@@ -56,6 +56,10 @@ class AnnotationenEditor(ttk.Frame):
         # Initialisiere weitere Variablen
         self.renderer = AnnotationRenderer()
         self.json_dicts = []
+        self.alle_json_dicts = []
+        self.index_to_wortnr = {}
+        self.wortnr_to_index = {}
+        self.wortnr_to_eintrag = {}
         self.undo_stack = []
         self.redo_stack = []
         self.filter_vars = {}
@@ -75,35 +79,128 @@ class AnnotationenEditor(ttk.Frame):
 
     def _lade_json_daten(self):
         aktueller_pfad = self.kapitel_pfade[self.current_abschnitt_index]
-        print(f"Lade Daten für: {aktueller_pfad}")
-        with open(aktueller_pfad, 'r', encoding='utf-8') as f:
-            self.json_dicts = json.load(f)
+        print(f"[Editor] Lade Daten für: {aktueller_pfad}")
+
+        with open(aktueller_pfad, "r", encoding="utf-8") as f:
+            daten = json.load(f)
+
+        if not isinstance(daten, list):
+            raise ValueError(f"JSON-Datei enthält keine Liste: {aktueller_pfad}")
+
+        self.alle_json_dicts = daten
         self.dateipfad_json = aktueller_pfad
 
+        kapitelname = str(self.kapitel_liste[self.current_hauptkapitel_index])
+        print(f"[Editor] aktuelles Kapitel aus Combo: {kapitelname}")
+        print(f"[Editor] Einträge gesamt: {len(self.alle_json_dicts)}")
 
+        if self.alle_json_dicts:
+            print("[Editor] Beispiel-Eintrag keys:", self.alle_json_dicts[0].keys())
+            print("[Editor] Beispiel KapitelNummer:", self.alle_json_dicts[0].get("KapitelNummer"))
+            print("[Editor] Beispiel WortNr:", self.alle_json_dicts[0].get("WortNr"))
+            print("[Editor] Beispiel token:", self.alle_json_dicts[0].get("token"))
+
+        gefiltert = [
+            eintrag for eintrag in self.alle_json_dicts
+            if isinstance(eintrag, dict)
+            and self._eintrag_gehoert_zu_aktuellem_kapitel(eintrag)
+        ]
+
+        # WICHTIGER FALLBACK:
+        # Wenn die Datei ohnehin schon kapitel-/abschnittsweise ist,
+        # oder KapitelNummer nicht exakt passt, darf nichts leer werden.
+        if not gefiltert and self.alle_json_dicts:
+            print(
+                "[Editor WARNUNG] Kapitel-Filter ergab 0 Einträge. "
+                "Fallback: komplette Datei wird angezeigt."
+            )
+            gefiltert = [
+                eintrag for eintrag in self.alle_json_dicts
+                if isinstance(eintrag, dict)
+            ]
+
+        gefiltert.sort(
+            key=lambda e: int(e.get("WortNr", 10**12))
+            if str(e.get("WortNr", "")).isdigit()
+            else 10**12
+        )
+
+        self.json_dicts = gefiltert
+        self._baue_lokale_indexe()
+
+        self.aktuell_gewaehlter_token_idx = None
+        self.personen_bereich_start_idx = None
+        self.personen_bereich_ende_idx = None
+
+        print(
+            f"[Editor] angezeigt={len(self.json_dicts)} "
+            f"von gesamt={len(self.alle_json_dicts)}"
+        )
+
+
+    def _kapitel_id_aus_name(self, kapitel):
+        """
+        Nutzt den Index aus kapitel_liste.
+        Vorwort -> 000
+        1. Einstieg ... -> 001
+        Nachwort -> z.B. 009
+        """
+        kapitel = str(kapitel).strip()
+
+        try:
+            idx = list(self.kapitel_liste).index(kapitel)
+            return f"{idx:03d}"
+        except ValueError:
+            print(f"[Editor WARNUNG] Kapitel nicht in kapitel_liste gefunden: {kapitel!r}")
+            return None
+        
     def _lade_alle_kapiteldateien(self, kapitel):
         merge_ordner = config.GLOBALORDNER["merge"]
         manuell_ordner = config.GLOBALORDNER["manuell"]
-        pattern = re.compile(rf"^{kapitel}_(\d+)_annotierungen\.json$")
-        
+
+        kapitel_id = self._kapitel_id_aus_name(kapitel)
+
+        if not kapitel_id:
+            return []
+
+        # Neues Format:
+        # 002_001.json
+        neues_pattern = re.compile(rf"^{kapitel_id}_(\d{{3}})\.json$")
+
+        # Altes Format bleibt als Fallback erlaubt:
+        # 2. Aufbau der Welt (Kapitel IV–VI)_001_annotierungen.json
+        kapitel_text = str(kapitel).strip()
+        altes_pattern = re.compile(
+            rf"^{re.escape(kapitel_text)}_(\d+)_annotierungen\.json$"
+        )
+
         dateien_dict = {}
 
-        # Zuerst alle manuell-Dateien einsammeln
-        for dateiname in os.listdir(manuell_ordner):
-            match = pattern.match(dateiname)
-            if match:
-                idx = int(match.group(1))
-                dateien_dict[idx] = os.path.join(manuell_ordner, dateiname)
+        def scan_ordner(ordner, quelle):
+            if not os.path.isdir(ordner):
+                print(f"[Editor WARNUNG] Ordner fehlt: {ordner}")
+                return
 
-        # Dann merge-Dateien nur ergänzen, wenn Index noch nicht drin ist
-        for dateiname in os.listdir(merge_ordner):
-            match = pattern.match(dateiname)
-            if match:
-                idx = int(match.group(1))
-                if idx not in dateien_dict:
-                    dateien_dict[idx] = os.path.join(merge_ordner, dateiname)
+            for dateiname in os.listdir(ordner):
+                match = neues_pattern.match(dateiname) or altes_pattern.match(dateiname)
 
-        # Nach Index sortieren und Pfade zurückgeben
+                if not match:
+                    continue
+
+                abschnitt_idx = int(match.group(1))
+                pfad = os.path.join(ordner, dateiname)
+
+                # manuell überschreibt merge
+                if quelle == "manuell" or abschnitt_idx not in dateien_dict:
+                    dateien_dict[abschnitt_idx] = pfad
+
+        scan_ordner(merge_ordner, "merge")
+        scan_ordner(manuell_ordner, "manuell")
+
+        print(f"[Editor] Kapitel: {kapitel}")
+        print(f"[Editor] Kapitel-ID: {kapitel_id}")
+        print(f"[Editor] gefundene Abschnitte: {dateien_dict}")
+
         return [dateien_dict[idx] for idx in sorted(dateien_dict.keys())]
 
     def _lade_kapitel_abschnitte(self):
@@ -292,7 +389,8 @@ class AnnotationenEditor(ttk.Frame):
     def _zeichne_alle_tokens(self):
         self.canvas.delete('all')
         self.renderer.positionen_zuruecksetzen()
-
+        self._baue_lokale_indexe()
+        
         aktive_filter = [name for name, var in self.filter_vars.items() if var.get()]
         self.renderer.ignorierte_annotationen = set(a.lower() for a in aktive_filter)
         self.renderer.use_number_words = self.use_number_words_var.get()
@@ -354,7 +452,7 @@ class AnnotationenEditor(ttk.Frame):
         self.annotation_frame.update_idletasks()
         print(f"Nach dem Löschen Widgets: {[type(c) for c in self.annotation_frame.winfo_children()]}")
 
-        wort_nr = json_dict.get("WortNr", idx)
+        wort_nr = self.index_to_wortnr.get(idx, json_dict.get("WortNr"))
 
         tk.Label(
             self.annotation_frame,
@@ -552,10 +650,22 @@ class AnnotationenEditor(ttk.Frame):
 
     def _json_speichern(self):
         try:
-            zielpfad = os.path.join(config.GLOBALORDNER["manuell"], os.path.basename(self.dateipfad_json))
-            with open(zielpfad, 'w', encoding='utf-8') as f:
-                json.dump(self.json_dicts, f, ensure_ascii=False, indent=2)
+            zielpfad = os.path.join(
+                config.GLOBALORDNER["manuell"],
+                os.path.basename(self.dateipfad_json)
+            )
+
+            daten_zum_speichern = (
+                self.alle_json_dicts
+                if getattr(self, "alle_json_dicts", None)
+                else self.json_dicts
+            )
+
+            with open(zielpfad, "w", encoding="utf-8") as f:
+                json.dump(daten_zum_speichern, f, ensure_ascii=False, indent=2)
+
             messagebox.showinfo("Erfolg", f"JSON erfolgreich gespeichert nach:\n{zielpfad}")
+
         except Exception as e:
             messagebox.showerror("Fehler", f"Fehler beim Speichern:\n{str(e)}")
 
@@ -594,13 +704,21 @@ class AnnotationenEditor(ttk.Frame):
     def _hauptkapitel_gewechselt(self, event):
         self.current_hauptkapitel_index = self.hauptkapitel_combo.current()
         self.current_abschnitt_index = 0
+        self.aktuell_gewaehlter_token_idx = None
+        self.personen_bereich_start_idx = None
+        self.personen_bereich_ende_idx = None
         self._lade_kapitel_abschnitte()
-        self._zeichne_alle_tokens()
+        self.zeige_default_annotation_label()
+
 
     def _abschnitt_gewechselt(self, event):
         self.current_abschnitt_index = self.abschnitt_combo.current()
+        self.aktuell_gewaehlter_token_idx = None
+        self.personen_bereich_start_idx = None
+        self.personen_bereich_ende_idx = None
         self._lade_json_daten()
         self._zeichne_alle_tokens()
+        self.zeige_default_annotation_label()
 
     def _exportiere_pdf(self):
       
@@ -637,28 +755,38 @@ class AnnotationenEditor(ttk.Frame):
         if start_idx is None:
             return
 
+        if not self.json_dicts:
+            return
+
         if end_idx is None:
             end_idx = start_idx
+
+        start_idx = max(0, min(start_idx, len(self.json_dicts) - 1))
+        end_idx = max(0, min(end_idx, len(self.json_dicts) - 1))
 
         if start_idx > end_idx:
             start_idx, end_idx = end_idx, start_idx
 
         personen_feldname = self._get_personen_feldname()
 
-        print(f"[AnnotationenEditor] Setze Person '{personenname}' im Bereich {start_idx} bis {end_idx}")
+        print(
+            f"[AnnotationenEditor] Setze Person '{personenname}' "
+            f"im lokalen Bereich {start_idx} bis {end_idx}"
+        )
 
         for i in range(start_idx, end_idx + 1):
+            eintrag = self.json_dicts[i]
+
             if personenname:
-                self.json_dicts[i][personen_feldname] = personenname
+                eintrag[personen_feldname] = personenname
             else:
-                self.json_dicts[i].pop(personen_feldname, None)
+                eintrag.pop(personen_feldname, None)
 
         self.personen_bereich_start_idx = None
         self.personen_bereich_ende_idx = None
 
         self._zeichne_alle_tokens()
-        self._on_token_click(end_idx)
-       
+        self._on_token_click(end_idx)     
 
     def _lade_personen_fuer_aktuellen_abschnitt(self):
         try:
@@ -904,3 +1032,61 @@ class AnnotationenEditor(ttk.Frame):
         self.sprecher_modus_var.set(not self.sprecher_modus_var.get())
         self._toggle_sprecher_modus()
         return "break"
+    
+    def _aktuelle_kapitelnummer_kandidaten(self):
+        kapitelname = str(self.kapitel_liste[self.current_hauptkapitel_index])
+        idx = int(self.current_hauptkapitel_index)
+
+        kandidaten = {
+            kapitelname,
+            kapitelname.strip(),
+            str(idx),
+            idx,
+            f"{idx:03d}",
+        }
+
+        # Fallback für alte Daten, falls früher 1-basiert gespeichert wurde
+        kandidaten.add(str(idx + 1))
+        kandidaten.add(idx + 1)
+
+        match = re.search(r"(\d+)", kapitelname)
+        if match:
+            nummer = match.group(1)
+            kandidaten.add(nummer)
+            kandidaten.add(str(int(nummer)))
+            kandidaten.add(int(nummer))
+
+        return kandidaten
+
+    def _eintrag_gehoert_zu_aktuellem_kapitel(self, eintrag):
+        # Wenn kein KapitelNummer-Feld vorhanden ist:
+        # Datei als bereits passenden Abschnitt behandeln.
+        if "KapitelNummer" not in eintrag:
+            return True
+
+        wert = eintrag.get("KapitelNummer")
+
+        # Leere KapitelNummer ebenfalls nicht rausfiltern
+        if wert in (None, ""):
+            return True
+
+        kandidaten = self._aktuelle_kapitelnummer_kandidaten()
+
+        wert_str = str(wert).strip()
+        kandidaten_str = {str(k).strip() for k in kandidaten}
+
+        return wert_str in kandidaten_str
+
+    def _baue_lokale_indexe(self):
+        self.index_to_wortnr = {}
+        self.wortnr_to_index = {}
+        self.wortnr_to_eintrag = {}
+
+        for idx, eintrag in enumerate(self.json_dicts):
+            wortnr = eintrag.get("WortNr")
+
+            self.index_to_wortnr[idx] = wortnr
+
+            if wortnr is not None:
+                self.wortnr_to_index[wortnr] = idx
+                self.wortnr_to_eintrag[wortnr] = eintrag

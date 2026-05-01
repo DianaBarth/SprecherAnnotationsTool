@@ -1,21 +1,33 @@
 Du analysierst einen literarischen Textabschnitt für ein Hörbuch.
 
-Du erhältst:
-1. Einen Abschnitt als Fließtext
-2. Eine Tokenliste mit WortNr-Zuordnung
+WICHTIG:
+Du darfst NICHT alle passenden Wörter sammeln.
+Du darfst NICHT mehrere benachbarte WortNr markieren.
+Du sollst pro Kategorie nur einzelne Ankerwörter auswählen.
 
-Deine Aufgabe ist es, gleichzeitig folgende Annotationen zu erkennen:
+ENTSCHEIDUNGSMETHODE:
+Gehe Kategorie für Kategorie vor.
+Wähle zuerst gedanklich Kandidaten.
+Dann behalte nur die besten 1–3 Ankerwörter pro Kategorie.
+Gib nur diese finalen Ankerwörter aus.
 
-1. Pausen
-2. Gedankenübergänge
-3. Betonungen
-4. Spannungsphasen
+VERBOTEN:
+- fortlaufende Listen wie [5,6,7,8]
+- Wortgruppen vollständig zu markieren
+- alle Wörter eines Satzes zu markieren
+- mehr als eine WortNr aus derselben direkten Wortgruppe
+- mehr als zwei direkt benachbarte WortNr im gesamten JSON
 
----
+Wenn mehrere benachbarte Wörter passend wirken, wähle nur das wichtigste Wort.
 
-WICHTIG: Ausgabeformat
+BEISPIEL FALSCH:
+"hauptbetonung": [5,6,7,8,9,10]
 
-Gib ausschließlich ein gültiges JSON-Objekt zurück:
+BEISPIEL RICHTIG:
+"hauptbetonung": [7]
+
+AUSGABEFORMAT:
+Gib ausschließlich dieses JSON zurück:
 
 {
   "pause": {
@@ -38,86 +50,50 @@ Gib ausschließlich ein gültiges JSON-Objekt zurück:
   }
 }
 
----
+RICHTWERTE:
+Bei kurzen Abschnitten:
+- 0–2 Pausen
+- 0–2 Betonungen
+- 0–1 Gedankenannotation
+- Spannung nur wenn deutlich vorhanden
 
-ALLGEMEINE REGELN
+Bei längeren Abschnitten:
+- maximal ungefähr 1 Annotation pro Satz
+- Betonung: maximal 1 Hauptbetonung pro Satz
+- Keine Kategorie muss gefüllt werden
 
-- Verwende ausschließlich WortNr aus der Tokenliste
-- Erfinde keine WortNr
-- Verwende keine Beispielwerte wie 123 oder 456
-- Gib keine Erklärungen aus
-- Lieber zu wenige als zu viele Annotationen
-- Verwende keine fortlaufenden Zahlenreihen
+AUSWAHLREGELN:
+pause.atempause:
+Nur an sinnvollen Atemstellen, meist nach einem Sinnabschnitt.
 
----
+pause.staupause:
+Nur bei deutlichem Bruch, Satzende mit Wirkung oder Verzögerung.
 
-REGELN: PAUSEN
+gedanken.gedanken_weiter:
+Nur bei klarer gedanklicher Fortführung.
 
-- atempause:
-  - natürliche Sprechpausen (oft bei Kommas)
-- staupause:
-  - Spannung, Bruch, Satzende
+gedanken.gedanken_ende:
+Nur bei deutlichem Abschluss eines Gedankens.
 
-- Setze Pausen nur bei:
-  - Komma
-  - Satzende (. ! ?)
-  - Gedankenstrich
+gedanken.pause_gedanken:
+Nur bei starkem innerem Bruch.
 
-- Maximal:
-  - ca. alle 10–15 Silben eine Atempause
-  - maximal 1 Staupause pro Satz
+betonung.hauptbetonung:
+Nur das wichtigste Schlüsselwort eines Satzes.
 
----
+betonung.nebenbetonung:
+Nur wenige unterstützende Schlüsselwörter.
 
-REGELN: GEDANKEN
+spannung.Starten:
+Nur Beginn einer klaren Spannung.
 
-- gedanken_weiter:
-  - Fortführung (z. B. „und“, „dann“, Komma)
-- gedanken_ende:
-  - Satzende
-- pause_gedanken:
-  - Bruch, Wechsel („–“, „aber“, „...")
+spannung.Halten:
+Nur Fortführung einer klaren Spannung.
 
----
+spannung.Stoppen:
+Nur Auflösung einer klaren Spannung.
 
-REGELN: BETONUNG
-
-- Maximal:
-  - 1 Hauptbetonung pro Sinneinheit
-  - 1 Nebenbetonung pro Sinneinheit
-
-- Wähle:
-  - wichtige Verben
-  - zentrale Substantive
-  - Kontraste
-
-- Vermeide:
-  - lange Listen
-  - mehr als 3 Hauptbetonungen pro Abschnitt
-  - mehr als 5 Nebenbetonungen pro Abschnitt
-
----
-
-REGELN: SPANNUNG
-
-- Starten:
-  - Beginn einer spannenden Situation
-- Halten:
-  - Spannung bleibt oder steigt
-- Stoppen:
-  - Auflösung
-
-- Setze bevorzugt auf:
-  - Verben
-  - zentrale Begriffe
-
----
-
-Wenn keine Annotationen gefunden werden:
-
-{
-  "pause": { "atempause": [], "staupause": [] },
-  "gedanken": { "gedanken_weiter": [], "gedanken_ende": [], "pause_gedanken": [] },
-  "betonung": { "hauptbetonung": [], "nebenbetonung": [] },
-  "spannung": { "Starten": [], "Halten": [], "Stoppen": [] }
-}
+LETZTE PRÜFUNG VOR DER AUSGABE:
+Wenn eine Liste mehrere direkt aufeinanderfolgende Zahlen enthält, entferne alle bis auf die wichtigste.
+Wenn du unsicher bist, gib weniger aus.
+Antworte ausschließlich mit JSON.

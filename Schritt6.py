@@ -1,489 +1,747 @@
-import os
 import json
-from collections import defaultdict
-from datetime import datetime
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.pdfbase.pdfmetrics import stringWidth
-import hashlib
+import re
+import traceback
 from pathlib import Path
-import Eingabe.config as config # Importiere das komplette config-Modul
-
-# ---------------------------------------------
-# Hilfsfunktionen zur PDF-Erstellung und Formatierung
-# ---------------------------------------------
-
-# Globale Farbzuordnung: jede Person bekommt eine eigene Farbe
-
-farben_dict = defaultdict(lambda: colors.black)
-def get_person_color(person):
-    """Gibt Farb-Tupel für eine Person zurück."""
-    if not person:
-        return config.FARBE_STANDARD
-    h = hashlib.md5(person.encode('utf-8')).hexdigest()
-    r = max(int(h[0:2], 16) / 255.0, 0.2)
-    g = max(int(h[2:4], 16) / 255.0, 0.2)
-    b = max(int(h[4:6], 16) / 255.0, 0.2)
-    return r, g, b
-
-def gruppiere_zeilen(tokens):
-    """
-    Gruppiert Tokens nach Seite und Zeile zur strukturierten Verarbeitung.
-    """
-    zeilen = defaultdict(list)
-    for t in tokens:
-        zeilen[(t["seite"], t["zeile"])].append(t)
-    return zeilen
+from collections import defaultdict
 
 
-def setze_schriftart_und_format(c, betonung, ist_ueberschrift, ist_legende):
-    """
-    Setzt Schriftart und -größe je nach Betonung und Texttyp.
-    """   
-    if betonung is None:
-        betonung = ""  # Leerer String statt None
+# ------------------------------------------------------------
+# Konfiguration
+# ------------------------------------------------------------
 
-    if ist_ueberschrift:
-        if "hauptbetonung" in betonung:
-            c.setFont(config.SCHRIFTART_UEBERSCHRIFT_HAUPT, config.UEBERSCHRIFT_GROESSE)
-        elif "nebenbetonung" in betonung:
-            c.setFont(config.SCHRIFTART_UEBERSCHRIFT_NEBEN, config.UEBERSCHRIFT_GROESSE)
-        else:
-            c.setFont(config.SCHRIFTART_UEBERSCHRIFT, config.UEBERSCHRIFT_GROESSE)
-    elif ist_legende:
-        if "hauptbetonung" in betonung:
-            c.setFont(config.SCHRIFTART_LEGENDE_HAUPT, config.LEGENDE_GROESSE)
-        elif "nebenbetonung" in betonung:
-            c.setFont(config.SCHRIFTART_LEGENDE_NEBEN, config.LEGENDE_GROESSE)
-        else:
-            c.setFont(config.SCHRIFTART_LEGENDE, config.LEGENDE_GROESSE)
-    else:
-        if "hauptbetonung" in betonung:
-            c.setFont(config.SCHRIFTART_BETONUNG_HAUPT, config.TEXT_GROESSE)
-        elif "nebenbetonung" in betonung:
-            c.setFont(config.SCHRIFTART_BETONUNG_NEBEN, config.TEXT_GROESSE)
-        else:
-            c.setFont(config.SCHRIFTART_STANDARD, config.TEXT_GROESSE)
+ERLAUBTE_FELDER_PRO_PASS = {
+    "prosodie": {"betonung", "pause", "gedanken", "spannung"},
+    "sprecher": {"person"},
+    "person": {"person"},
+    "ig": {"ig"},
+}
+
+NIEMALS_KI_UEBERSCHREIBEN = {
+    "token",
+    "tokenInklZahlwoerter",
+    "annotation",
+    "position",
+    "kombination",
+}
 
 
-def berechne_ueberschrift_position(c, text, seitenbreite):
-    """
-    Berechnet die x-Position für eine zentrierte Überschrift basierend auf ihrer Breite.
-    """
-    tw = c.stringWidth(text, config.SCHRIFTART_UEBERSCHRIFT_HAUPT, config.UEBERSCHRIFT_GROESSE)
-    return (seitenbreite - tw) / 2
+# ------------------------------------------------------------
+# Hilfsfunktionen
+# ------------------------------------------------------------
 
+def merge_ig_wortlisten(original_daten, ki_ordner):
+    ki_ordner = Path(ki_ordner)
 
-def zeichne_mehrzeilige_ueberschrift(c, zeilen_tokens, seitenbreite, y_pos, betonung):
-    """
-    Zeichnet eine mehrzeilige Überschrift mittig mit Unterstreichung und Abständen.
-    """
-    setze_schriftart_und_format(c, betonung, True, False)
-    for zeile_tokens in zeilen_tokens:
-        zeile = " ".join(zeile_tokens).strip()
-        if not zeile:
+    mapping = {
+        "KI_IG_Gesamt_ICH.json": "ich",
+        "KI_IG_Gesamt_IK.json": "ik",
+        "KI_IG_Gesamt_KEIN.json": "",
+        "KI_IG_Gesamt_SONDERFAELLE.json": "sonderfall",
+    }
+
+    wort_zu_ig = {}
+
+    for dateiname, klasse in mapping.items():
+        pfad = ki_ordner / dateiname
+
+        if not pfad.exists():
             continue
-        x = berechne_ueberschrift_position(c, zeile, seitenbreite)
-        c.drawString(x, y_pos, zeile)
 
-        # Unterstreichen
-        tw = c.stringWidth(zeile, config.SCHRIFTART_UEBERSCHRIFT_HAUPT, config.UEBERSCHRIFT_GROESSE)
-        c.setLineWidth(1)
-        c.line(x, y_pos - config.LINIENABSTAND, x + tw, y_pos - config.LINIENABSTAND)
+        try:
+            daten = lade_json_robust(pfad)
+        except Exception as e:
+            print(f"[WARNUNG] IG-Datei konnte nicht gelesen werden: {pfad.name} | {e}")
+            continue
 
-        y_pos -= config.ZEILENHOEHE  # Zeilenabstand
+        if not isinstance(daten, list):
+            print(f"[WARNUNG] IG-Datei ist keine Liste: {pfad.name}")
+            continue
 
-    y_pos -= config.ABSTANDNACHÜBERSCHRIFT  # Zusätzlicher Abstand
+        for eintrag in daten:
+            if isinstance(eintrag, str):
+                wort = eintrag.split("\t")[0].strip().lower()
+            else:
+                continue
 
-    # Verhindert negative y-Position
-    if y_pos < config.UNTERER_SEITENRAND:
-        y_pos = config.UNTERER_SEITENRAND
+            if wort:
+                wort_zu_ig[wort] = klasse
 
-    return y_pos
+    geschrieben = 0
+
+    for eintrag in original_daten:
+        token = (
+            eintrag.get("tokenInklZahlwoerter")
+            or eintrag.get("token")
+            or ""
+        ).strip().lower()
+
+        if not token:
+            continue
+
+        clean_token = re.sub(r"[^\wäöüÄÖÜß]", "", token).strip().lower()
+
+        if clean_token in wort_zu_ig:
+            eintrag["ig"] = wort_zu_ig[clean_token]
+            eintrag["ig_source"] = "ki_ig"
+            geschrieben += 1
+
+    return original_daten, {"geschrieben": geschrieben}
+
+def parse_bereich(wert):
+    if wert in (None, ""):
+        return []
+
+    wert = str(wert).strip()
+
+    if ":" in wert:
+        try:
+            start, ende = map(int, wert.split(":", 1))
+            if start > ende:
+                start, ende = ende, start
+            return list(range(start, ende + 1))
+        except ValueError:
+            return []
+
+    try:
+        return [int(wert)]
+    except ValueError:
+        return []
 
 
-def zeichne_überschrift(canvas, text, x_pos, y_pos):
+def lade_json_robust(dateipfad):
+    text = Path(dateipfad).read_text(encoding="utf-8").strip()
+
+    text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"```$", "", text).strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Erstes JSON-Objekt extrahieren
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("Kein JSON-Objekt gefunden.")
+
+    tiefe = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+
+        if escape:
+            escape = False
+            continue
+
+        if ch == "\\":
+            escape = True
+            continue
+
+        if ch == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if ch == "{":
+            tiefe += 1
+        elif ch == "}":
+            tiefe -= 1
+            if tiefe == 0:
+                return json.loads(text[start:i + 1])
+
+    raise ValueError("Kein vollständiges JSON-Objekt gefunden.")
+
+
+def key_fuer_wort(eintrag):
+    try:
+        return str(eintrag["KapitelNummer"]), int(eintrag["WortNr"])
+    except Exception:
+        return None
+
+
+
+
+# ------------------------------------------------------------
+# KI-Output normalisieren
+# ------------------------------------------------------------
+
+def normalisiere_ki_output(daten, pass_typ, default_kapitelnummer=None):
     """
-    Zeichnet eine Überschrift auf das PDF.
+    Gibt eine flache Update-Liste zurück:
+
+    [
+      {
+        "KapitelNummer": "1",
+        "WortNr": 874,
+        "feld": "betonung",
+        "wert": "hauptbetonung"
+      }
+    ]
     """
-    canvas.setFont(config.FONT_ÜBERSCHRIFT, config.FONT_SIZE_ÜBERSCHRIFT)
-    canvas.setFillColor(colors.black)
-    canvas.drawString(x_pos, y_pos, text)
-    y_pos -= config.ZEILENHOEHE
-    return y_pos
+
+    pass_typ = str(pass_typ).lower().strip()
+    erlaubte_felder = ERLAUBTE_FELDER_PRO_PASS.get(pass_typ)
+
+    if not erlaubte_felder:
+        raise ValueError(f"Unbekannter KI-Pass: {pass_typ}")
+
+    updates = []
+    warnungen = []
+
+    # --------------------------------------------------------
+    # Format:
+    # {
+    #   "pause": {"atempause": [1, 2]},
+    #   "betonung": {"hauptbetonung": [3]}
+    # }
+    # --------------------------------------------------------
+    if isinstance(daten, dict):
+        for feld, kategorien in daten.items():
+            feld = str(feld).strip()
+
+            if feld not in erlaubte_felder:
+                warnungen.append(f"Ungültiges Feld für Pass '{pass_typ}': {feld}")
+                continue
+
+            if not isinstance(kategorien, dict):
+                warnungen.append(f"Feld '{feld}' enthält kein Kategorie-Dict.")
+                continue
+
+            for wert, wortnrs in kategorien.items():
+                if not isinstance(wortnrs, list):
+                    warnungen.append(f"'{feld}.{wert}' ist keine Liste.")
+                    continue
+
+                for wortnr in wortnrs:
+                    try:
+                        wortnr = int(wortnr)
+                    except Exception:
+                        warnungen.append(f"Ungültige WortNr bei '{feld}.{wert}': {wortnr}")
+                        continue
+
+                    updates.append({
+                        "KapitelNummer": str(default_kapitelnummer) if default_kapitelnummer is not None else None,
+                        "WortNr": wortnr,
+                        "feld": feld,
+                        "wert": str(wert),
+                    })
+
+        return updates, warnungen
+
+    # --------------------------------------------------------
+    # Sprecherformat:
+    # [
+    #   {"Sprecher": "Anna", "RedeStart": 5, "RedeEnde": 8}
+    # ]
+    # --------------------------------------------------------
+    if pass_typ in {"sprecher", "person"} and isinstance(daten, list):
+        for eintrag in daten:
+            if not isinstance(eintrag, dict):
+                warnungen.append("Sprecher-Eintrag ist kein Dict.")
+                continue
+
+            sprecher = (
+                eintrag.get("Sprecher")
+                or eintrag.get("sprecher")
+                or eintrag.get("Person")
+                or eintrag.get("person")
+            )
+
+            start = eintrag.get("RedeStart")
+            ende = eintrag.get("RedeEnde")
+
+            if not sprecher or start is None or ende is None:
+                warnungen.append(f"Unvollständiger Sprecher-Eintrag: {eintrag}")
+                continue
+
+            try:
+                start = int(start)
+                ende = int(ende)
+            except Exception:
+                warnungen.append(f"Ungültiger Sprecher-Bereich: {eintrag}")
+                continue
+
+            if start > ende:
+                start, ende = ende, start
+
+            kapitelnummer = eintrag.get("KapitelNummer", default_kapitelnummer)
+
+            for wortnr in range(start, ende + 1):
+                updates.append({
+                    "KapitelNummer": str(kapitelnummer) if kapitelnummer is not None else None,
+                    "WortNr": wortnr,
+                    "feld": "person",
+                    "wert": str(sprecher),
+                })
+
+        return updates, warnungen
+
+    # --------------------------------------------------------
+    # Altes Listenformat:
+    # [
+    #   {"KapitelNummer": "1", "WortNr": 12, "ig": "ich"}
+    # ]
+    # --------------------------------------------------------
+    if isinstance(daten, list):
+        for eintrag in daten:
+            if not isinstance(eintrag, dict):
+                warnungen.append("Listen-Eintrag ist kein Dict.")
+                continue
+
+            wortnrs = parse_bereich(eintrag.get("WortNr"))
+            if not wortnrs:
+                warnungen.append(f"Fehlende/ungültige WortNr: {eintrag}")
+                continue
+
+            kapitelnummer = eintrag.get("KapitelNummer", default_kapitelnummer)
+
+            for feld, wert in eintrag.items():
+                if feld in {"KapitelNummer", "WortNr"}:
+                    continue
+
+                if feld not in erlaubte_felder:
+                    warnungen.append(f"Ungültiges Feld für Pass '{pass_typ}': {feld}")
+                    continue
+
+                if wert in ("", None, []):
+                    continue
+
+                for wortnr in wortnrs:
+                    updates.append({
+                        "KapitelNummer": str(kapitelnummer) if kapitelnummer is not None else None,
+                        "WortNr": wortnr,
+                        "feld": feld,
+                        "wert": wert,
+                    })
+
+        return updates, warnungen
+
+    raise ValueError(f"Nicht unterstütztes KI-Format für Pass '{pass_typ}'.")
 
 
-def zeichne_text(canvas, text, x_pos, y_pos):
+# ------------------------------------------------------------
+# Robuster feldbasierter Merge
+# ------------------------------------------------------------
+
+def merge_ki_updates(
+    original_daten,
+    ki_updates,
+    pass_typ,
+    default_kapitelnummer=None,
+    schuetze_manuelle_aenderungen=True,
+    source_suffix="_source",
+    ki_source_name="ki",
+):
     """
-    Zeichnet normalen Text auf das PDF.
+    original_daten:
+        Liste deiner Wortobjekte.
+
+    ki_updates:
+        Bereits normalisierte Updates ODER roher KI-Output.
+
+    pass_typ:
+        "prosodie", "sprecher", "person" oder "ig".
+
+    schuetze_manuelle_aenderungen:
+        Wenn True, werden Felder mit z.B. pause_source == "manual"
+        nicht durch KI überschrieben.
     """
-    canvas.setFont(config.FONT_STANDARD, config.FONT_SIZE_STANDARD)
-    canvas.setFillColor(colors.black)
-    canvas.drawString(x_pos, y_pos, text)
-    y_pos -= config.ZEILENHOEHE
-    return y_pos
 
-# ---------------------------------------------
-# PDF-Erstellung
-# ---------------------------------------------
+    pass_typ = str(pass_typ).lower().strip()
+    erlaubte_felder = ERLAUBTE_FELDER_PRO_PASS.get(pass_typ)
 
-def erstelle_pdf(dateiname, json_data):
-    """
-    Erstellt das PDF-Dokument aus JSON-Daten und speichert es.
-    """
-    c = canvas.Canvas(dateiname, pagesize=letter)
-    seitenhoehe = letter[1]
-    seite_nummer = 1
+    if not erlaubte_felder:
+        raise ValueError(f"Unbekannter KI-Pass: {pass_typ}")
 
-    # Zeichne die Seite mit json_data (die Funktion zeichne_seite ist extern definiert)
-    c = zeichne_seite(c, json_data, seite_nummer, seitenhoehe)
+    report = {
+        "geschrieben": 0,
+        "uebersprungen_manual": 0,
+        "unbekannte_wortnr": [],
+        "doppelte_updates": [],
+        "fehlende_felder": [],
+        "ungueltige_felder": [],
+        "doppelte_original_keys": [],
+        "warnungen": [],
+    }
 
-    c.save()
+    # Original indexieren
+    index = {}
 
-def verarbeite_tokens(tokens):
-    """
-    Berechnet Seiten-, Zeilen-, x- und y-Position sowie Darstellungsform für Tokens.
-    Unterstützt "zeilenumbruch", "satzzeichenOhneSpace" und "satzzeichenMitSpace".
-    """
-    laufende_breite = 0
-    zeilen_nummer = 0
-    x_start = 50  # linker Rand
-    y_pos = 0     # wird ggf. beim Zeichnen pro Zeile berechnet
+    for eintrag in original_daten:
+        if not isinstance(eintrag, dict):
+            continue
 
-    for i, eintrag in enumerate(tokens):
-        annotation = [a.strip() for a in eintrag.get("annotation", [])]
-        token = eintrag.get("token", "")
+        key = key_fuer_wort(eintrag)
 
-        # harter Zeilenumbruch
-        if ("zeilenumbruch" in annotation or "Zeilenumbruch" in annotation) and not token:
-            laufende_breite = 0
-            zeilen_nummer += 1
-            eintrag.update({
-                "text_anzeige": "",
-                "word_width": 0,
-                "extra_space": 0,
-                "seite": zeilen_nummer // config.MAX_ZEILENANZAHL + 1,
-                "zeile": zeilen_nummer,
-                "x": x_start,
-                "y": y_pos  # wird später dynamisch gesetzt
+        if key is None:
+            report["fehlende_felder"].append(f"Original ohne gültige KapitelNummer/WortNr: {eintrag}")
+            continue
+
+        if key in index:
+            report["doppelte_original_keys"].append(key)
+            continue
+
+        index[key] = eintrag
+
+    # Falls roher KI-Output übergeben wurde: normalisieren
+    if not (
+        isinstance(ki_updates, list)
+        and all(isinstance(x, dict) and {"WortNr", "feld", "wert"} <= set(x.keys()) for x in ki_updates)
+    ):
+        ki_updates, warnungen = normalisiere_ki_output(
+            ki_updates,
+            pass_typ=pass_typ,
+            default_kapitelnummer=default_kapitelnummer,
+        )
+        report["warnungen"].extend(warnungen)
+
+    # Doppelte Updates erkennen
+    gesehen = {}
+
+    for upd in ki_updates:
+        feld = upd.get("feld")
+        wert = upd.get("wert")
+        wortnr = upd.get("WortNr")
+        kapitelnummer = upd.get("KapitelNummer", default_kapitelnummer)
+
+        if feld not in erlaubte_felder:
+            report["ungueltige_felder"].append(upd)
+            continue
+
+        if feld in NIEMALS_KI_UEBERSCHREIBEN:
+            report["ungueltige_felder"].append(upd)
+            continue
+
+        if wortnr is None:
+            report["fehlende_felder"].append(upd)
+            continue
+
+        try:
+            wortnr = int(wortnr)
+        except Exception:
+            report["fehlende_felder"].append(upd)
+            continue
+
+        if kapitelnummer is None:
+            # Fallback: Wenn es nur ein Kapitel im Original gibt
+            kapitel_set = {k[0] for k in index.keys()}
+            if len(kapitel_set) == 1:
+                kapitelnummer = next(iter(kapitel_set))
+            else:
+                report["fehlende_felder"].append(f"KapitelNummer fehlt bei Update: {upd}")
+                continue
+
+        key = (str(kapitelnummer), wortnr)
+        update_key = (str(kapitelnummer), wortnr, feld)
+
+        if update_key in gesehen:
+            alter_wert = gesehen[update_key]
+
+            if alter_wert != wert:
+                report["doppelte_updates"].append({
+                    "KapitelNummer": str(kapitelnummer),
+                    "WortNr": wortnr,
+                    "feld": feld,
+                    "werte": [alter_wert, wert],
+                })
+
+            # Bei Duplikaten gewinnt hier der letzte Wert.
+            # Falls du lieber den ersten behalten willst: continue
+        gesehen[update_key] = wert
+
+        if key not in index:
+            report["unbekannte_wortnr"].append({
+                "KapitelNummer": str(kapitelnummer),
+                "WortNr": wortnr,
+                "feld": feld,
+                "wert": wert,
             })
             continue
 
-        # Leerzeichenlogik
-        if i + 1 < len(tokens):
-            next_annotation = tokens[i + 1].get("annotation", [])
-            next_is_satzzeichen_ohne_space = "satzzeichenOhneSpace" in next_annotation
-        else:
-            next_is_satzzeichen_ohne_space = False
+        ziel = index[key]
 
-        if next_is_satzzeichen_ohne_space:
-            extra_space = 0
-            text_anzeige = token
-        else:
-            extra_space = 1
-            text_anzeige = f"{token} "
+        source_feld = f"{feld}{source_suffix}"
 
-        # Wortbreite berechnen
-        word_width = len(token) + extra_space
-        neue_laufende_breite = laufende_breite + word_width
-
-        # automatischer Umbruch
-        if neue_laufende_breite > config.MAX_ZEILENBREITE:
-            zeilen_nummer += 1
-            laufende_breite = 0
-            neue_laufende_breite = word_width  # dieses Wort beginnt neue Zeile
-
-        laufende_breite = neue_laufende_breite
-
-        eintrag.update({
-            "is_satzzeichen": "satzzeichenOhneSpace" in annotation or "satzzeichenMitSpace" in annotation,
-            "extra_space": extra_space,
-            "word_width": word_width,
-            "text_anzeige": text_anzeige,
-            "laufende_breite": laufende_breite,
-            "zeile": zeilen_nummer,
-            "seite": zeilen_nummer // config.MAX_ZEILENANZAHL + 1,
-            "x": x_start + laufende_breite * config.ZEICHENBREITE,
-            "y": y_pos  # wird ggf. beim Zeichnen durch Zeilennummer ersetzt
-        })
-
-    return tokens
-
-def berechne_positionen(tokens):
-    """
-    Berechnet X- und Y-Position jedes Tokens.
-    """
-    seiten_zeilen = defaultdict(list)
-    for e in tokens:
-        seiten_zeilen[(e["seite"], e["zeile"])].append(e)
-    for (seite, zeile), grp in seiten_zeilen.items():
-        x = config.START_X_POS
-        for e in grp:
-            e["x"] = x
-            e["y_offset"] = zeile * config.ZEILENHOEHE
-            x += e["word_width"] * config.ZEICHENBREITE
-
-
-def zeichne_seite(c, tokens, seite_nummer, seitenhoehe):
-    farben_dict.clear()  # Reset der Farbindividuen
-    for t in tokens:
-        p = t.get("Person", "")
-        if p:
-            farben_dict[p] = colors.Color(*get_person_color(p))  # Weise jeder Person eine Farbe zu
-
-    c.setFont(config.SCHRIFTART_STANDARD, config.TEXT_GROESSE)  # Standard-Schriftart setzen
-    c.drawString(config.START_X_POS, seitenhoehe - 30, f"Seite {seite_nummer}")  # Seitenzahl einfügen
-    zeilen = gruppiere_zeilen(tokens)  # Gruppiere die Tokens nach Seiten und Zeilen
-    y_pos = seitenhoehe - config.OBERER_SEITENRAND  # Initiale y-Position
-    ueb = [[]]  # Liste für mehrzeilige Überschriften
-    x_off = config.START_X_POS  # Initiale x-Position für den Text
-    zeilenumbruch_pos = y_pos  # Position für den nächsten Zeilenumbruch
-    vorherige_zeile = 0  # Initiale Zeilennummer setzen
-    ist_überschrift = False
-    ist_legende = False
-
-    for (s, z), grp in sorted(zeilen.items()):
-        if s != seite_nummer:
+        if (
+            schuetze_manuelle_aenderungen
+            and ziel.get(source_feld) == "manual"
+            and ziel.get(feld) not in ("", None, [])
+        ):
+            report["uebersprungen_manual"] += 1
             continue
 
-        for e in grp:
-            ann = [a.strip() for a in e.get("annotation", "").split(',')]
+        ziel[feld] = wert
+        ziel[source_feld] = ki_source_name
+        report["geschrieben"] += 1
 
-            if "Überschrift" in ann:
-                ist_überschrift = True
-                ist_legende = False
-                tok = e.get("token", "")
-                if "zeilenumbruch" in ann:
-                    ueb.append([])  # Neue Zeile für Überschrift
-                else:
-                    ueb[-1].append(tok)
+    return original_daten, report
+
+
+# ------------------------------------------------------------
+# Beispielaufrufe
+# ------------------------------------------------------------
+
+def merge_prosodie(original_daten, prosodie_json, kapitelnummer=None):
+    return merge_ki_updates(
+        original_daten=original_daten,
+        ki_updates=prosodie_json,
+        pass_typ="prosodie",
+        default_kapitelnummer=kapitelnummer,
+        schuetze_manuelle_aenderungen=True,
+        ki_source_name="ki_prosodie",
+    )
+
+
+def merge_sprecher(original_daten, sprecher_json, kapitelnummer=None):
+    return merge_ki_updates(
+        original_daten=original_daten,
+        ki_updates=sprecher_json,
+        pass_typ="sprecher",
+        default_kapitelnummer=kapitelnummer,
+        schuetze_manuelle_aenderungen=True,
+        ki_source_name="ki_sprecher",
+    )
+
+
+def merge_ig(original_daten, ig_json, kapitelnummer=None):
+    return merge_ki_updates(
+        original_daten=original_daten,
+        ki_updates=ig_json,
+        pass_typ="ig",
+        default_kapitelnummer=kapitelnummer,
+        schuetze_manuelle_aenderungen=True,
+        ki_source_name="ki_ig",
+    )
+
+
+def Merge_annotationen(
+    quellordner_kapitel,
+    quellordner_annotationen,
+    ziel_ordner,
+    ausgewaehlte_kapitel=None,
+    progress_callback=None,
+):
+    quellordner_kapitel = Path(quellordner_kapitel)
+    quellordner_annotationen = Path(quellordner_annotationen)
+    ziel_ordner = Path(ziel_ordner)
+    ziel_ordner.mkdir(parents=True, exist_ok=True)
+
+    # Originaldaten bleiben altes Format
+    dateien = sorted(quellordner_kapitel.glob("*_annotierungen.json"))
+
+    if ausgewaehlte_kapitel:
+        ausgewaehlte = {str(k) for k in ausgewaehlte_kapitel}
+        dateien = [
+            p for p in dateien
+            if any(k in p.name for k in ausgewaehlte)
+        ]
+
+    gesamt = len(dateien)
+
+    for i, pfad in enumerate(dateien, start=1):
+        if progress_callback:
+            progress_callback(round((i - 1) / max(gesamt, 1) * 100, 1))
+
+        print(f"[INFO] Merge Originaldatei: {pfad.name}")
+
+        try:
+            daten = lade_json_robust(pfad)
+        except Exception as e:
+            print(f"[FEHLER] Original konnte nicht gelesen werden: {pfad.name} | {e}")
+            traceback.print_exc()
+            continue
+
+        if not isinstance(daten, list):
+            print(f"[FEHLER] Original ist keine Liste: {pfad.name}")
+            continue
+
+        try:
+            kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id_aus_original(pfad, daten)
+        except Exception as e:
+            print(f"[FEHLER] Konnte Kapitel-/Abschnitt-ID nicht bestimmen: {pfad.name} | {e}")
+            traceback.print_exc()
+            continue
+
+        kapitelnummer = str(int(kapitel_id))
+
+        print(f"[Merge] KapitelID={kapitel_id}, AbschnittID={abschnitt_id}")
+
+        # --------------------------------------------------
+        # 1) PERSON aus neuer KI-Nomenklatur
+        # Beispiel: KI_PERSON_001_002_001.json
+        # --------------------------------------------------
+        person_dateien = finde_ki_dateien_fuer_original(
+            quellordner_annotationen,
+            "PERSON",
+            kapitel_id,
+            abschnitt_id
+        )
+
+        for ki_pfad in person_dateien:
+            try:
+                print(f"[INFO] Merge PERSON: {ki_pfad.name}")
+                ki_json = lade_json_robust(ki_pfad)
+                daten, report = merge_sprecher(daten, ki_json, kapitelnummer)
+                print(f"[INFO] PERSON geschrieben: {report.get('geschrieben', 0)}")
+            except Exception as e:
+                print(f"[FEHLER] PERSON {ki_pfad.name}: {e}")
+                traceback.print_exc()
                 continue
-            elif "Legende" in ann:
-                ist_legende = True
-                ist_überschrift = False
-            else:
-                 ist_überschrift = False
-                 ist_legende = False
-                 
-            if ueb and any(ueb):
-                # Zeichne die Überschrift, wenn mehrzeilige Überschrift vorhanden ist
-                zeichne_mehrzeilige_ueberschrift(c, ueb, letter[0], zeilenumbruch_pos, grp[0].get("Betonung", ""))
 
-                # Setze y_pos nach der Überschrift explizit, damit der Text nicht darüber gezeichnet wird
-                zeilenumbruch_pos -= config.ZEILENHOEHE  # Verwende den Abstand für die Zeilenhöhe
+        # --------------------------------------------------
+        # 2) KOMBINATION aus neuer KI-Nomenklatur
+        # Beispiel: KI_KOMBINATION_001_002_001.json
+        # --------------------------------------------------
+        kombi_dateien = finde_ki_dateien_fuer_original(
+            quellordner_annotationen,
+            "KOMBINATION",
+            kapitel_id,
+            abschnitt_id
+        )
 
-                ueb = [[]]  # Liste für mehrzeilige Überschrift zurücksetzen
+        for ki_pfad in kombi_dateien:
+            try:
+                print(f"[INFO] Merge KOMBINATION: {ki_pfad.name}")
+                ki_json = lade_json_robust(ki_pfad)
+                daten, report = merge_prosodie(daten, ki_json, kapitelnummer)
+                print(f"[INFO] KOMBINATION geschrieben: {report.get('geschrieben', 0)}")
+            except Exception as e:
+                print(f"[FEHLER] KOMBINATION {ki_pfad.name}: {e}")
+                traceback.print_exc()
                 continue
 
-            if "zeilenumbruch" in ann and not e.get("token") and not any(ueb):
-                zeilenumbruch_pos -= config.ZEILENHOEHE  # Verwende Zeilenhöhe für den Abstand
-                x_off = config.START_X_POS
-                continue
+        # --------------------------------------------------
+        # 3) IG global mergen
+        # --------------------------------------------------
+        try:
+            daten, report = merge_ig_wortlisten(
+                original_daten=daten,
+                ki_ordner=quellordner_annotationen
+            )
+            print(f"[INFO] IG geschrieben: {report.get('geschrieben', 0)}")
+        except Exception as e:
+            print(f"[FEHLER] IG-Merge fehlgeschlagen für {pfad.name}: {e}")
+            traceback.print_exc()
 
-            c.setFillColor(farben_dict[e.get("Person", "")])  # Setzt die Farbe für die Person
-            setze_schriftart_und_format(c, e.get("Betonung"), ist_überschrift, ist_legende)  # Schriftart setzen je nach Betonung
-            txt = e.get("token", "")
-            txt_width = stringWidth(txt, c._fontname, c._fontsize)  # Berechne Breite des Textes
+        # --------------------------------------------------
+        # 4) Ausgabe im neuen Format speichern
+        # --------------------------------------------------
+        ziel_dateiname = f"{kapitel_id}_{abschnitt_id}.json"
+        zielpfad = ziel_ordner / ziel_dateiname
 
-            # Überprüfe, ob der Text in die Zeile passt
-            if x_off + txt_width > config.MAX_ZEILENBREITE:
-                # Wenn Text nicht mehr passt, setze Umbruch
-                zeilenumbruch_pos -= config.ZEILENHOEHE  # Zeilenhöhe reduzieren (nächste Zeile)
-                x_off = config.START_X_POS  # Setze x-Offset für neue Zeile zurück
+        with open(zielpfad, "w", encoding="utf-8") as f:
+            json.dump(daten, f, ensure_ascii=False, indent=2)
 
-            # Wenn ein Zeilenumbruch in der Annotation vorhanden ist, füge extra Abstand ein
-            if "zeilenumbruch" in ann:
-                zeilenumbruch_pos -= config.ZEILENHOEHE  # Zeilenhöhe für Abstand nach einem „Zeilenumbruch“
+        print(f"[✓] Gespeichert als neues Format: {zielpfad}")
 
-            # Zeichne den Text
-            c.drawString(x_off, zeilenumbruch_pos, txt)
-            vorherige_zeile = zeichne_marker(c, e, x_off, zeilenumbruch_pos, txt_width, vorherige_zeile)  # Marker für Pausen oder Gedanken zeichnen
-            x_off += txt_width + (stringWidth(" ", c._fontname, c._fontsize) if e.get("extra_space", 0) else 0)
+        if progress_callback:
+            progress_callback(round(i / max(gesamt, 1) * 100, 1))
 
-            # Wenn der Text über das Ende der Seite hinausgeht, füge einen Seitenumbruch ein
-            if zeilenumbruch_pos < config.UNTERER_SEITENRAND:
-                c.showPage()  # Neue Seite, wenn Schwelle überschritten
-                zeilenumbruch_pos = seitenhoehe - config.OBERER_SEITENRAND  # Setze Position zurück
+    print("[✓] Merge abgeschlossen")
 
-    return c
+def finde_originaldateien(quellordner_kapitel):
+    """
+    Findet neue und alte Originaldateien.
+    Neu: 002_001.json
+    Alt: *_annotierungen.json
+    """
+    quellordner_kapitel = Path(quellordner_kapitel)
 
-def zeichne_marker(c, e, x_pos, y_pos, text_width, vorherige_zeile):
-    pause = e.get("Pause", "")
-    spannung = e.get("Spannung", "")  # Direkt aus dem Event 'e' die Spannung holen
-    token = e.get("token", "?")
-    gedanken = e.get("Gedanken", "")
- 
-    oy = config.MARKER_OFFSET_Y
-    w = config.MARKER_BREITE_KURZ
-    h = config.MARKER_BREITE_KURZ
+    neue_dateien = sorted(quellordner_kapitel.glob("[0-9][0-9][0-9]_[0-9][0-9][0-9].json"))
+    alte_dateien = sorted(quellordner_kapitel.glob("*_annotierungen.json"))
 
-    x = x_pos + text_width / 2 - w / 2  # exakt zentriert über dem Token
-    zeile = e.get("zeile", 0)
-    unterstrich_y_pos = y_pos - 2  # Y-Position des Unterstrichs unterhalb des Textes
+    alle = []
+    gesehen = set()
 
-    # Wenn der Zeilenumbruch erkannt wird, unterbrich die Linie
-    if zeile != vorherige_zeile:
-        return zeile  # Zeilenwechsel erkannt, also Linie unterbrechen
-      
-    # Spannungsbögen zeichnen (Starten)
-    if spannung == "Starten":
-        c.setStrokeColorRGB(*config.FARBE_SPANNUNG)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
+    for pfad in neue_dateien + alte_dateien:
+        if pfad.name not in gesehen:
+            alle.append(pfad)
+            gesehen.add(pfad.name)
 
-        steps = 10  # Anzahl der Schritte für die Bogenbildung
-        path_bogen = c.beginPath()
-        for i in range(steps):
-            t = i / float(steps)
-            x1 = x_pos + t * text_width
-            y1 = y_pos + oy + h / 2 + t * config.SPANNUNG_NEIGUNG  # Steigend!
-            if i == 0:
-                path_bogen.moveTo(x1, y1)
-            else:
-                path_bogen.lineTo(x1, y1)
-        c.drawPath(path_bogen)
+    return alle
 
-    # Spannungsbögen zeichnen (Halten)
-    elif spannung == "Halten":
-        c.setStrokeColorRGB(*config.FARBE_SPANNUNG)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
-        path_halten = c.beginPath()
 
-        start_x = x_pos
-        end_x = x_pos + text_width
+def ki_glob_patterns_fuer_original(pfad):
+    """
+    Für Original:
+    002_001.json
 
-        y = y_pos + oy + h / 2
-        path_halten.moveTo(start_x, y)
-        path_halten.lineTo(end_x, y)
-        c.drawPath(path_halten)
+    werden gesucht:
+    KI_PERSON_*_002_001.json
+    KI_KOMBINATION_*_002_001.json
 
-    elif spannung == "Stoppen":
-        c.setStrokeColorRGB(*config.FARBE_SPANNUNG)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
+    Zusätzlich alte Varianten mit stem.
+    """
+    pfad = Path(pfad)
+    stem = pfad.stem
 
-        # Gerade Linie (nur als Markierungspunkt)
-        path_stoppen = c.beginPath()
-        path_stoppen.moveTo(x_pos + text_width, y_pos + oy + h / 2)
-        path_stoppen.lineTo(x_pos + text_width, y_pos + oy + h / 2)
-        c.drawPath(path_stoppen)
+    return {
+        "person": [
+            f"KI_PERSON_*_{stem}.json",
+            f"KI_PERSON_*_{pfad.name}",
+        ],
+        "kombination": [
+            f"KI_KOMBINATION_*_{stem}.json",
+            f"KI_KOMBINATION_*_{pfad.name}",
+        ],
+    }
 
-        # Abfallender Bogen von Start bis Ende des Tokens
-        steps = 10
-        path_bogen = c.beginPath()
-        for i in range(steps):
-            t = i / float(steps)
-            x1 = x_pos + t * text_width
-            y1 = y_pos + oy + h / 2 - t * config.SPANNUNG_NEIGUNG  # Abfallend!
-            if i == 0:
-                path_bogen.moveTo(x1, y1)
-            else:
-                path_bogen.lineTo(x1, y1)
-        c.drawPath(path_bogen)
 
-    # Unterstrich für "ig" am Ende des Tokens
-    if token.endswith("ig"):
-        c.setStrokeColorRGB(*config.FARBE_UNTERSTREICHUNG)  # Unterstrichfarbe aus config
-        c.setLineWidth(config.LINIENBREITE_STANDARD)  # Stärkere Linie
-        unterstrich_x_pos = x_pos + text_width - config.ZEICHENBREITE * 2  # Position des 'ig' am Ende des Tokens
-        c.line(unterstrich_x_pos, unterstrich_y_pos, unterstrich_x_pos + config.ZEICHENBREITE * 2, unterstrich_y_pos)
+def finde_ki_dateien(ordner, patterns):
+    ordner = Path(ordner)
+    gefunden = []
 
-    # Punkte für Binnen-"ig"
+    for pattern in patterns:
+        gefunden.extend(ordner.glob(pattern))
+
+    # Duplikate entfernen
+    eindeutig = {}
+    for pfad in gefunden:
+        eindeutig[pfad.name] = pfad
+
+    return sorted(eindeutig.values())
+
+def ermittle_kapitel_abschnitt_id_aus_original(pfad, daten=None):
+    pfad = Path(pfad)
+
+    kapitelnummer = None
+
+    if isinstance(daten, list):
+        for eintrag in daten:
+            if isinstance(eintrag, dict) and eintrag.get("KapitelNummer") not in (None, ""):
+                kapitelnummer = eintrag.get("KapitelNummer")
+                break
+
+    if kapitelnummer is None:
+        raise ValueError(f"Keine KapitelNummer in Originaldatei gefunden: {pfad.name}")
+
+    kapitel_id = f"{int(kapitelnummer):03d}"
+
+    match = re.search(r"_(\d+)_annotierungen\.json$", pfad.name)
+    if match:
+        abschnitt_id = f"{int(match.group(1)):03d}"
     else:
-        binnen_ig_index = token.find("ig")
-        if binnen_ig_index != -1 and binnen_ig_index + 2 != len(token):
-            # Berechne x-Position des Binnen-"ig"
-            binnen_ig_x_pos = x_pos + binnen_ig_index * config.ZEICHENBREITE
+        abschnitt_id = "001"
 
-            c.setFillColorRGB(*config.FARBE_UNTERSTREICHUNG)  # Punktfarbe = Unterstreichungsfarbe
-            punkt_radius = 0.8  # Größe der Punkte
-
-            # Zwei kleine Punkte unter "i" und "g"
-            for i in range(2):
-                punkt_x = binnen_ig_x_pos + i * config.ZEICHENBREITE + config.ZEICHENBREITE / 2
-                punkt_y = unterstrich_y_pos - config.ZEILENABSTAND * 0.2  # leicht unter der Textlinie
-                c.circle(punkt_x, punkt_y, punkt_radius, stroke=0, fill=1)
-                
-        # Pausen und Gedankenmarkierungen
-    if "atempause" in pause:
-        c.setStrokeColorRGB(*config.FARBE_ATEMPAUSE)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
-        length = config.MARKER_BREITE_LANG * 2
-        c.line(x, y_pos + oy + h + 2, x + length, y_pos + oy + h + 2)
-
-    if "staupause" in pause:
-        c.setFillColorRGB(*config.FARBE_STAUPAUSE)
-        c.rect(x, y_pos + oy, w, h, fill=1, stroke=0)
-
-    if "pause_gedanken" in gedanken:
-        c.setFillColorRGB(*config.FARBE_GEDANKENPAUSE)
-        c.circle(x + w / 2, y_pos + oy + h / 2, w / 2, fill=1, stroke=0)
-
-    # Kombination von Pausen (z. B. Staupause + Gedankenende)
-    if "staupause" in pause and "gedanken_ende" in gedanken:
-        c.setStrokeColorRGB(*config.FARBE_KOMB_PAUSE)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
-        c.rect(x, y_pos + oy, w, h, fill=0)
-        c.line(x, y_pos + oy, x + w, y_pos + oy + h)
-        c.line(x, y_pos + oy + h, x + w, y_pos + oy)
-
-    # Gedankenmarkierungen
-    if "gedanken_weiter" in gedanken:
-        c.setStrokeColorRGB(*config.FARBE_GEDANKENWEITER)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
-        c.setDash(*config.GEDANKEN_STRICHMUSTER)
-        c.line(x, y_pos + oy + h / 2, x + config.MARKER_BREITE_LANG, y_pos + oy + h / 2)
-        c.setDash()
-
-    # Gedankenschluss
-    if "gedanken_ende" in gedanken and "pause_gedanken" not in gedanken:
-        c.setStrokeColorRGB(*config.FARBE_GEDANKENENDE)
-        c.setLineWidth(config.LINIENBREITE_STANDARD)
-        off = w / 2
-        c.line(x + off, y_pos + oy, x + off + w, y_pos + oy)
-        c.line(x + off, y_pos + oy + h, x + off + w, y_pos + oy + h)
-
-    return vorherige_zeile  # Gibt die Zeile zurück, um die Marker korrekt weiterzugeben
+    return kapitel_id, abschnitt_id
 
 
-# ---------------------------------------------
-# Hauptfunktion für die Visualisierung
-# ---------------------------------------------
+def finde_ki_dateien_fuer_original(quellordner_annotationen, aufgabe, kapitel_id, abschnitt_id):
+    quellordner_annotationen = Path(quellordner_annotationen)
+    aufgabe = str(aufgabe).upper()
 
-def visualisiere_annotationen(eingabe_ordner, ausgabe_ordner, ausgewaehlte_kapitel=None, progress_callback=None):
-    """
-    Lädt JSON-Annotationen, filtert Kapitel optional und erstellt PDFs.
-    """
+    pattern = f"KI_{aufgabe}_{kapitel_id}_{abschnitt_id}_*.json"
 
-    eingabe_ordner = Path(eingabe_ordner)
-    ausgabe_ordner = Path(ausgabe_ordner)
+    dateien = sorted(
+        quellordner_annotationen.glob(pattern),
+        key=lambda p: p.name
+    )
 
-    os.makedirs(ausgabe_ordner, exist_ok=True)
+    print(f"[Merge] Suche KI-Dateien: {pattern}")
+    print(f"[Merge] Gefunden: {[p.name for p in dateien]}")
 
-    dateien = [fn for fn in os.listdir(eingabe_ordner) if fn.endswith('.json')]
-    gefilterte_dateien = [
-        fn for fn in dateien
-        if ausgewaehlte_kapitel is None or os.path.splitext(fn)[0].replace("_gesamt", "") in ausgewaehlte_kapitel
-    ]
-
-    for fn in gefilterte_dateien:
-        kapitel_name = os.path.splitext(fn)[0].replace("_gesamt", "")
-        json_datei = os.path.join(eingabe_ordner, fn)
-        with open(json_datei, 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
-
-        # Unterschritt 1: Tokens verarbeiten
-        verarbeite_tokens(json_data)
-        if progress_callback:
-            progress_callback( 1/3*100)
-
-        # Unterschritt 2: Positionen berechnen
-        berechne_positionen(json_data)
-        if progress_callback:
-            progress_callback( 2/3*100)
-
-        # Unterschritt 3: PDF erstellen
-        ts = datetime.now().strftime(config.DATUMSFORMAT)
-        pdf_datei = os.path.join(ausgabe_ordner, f"{os.path.splitext(fn)[0]}_{ts}.pdf")
-        erstelle_pdf(pdf_datei, json_data)
-        if progress_callback:
-            progress_callback( 100)
+    return dateien

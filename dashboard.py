@@ -31,8 +31,9 @@ from Schritt1 import extrahiere_kapitel_mit_config
 from Schritt2 import verarbeite_kapitel_und_speichere_json
 from Schritt3 import daten_aufteilen
 from Schritt4 import daten_verarbeiten
-from Schritt5 import Merge_annotationen
-from Schritt6 import visualisiere_annotationen
+from Schritt5 import verarbeite_regelbasiert
+from Schritt6 import Merge_annotationen
+# from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
 from shutdown import ShutdownController
 from system_ressourcen import Systemressourcen
@@ -654,7 +655,7 @@ class DashBoard(ttk.Frame):
         ttk.Label(praefix_frame, text="Präfix:").grid(row=0, column=0, sticky="w")
         praefix_var = tk.StringVar(value="Kapitel")
         ttk.Entry(praefix_frame, textvariable=praefix_var).grid(row=0, column=1, sticky="ew", padx=5)
-        nur_pref_var = tk.BooleanVar(value=False)
+        nur_pref_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(praefix_frame, text="nur Präfix berücksichtigen", variable=nur_pref_var)\
             .grid(row=0, column=2, sticky="w", padx=(5, 0))
 
@@ -816,6 +817,9 @@ class DashBoard(ttk.Frame):
                     continue
 
                 self.aufgaben_input[key_int] = f"{wert.capitalize()}-Erkennung (mit KI)"
+
+        regel_key = int(getattr(config, "REGEL_AUFGABE_ID", 5))
+        self.aufgaben_input[regel_key] = "Regelbasierte Annotation"
 
         merge_key = int(getattr(config, "MERGE_AUFGABE_ID", 99))
         self.aufgaben_input[merge_key] = "Erzeugung (Merge + PDF)"
@@ -1148,10 +1152,13 @@ class DashBoard(ttk.Frame):
         alle_aktiv = all(v.get() for v in self.chapter_vars.values())
         self.all_var.set(alle_aktiv)
 
+
     def start_tasks(self):
         global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
         IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
+
         self.master.starte_progress_pruefung()
+
         # Leere eventuell verbliebene Aufgaben aus früheren Läufen
         while not self.thread_queue.empty():
             try:
@@ -1166,20 +1173,24 @@ class DashBoard(ttk.Frame):
                 return
             self.tasks_running = True
 
-        self.disable_controls() 
+        self.disable_controls()
 
         print("[DEBUG] Starte Aufgabenverarbeitung", flush=True)
         self.abort_flag.clear()
+
         self.task_flags = {key: var.get() for key, var in self.task_vars.items()}
 
         if not self.kapitel_config.kapitel_liste and self.kapitel_config.kapitel_daten:
             self.kapitel_config.kapitel_liste = list(self.kapitel_config.kapitel_daten.keys())
 
-        ausgewaehlte_kapitel = [name for name, var in self.chapter_vars.items() if var.get()]
+        ausgewaehlte_kapitel = [
+            name for name, var in self.chapter_vars.items()
+            if var.get()
+        ]
+
         selected_file_path = self.selected_file.get()
         task_flags = {key: var.get() for key, var in self.task_vars.items()}
 
-        
         if not ausgewaehlte_kapitel:
             messagebox.showwarning(
                 "Keine Kapitel ausgewählt",
@@ -1199,7 +1210,6 @@ class DashBoard(ttk.Frame):
             with self.tasks_lock:
                 self.tasks_running = False
             return
-      
 
         model_selection_boxes = getattr(self, "model_selection_boxes", None)
         kapitel_liste = list(self.kapitel_config.kapitel_liste)
@@ -1209,7 +1219,7 @@ class DashBoard(ttk.Frame):
         max_workers = self.max_workers
         abort_flag = self.abort_flag
         progress_queue = self.master.progress_queue
-        mp_progress_queue = self.master.mp_progress_queue 
+        mp_progress_queue = self.master.mp_progress_queue
 
         modelle_für_tasks = {}
         if model_selection_boxes:
@@ -1220,36 +1230,104 @@ class DashBoard(ttk.Frame):
                     print(f"[WARNUNG] Fehler beim Auslesen des Modells für Aufgabe {aid}: {e}")
 
         print(f"[DEBUG] Ausgewählte Kapitel: {ausgewaehlte_kapitel}", flush=True)
-        bereits_in_queue = set()
-        for kapitel in ausgewaehlte_kapitel:
-            if kapitel in bereits_in_queue:
-                print(f"[WARNUNG] Kapitel mehrfach in Queue eingefügt: {kapitel}", flush=True)
-            bereits_in_queue.add(kapitel)
-            self.thread_queue.put(kapitel)
-        
-        kapitel_anzahl = len(ausgewaehlte_kapitel)
-
-        aktive_ki_aufgaben = getattr(
-            config,
-            "AKTIVE_KI_AUFGABEN",
-            list(config.KI_AUFGABEN.keys())
-        )
-
-        ki_aktiv = (
-            getattr(config, "NUTZE_KI", True)
-            and any(task_flags.get(aid, False) for aid in aktive_ki_aufgaben)
-        )
-
-        if ki_aktiv:
-            max_threads = 1
-            print("[INFO] KI aktiv: Kapitel werden seriell verarbeitet, um Modell-Doppel-Loads zu vermeiden.", flush=True)
-        else:
-            max_threads = min(self.max_workers, kapitel_anzahl)
-            max_threads = max(1, max_threads)
 
         try:
+            # ----------------------------------------------------
+            # GLOBALE AUFGABE 1:
+            # TXT-Extraktion + JSON-Erzeugung mit globaler WortNr
+            # ----------------------------------------------------
+            if task_flags.get(1, False):
+                print(
+                    "[INFO] Starte globale Aufgabe 1: TXT-Extraktion für alle ausgewählten Kapitel",
+                    flush=True
+                )
+
+                progress_queue.put(("Global", "1", 0.1))
+
+                extrahiere_kapitel_mit_config(
+                    selected_file_path,
+                    kapitel_liste,
+                    kapitel_trenner,
+                    ordner_nur_str["txt"],
+                    ausgewaehlte_kapitel,
+                    lambda k, w: progress_queue.put((k, "1", w))
+                )
+
+                if abort_flag.is_set():
+                    print("[INFO] Abbruch nach globaler TXT-Extraktion.", flush=True)
+                    return
+
+                print(
+                    "[INFO] Starte globale Aufgabe 1.2: JSON-Erzeugung mit globaler WortNr",
+                    flush=True
+                )
+
+                progress_queue.put(("Global", "2.1", 0.1))
+
+                verarbeite_kapitel_und_speichere_json(
+                    ordner_nur_str["txt"],
+                    ordner_nur_str["json"],
+                    ausgewaehlte_kapitel,
+                    lambda kapitel, fortschritt: progress_queue.put(
+                        (kapitel, "2.1", fortschritt)
+                    )
+                )
+
+                if abort_flag.is_set():
+                    print("[INFO] Abbruch nach globaler JSON-Erzeugung.", flush=True)
+                    return
+
+                print("[INFO] Globale Aufgabe 1/1.2 abgeschlossen", flush=True)
+
+                # Wichtig:
+                # Schritt 1 darf in verarbeite_kapitel() nicht nochmal pro Kapitel laufen.
+                task_flags[1] = False
+
+            # ----------------------------------------------------
+            # Kapitel in Queue legen
+            # ----------------------------------------------------
+            bereits_in_queue = set()
+
+            for kapitel in ausgewaehlte_kapitel:
+                if kapitel in bereits_in_queue:
+                    print(
+                        f"[WARNUNG] Kapitel mehrfach in Queue eingefügt: {kapitel}",
+                        flush=True
+                    )
+                    continue
+
+                bereits_in_queue.add(kapitel)
+                self.thread_queue.put(kapitel)
+
+            kapitel_anzahl = len(ausgewaehlte_kapitel)
+
+            aktive_ki_aufgaben = getattr(
+                config,
+                "AKTIVE_KI_AUFGABEN",
+                list(config.KI_AUFGABEN.keys())
+            )
+
+            ki_aktiv = (
+                getattr(config, "NUTZE_KI", True)
+                and any(task_flags.get(aid, False) for aid in aktive_ki_aufgaben)
+            )
+
+            if ki_aktiv:
+                max_threads = 1
+                print(
+                    "[INFO] KI aktiv: Kapitel werden seriell verarbeitet, um Modell-Doppel-Loads zu vermeiden.",
+                    flush=True
+                )
+            else:
+                max_threads = min(self.max_workers, kapitel_anzahl)
+                max_threads = max(1, max_threads)
+
+            # ----------------------------------------------------
+            # Worker starten
+            # ----------------------------------------------------
             with ThreadPoolExecutor(max_workers=max_threads) as thread_executor:
                 futures = []
+
                 for _ in range(max_threads):
                     futures.append(thread_executor.submit(
                         self._thread_worker,
@@ -1259,14 +1337,17 @@ class DashBoard(ttk.Frame):
                         ordner_nur_str,
                         task_flags,
                         progress_queue,
-                        mp_progress_queue, 
+                        mp_progress_queue,
                         abort_flag,
                         kapitel_daten,
                         modelle_für_tasks,
                         max_workers
                     ))
 
-                concurrent.futures.wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
+                concurrent.futures.wait(
+                    futures,
+                    return_when=concurrent.futures.ALL_COMPLETED
+                )
 
                 for future in concurrent.futures.as_completed(futures):
                     try:
@@ -1274,13 +1355,16 @@ class DashBoard(ttk.Frame):
                     except Exception as e:
                         print(f"[ERROR] Fehler im Thread-Worker: {e}", flush=True)
                         traceback.print_exc()
+
         finally:
             self.enable_controls()
+
             with self.tasks_lock:
-                self.tasks_running = False            
+                self.tasks_running = False
+
             self.master.stoppe_progress_pruefung()
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
-
+            
     def _thread_worker(self,
                     selected_file_path,
                     kapitel_liste,
@@ -1321,7 +1405,43 @@ class DashBoard(ttk.Frame):
             self.thread_queue.task_done()
 
 
+    def kapitel_hat_woertliche_rede(self,kapitel_name, json_ordner):
+        json_ordner = Path(json_ordner)
+
+        json_dateien = sorted([
+            f for f in json_ordner.glob("*_annotierungen.json")
+            if f.name.startswith(f"{kapitel_name}_")
+        ])
+
+        redezeichen = {"„", "“", "‚", "‘", '"'}
+
+        for json_datei in json_dateien:
+            try:
+                with open(json_datei, "r", encoding="utf-8") as f:
+                    tokens = json.load(f)
+
+                if not isinstance(tokens, list):
+                    continue
+
+                for t in tokens:
+                    tok = (
+                        t.get("tokenInklZahlwoerter")
+                        or t.get("token")
+                        or ""
+                    )
+
+                    if tok in redezeichen:
+                        return True
+
+            except Exception as e:
+                print(f"[WARNUNG] Konnte Redeprüfung nicht lesen {json_datei}: {e}")
+
+        return False
+
     def ki_task_mit_client(self, client, kapitel_name, aufgaben_id, prompt, ordner, mp_progress_queue=None):
+        if mp_progress_queue is None:
+            mp_progress_queue = self.master.progress_queue
+
         global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
 
         print(
@@ -1346,8 +1466,7 @@ class DashBoard(ttk.Frame):
                     print("[INFO] IG-Analyse wurde in diesem Lauf bereits erledigt → überspringe.", flush=True)
 
                     if mp_progress_queue:
-                        mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                        mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+                        mp_progress_queue.put((kapitel_name, aufgaben_id, 100))                      
 
                     return "IG bereits erledigt"
 
@@ -1368,7 +1487,7 @@ class DashBoard(ttk.Frame):
 
                 if mp_progress_queue:
                     mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                    mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+                    # mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
                 return "IG global abgeschlossen"
 
@@ -1392,7 +1511,7 @@ class DashBoard(ttk.Frame):
 
                 if mp_progress_queue:
                     mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                    mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+                    # mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
                 return f"Keine passenden Satzdateien für Kapitel {kapitel_name} gefunden."
 
@@ -1423,7 +1542,7 @@ class DashBoard(ttk.Frame):
 
             if mp_progress_queue:
                 mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
-                mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+                # mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
             print(f"[INFO] Task {aufgaben_id} für Kapitel {kapitel_name} erfolgreich abgeschlossen.", flush=True)
             return f"Task {aufgaben_id} für Kapitel {kapitel_name} abgeschlossen"
@@ -1477,10 +1596,19 @@ class DashBoard(ttk.Frame):
                     []
                 )
 
-                aktive_tasks_preload = [
-                    aid for aid in alle_task_ids
-                    if aid not in nicht_noetige
-                ]
+                aktive_tasks_preload = []
+
+                for aid in alle_task_ids:
+                    if aid in nicht_noetige:
+                        continue
+
+                    aufgaben_name = str(config.KI_AUFGABEN.get(aid, "")).lower()
+
+                    if aufgaben_name == "person":
+                        if not self.kapitel_hat_woertliche_rede(kapitel_name, ordner_nur_str["json"]):
+                            continue
+
+                    aktive_tasks_preload.append(aid)
 
                 if not aktive_tasks_preload:
                     return
@@ -1535,34 +1663,34 @@ class DashBoard(ttk.Frame):
             # ----------------------------------------------------
             if task_flags.get(1, False):
                 print(f"[DEBUG] Starte Aufgabe 1: Extraktion für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "1", 0.1))
+                progress_queue.put((kapitel_name,1, 0.1))
 
-                extrahiere_kapitel_mit_config(
-                    selected_file_path,
-                    kapitel_liste,
-                    kapitel_trenner,
-                    ordner_nur_str["txt"],
-                    [kapitel_name],
-                    lambda k, w: progress_queue.put((k, "1", w))
-                )
+                # extrahiere_kapitel_mit_config(
+                #     selected_file_path,
+                #     kapitel_liste,
+                #     kapitel_trenner,
+                #     ordner_nur_str["txt"],
+                #     [kapitel_name],
+                #     lambda k, w: progress_queue.put((k, "1", w))
+                # )
 
-                print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
+                # print(f"[DEBUG] Aufgabe 1 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
 
-                if abort_flag.is_set():
-                    print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Vorverarbeitung.", flush=True)
-                    return
+                # if abort_flag.is_set():
+                #     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Vorverarbeitung.", flush=True)
+                #     return
 
-                print(f"[DEBUG] Starte Aufgabe 1.2: Vorverarbeitung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "Vorverarbeitung", 0.1))
+                # print(f"[DEBUG] Starte Aufgabe 1.2: Vorverarbeitung für Kapitel: {kapitel_name}", flush=True)
+                # progress_queue.put((kapitel_name, "Vorverarbeitung", 0.1))
 
-                verarbeite_kapitel_und_speichere_json(
-                    ordner_nur_str["txt"],
-                    ordner_nur_str["json"],
-                    [kapitel_name],
-                    lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.1", fortschritt))
-                )
+                # verarbeite_kapitel_und_speichere_json(
+                #     ordner_nur_str["txt"],
+                #     ordner_nur_str["json"],
+                #     [kapitel_name],
+                #     lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.1", fortschritt))
+                # )
 
-                print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
+                # print(f"[DEBUG] Aufgabe 1.2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
 
             # ----------------------------------------------------
             # Aufgabe 2: Satz-/Abschnittsdateien erzeugen
@@ -1573,14 +1701,14 @@ class DashBoard(ttk.Frame):
                     return
 
                 print(f"[DEBUG] Starte Aufgabe 2: Satzaufteilung für Kapitel: {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, "Satzbildung", 0.1))
+                progress_queue.put((kapitel_name, 2, 0.1))
 
                 daten_aufteilen(
                     kapitel_name,
                     txt_ordner=ordner_nur_str["txt"],
                     json_ordner=ordner_nur_str["json"],
                     ausgabe_ordner=ordner_nur_str["saetze"],
-                    progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, "2.2", fortschritt))
+                    progress_callback=lambda kapitel, fortschritt: progress_queue.put((kapitel, 2, fortschritt))
                 )
 
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
@@ -1643,6 +1771,21 @@ class DashBoard(ttk.Frame):
                         aufgaben_key = config.KI_AUFGABEN[aufgaben_id]
                         task_name = f"Aufgabe {aufgaben_id}: {aufgaben_key}"
 
+
+                        if str(aufgaben_key).lower() == "person":
+                            if not self.kapitel_hat_woertliche_rede(kapitel_name, ordner_nur_str["json"]):
+                                print(
+                                    f"[INFO] Person-Aufgabe übersprungen: keine wörtliche Rede in {kapitel_name}",
+                                    flush=True
+                                )
+
+                                if mp_progress_queue:
+                                    mp_progress_queue.put((kapitel_name, aufgaben_id, 100))
+                                    # mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+
+                                continue
+
+
                         print(f"[DEBUG] Starte {task_name} für Kapitel {kapitel_name}", flush=True)
 
                         try:
@@ -1694,7 +1837,7 @@ class DashBoard(ttk.Frame):
                                 "saetze": ordner_nur_str["saetze"],
                                 "ki": ordner_nur_str["ki"],
                             },
-                            mp_progress_queue=mp_progress_queue,
+                            mp_progress_queue=progress_queue,
                         )
 
                         if result is None:
@@ -1706,10 +1849,52 @@ class DashBoard(ttk.Frame):
                             return
 
                         print(f"[DEBUG] KI-Aufgabe {aufgaben_id} abgeschlossen für Kapitel {kapitel_name}", flush=True)
-                        if mp_progress_queue:
-                            mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
+                        # if mp_progress_queue:
+                            # mp_progress_queue.put((kapitel_name, aufgaben_id, 0))
 
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
+
+
+            # ----------------------------------------------------
+            # Aufgabe 5: Regelbasierte Annotation
+            # ----------------------------------------------------
+            regel_key = int(getattr(config, "REGEL_AUFGABE_ID", 5))
+
+            if task_flags.get(regel_key, False):
+                if abort_flag.is_set():
+                    print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Regelannotation.", flush=True)
+                    return
+
+                print(f"[DEBUG] Starte regelbasierte Annotation für Kapitel {kapitel_name}", flush=True)
+                progress_queue.put((kapitel_name, regel_key, 0.1))
+
+                json_ordner = Path(ordner_nur_str["json"])
+
+                json_dateien = sorted([
+                    f for f in json_ordner.glob("*_annotierungen.json")
+                    if f.name.startswith(f"{kapitel_name}_")
+                ])
+
+                if not json_dateien:
+                    print(f"[WARNUNG] Keine JSON-Dateien für Regelannotation gefunden: {kapitel_name}", flush=True)
+                else:
+                    anzahl = len(json_dateien)
+
+                    for idx, json_datei in enumerate(json_dateien, start=1):
+                        verarbeite_regelbasiert(
+                            dateipfad=json_datei,
+                            ki_ordner=ordner_nur_str["ki"],
+                            force=False
+                        )
+
+                        fortschritt = int((idx / anzahl) * 100)
+                        progress_queue.put((kapitel_name, regel_key, fortschritt))
+
+                progress_queue.put((kapitel_name, regel_key, 100))
+                # progress_queue.put((kapitel_name, regel_key, 0))
+
+                print(f"[INFO] Regelbasierte Annotation abgeschlossen für Kapitel {kapitel_name}", flush=True)
+
 
             # ----------------------------------------------------
             # Merge + PDF
@@ -1727,22 +1912,22 @@ class DashBoard(ttk.Frame):
                     ordner_nur_str["ki"],
                     ordner_nur_str["merge"],
                     [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, f"{next_key}.1", w))
+                    lambda w: progress_queue.put((kapitel_name, next_key, w))
                 )
 
                 if abort_flag.is_set():
                     print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Visualisierung.", flush=True)
                     return
 
-                print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, f"{next_key}.2", 0.1))
+                # print(f"[DEBUG] Starte Visualisierung für Kapitel {kapitel_name}", flush=True)
+                # progress_queue.put((kapitel_name, f"{next_key}.2", 0.1))
 
-                visualisiere_annotationen(
-                    ordner_nur_str["merge"],
-                    ordner_nur_str["pdf"],
-                    [kapitel_name],
-                    lambda w: progress_queue.put((kapitel_name, "final 2", w))
-                )
+                # visualisiere_annotationen(
+                #     ordner_nur_str["merge"],
+                #     ordner_nur_str["pdf"],
+                #     [kapitel_name],
+                #     lambda w: progress_queue.put((kapitel_name, "final 2", w))
+                # )
 
             progress_queue.put((kapitel_name, "Fertig", 100))
             print(f"[INFO] Kapitel abgeschlossen: {kapitel_name}", flush=True)
@@ -1802,4 +1987,5 @@ class DashBoard(ttk.Frame):
                 kapitel_config=self.kapitel_config,
                 ordner=self.ordner,
             )
+
 
