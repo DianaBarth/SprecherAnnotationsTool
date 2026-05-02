@@ -568,7 +568,7 @@ def Merge_annotationen(
     ziel_ordner.mkdir(parents=True, exist_ok=True)
 
     # Originaldaten bleiben altes Format
-    dateien = sorted(quellordner_kapitel.glob("*_annotierungen.json"))
+    dateien = finde_originaldateien(quellordner_kapitel)
 
     if ausgewaehlte_kapitel:
         ausgewaehlte = {str(k) for k in ausgewaehlte_kapitel}
@@ -676,35 +676,43 @@ def Merge_annotationen(
                 print(f"[INFO] Merge PERSON: {ki_pfad.name}")
                 ki_json = lade_json_robust(ki_pfad)
                 merge_personen_in_tokens(daten, ki_json)
-                print(f"[INFO] PERSON KI geschützt gemerged: {ki_pfad.name}")
-                print(f"[INFO] PERSON geschrieben: {report.get('geschrieben', 0)}")
+                print(f"[INFO] PERSON KI geschützt gemerged: {ki_pfad.name}")        
             except Exception as e:
                 print(f"[FEHLER] PERSON {ki_pfad.name}: {e}")
                 traceback.print_exc()
                 continue
 
         # --------------------------------------------------
-        # 2) KOMBINATION aus neuer KI-Nomenklatur
-        # Beispiel: KI_KOMBINATION_001_002_001.json
+        # 2) PROSODIE REGEL aus Schritt4/5
+        # Beispiel: KI_PROSODIE_REGEL_001_002_001.json
         # --------------------------------------------------
-        kombi_dateien = finde_ki_dateien_fuer_original(
+        prosodie_regel_dateien = finde_ki_dateien_fuer_original(
             quellordner_annotationen,
-            "KOMBINATION",
+            "PROSODIE_REGEL",
             kapitel_id,
             abschnitt_id
         )
 
-        for ki_pfad in kombi_dateien:
+        for regel_pfad in prosodie_regel_dateien:
             try:
-                print(f"[INFO] Merge KOMBINATION: {ki_pfad.name}")
-                ki_json = lade_json_robust(ki_pfad)
-                daten, report = merge_prosodie(daten, ki_json, kapitelnummer)
-                print(f"[INFO] KOMBINATION geschrieben: {report.get('geschrieben', 0)}")
+                print(f"[INFO] Merge PROSODIE_REGEL: {regel_pfad.name}")
+                regel_json = lade_json_robust(regel_pfad)
+
+                daten, report = merge_ki_updates(
+                    original_daten=daten,
+                    ki_updates=regel_json,
+                    pass_typ="prosodie",
+                    default_kapitelnummer=kapitelnummer,
+                    schuetze_manuelle_aenderungen=True,
+                    ki_source_name="regel_prosodie",
+                )
+
+                print(f"[INFO] PROSODIE_REGEL geschrieben: {report.get('geschrieben', 0)}")
+
             except Exception as e:
-                print(f"[FEHLER] KOMBINATION {ki_pfad.name}: {e}")
+                print(f"[FEHLER] PROSODIE_REGEL {regel_pfad.name}: {e}")
                 traceback.print_exc()
                 continue
-
         # --------------------------------------------------
         # 3) IG global mergen
         # --------------------------------------------------
@@ -799,6 +807,11 @@ def finde_ki_dateien(ordner, patterns):
 def ermittle_kapitel_abschnitt_id_aus_original(pfad, daten=None):
     pfad = Path(pfad)
 
+    # Neues Format: 001_002.json
+    match_neu = re.fullmatch(r"(\d{3})_(\d{3})\.json", pfad.name)
+    if match_neu:
+        return match_neu.group(1), match_neu.group(2)
+
     kapitelnummer = None
 
     if isinstance(daten, list):
@@ -812,9 +825,10 @@ def ermittle_kapitel_abschnitt_id_aus_original(pfad, daten=None):
 
     kapitel_id = f"{int(kapitelnummer):03d}"
 
-    match = re.search(r"_(\d+)_annotierungen\.json$", pfad.name)
-    if match:
-        abschnitt_id = f"{int(match.group(1)):03d}"
+    # Altes Format: irgendwas_002_annotierungen.json
+    match_alt = re.search(r"_(\d+)_annotierungen\.json$", pfad.name)
+    if match_alt:
+        abschnitt_id = f"{int(match_alt.group(1)):03d}"
     else:
         abschnitt_id = "001"
 

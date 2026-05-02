@@ -6,11 +6,15 @@ import json
 
 import personen_resolver
 
+DEBUG = False
+
+PAUSE_TOKENS = {",", ":", ";", "–", "—"}
+SPANNUNG_STARTER = {"plötzlich", "dann"}
 SATZENDE_TOKENS = {".", "!", "?", "…"}
 KOMMA_TOKENS = {","}
 GEDANKEN_PAUSE_TOKENS = {"–", "—", "...", "…"}
 KONNEKTOREN = {"und", "aber", "doch", "denn"}
-SPANNUNG_STARTER = {"plötzlich", "dann"}
+
 
 STOPWOERTER = {
     "der", "die", "das", "den", "dem", "des",
@@ -61,6 +65,11 @@ def token_norm(eintrag):
     return token_text(eintrag).lower().strip()
 
 
+def ist_ueberschrift_token(t):
+    if not isinstance(t, dict):
+        return False
+    return "Überschrift" in str(t.get("annotation", "") or "")
+
 def wortnr(eintrag):
     try:
         nr = eintrag.get("WortNr")
@@ -77,6 +86,9 @@ def ist_satzzeichen_ohne_space_davor(eintrag):
 
 
 def ist_satzende(eintrag):
+    if ist_ueberschrift_token(eintrag):
+        return False
+
     return (
         ist_satzzeichen_ohne_space_davor(eintrag)
         and token_text(eintrag) in SATZENDE_TOKENS
@@ -84,16 +96,21 @@ def ist_satzende(eintrag):
 
 
 def ist_wort(eintrag):
+    if ist_ueberschrift_token(eintrag):
+        return False
+
     tok = token_text(eintrag)
     return bool(re.fullmatch(r"[A-Za-zÄÖÜäöüß]+", tok))
 
 
+def ist_inhaltswort(eintrag):
+    if ist_ueberschrift_token(eintrag):
+        return False
+
+    return ist_wort(eintrag) and not ist_stopwort(eintrag)
+
 def ist_stopwort(eintrag):
     return token_norm(eintrag) in STOPWOERTER
-
-
-def ist_inhaltswort(eintrag):
-    return ist_wort(eintrag) and not ist_stopwort(eintrag)
 
 
 def splitte_saetze(tokens):
@@ -102,6 +119,9 @@ def splitte_saetze(tokens):
 
     for eintrag in tokens:
         if not isinstance(eintrag, dict):
+            continue
+
+        if ist_ueberschrift_token(eintrag):
             continue
 
         aktueller_satz.append(eintrag)
@@ -114,7 +134,6 @@ def splitte_saetze(tokens):
         saetze.append(aktueller_satz)
 
     return saetze
-
 
 def gueltige_wortnr_set(tokens):
     return {
@@ -204,10 +223,13 @@ def regelbasierte_kombination(tokens):
     if not isinstance(tokens, list) or not tokens:
         return result
 
-    gueltige_nr = gueltige_wortnr_set(tokens)
-    saetze = splitte_saetze(tokens)
+    prosodie_tokens = [
+        t for t in tokens
+        if isinstance(t, dict) and not ist_ueberschrift_token(t)
+    ]
 
-    spannung_aktiv = False
+    gueltige_nr = gueltige_wortnr_set(prosodie_tokens)
+    saetze = splitte_saetze(prosodie_tokens)
 
     for satz_index, satz in enumerate(saetze, start=1):
         if not satz:
@@ -219,27 +241,31 @@ def regelbasierte_kombination(tokens):
 
         # ----------------------------------------------------
         # PAUSEN
+        # max. 1 Atempause pro Satz
+        # keine Pause in sehr kurzen Sätzen
         # ----------------------------------------------------
-        komma_kandidaten = [
-            t for t in satz
-            if ist_satzzeichen_ohne_space_davor(t)
-            and token_text(t) in KOMMA_TOKENS
-            and wortnr(t) is not None
-        ]
+        if wortanzahl >= 4:
+            pause_kandidaten = [
+                t for t in satz
+                if not ist_ueberschrift_token(t)
+                and ist_satzzeichen_ohne_space_davor(t)
+                and token_text(t) in PAUSE_TOKENS
+                and wortnr(t) is not None
+            ]
 
-        if komma_kandidaten:
-            satz_start_nr = erste_inhaltswort_nr(satz) or wortnr(satz[0]) or 0
+            if pause_kandidaten:
+                satz_start_nr = erste_inhaltswort_nr(satz) or wortnr(satz[0]) or 0
 
-            bestes_komma = max(
-                komma_kandidaten,
-                key=lambda t: abs((wortnr(t) or 0) - satz_start_nr)
-            )
+                bester_pause_marker = max(
+                    pause_kandidaten,
+                    key=lambda t: abs((wortnr(t) or 0) - satz_start_nr)
+                )
 
-            fuege_eindeutig(
-                result["pause"]["atempause"],
-                wortnr(bestes_komma),
-                gueltige_nr
-            )
+                fuege_eindeutig(
+                    result["pause"]["atempause"],
+                    wortnr(bester_pause_marker),
+                    gueltige_nr
+                )
 
         if endet_mit_satzende and wortanzahl > 6:
             fuege_eindeutig(
@@ -267,34 +293,33 @@ def regelbasierte_kombination(tokens):
 
         # ----------------------------------------------------
         # BETONUNG
+        # vorhandene Betonungen nicht überschreiben
+        # Frage: Wort vor ? bevorzugen
+        # Eigennamen bevorzugen
+        # längere Inhaltswörter fallback
         # ----------------------------------------------------
-        betonungs_kandidaten = inhaltswort_tokens(satz)
+        betonungs_kandidaten = beste_betonungskandidaten(satz)
 
         if betonungs_kandidaten:
-            sortiert = sorted(
-                betonungs_kandidaten,
-                key=lambda t: (
-                    len(token_text(t)),
-                    -(wortnr(t) or 0)
-                ),
-                reverse=True
-            )
-
             fuege_eindeutig(
                 result["betonung"]["hauptbetonung"],
-                wortnr(sortiert[0]),
+                wortnr(betonungs_kandidaten[0]),
                 gueltige_nr
             )
 
-            if wortanzahl > 6 and len(sortiert) > 1:
+            if wortanzahl > 6 and len(betonungs_kandidaten) > 1:
                 fuege_eindeutig(
                     result["betonung"]["nebenbetonung"],
-                    wortnr(sortiert[1]),
+                    wortnr(betonungs_kandidaten[1]),
                     gueltige_nr
                 )
 
         # ----------------------------------------------------
         # SPANNUNG
+        # reduziert:
+        # Start nur bei plötzlich/dann/auf einmal
+        # Halten nur in langen Startsätzen
+        # Stoppen immer am nächsten Satzende
         # ----------------------------------------------------
         startet_spannung = (
             erstes_wort in SPANNUNG_STARTER
@@ -302,40 +327,44 @@ def regelbasierte_kombination(tokens):
         )
 
         if startet_spannung:
+            start_nr = erste_inhaltswort_nr(satz)
+
             fuege_eindeutig(
                 result["spannung"]["Starten"],
-                erste_inhaltswort_nr(satz),
+                start_nr,
                 gueltige_nr
             )
-            spannung_aktiv = True
 
-        if wortanzahl > 12:
-            woerter = wort_tokens(satz)
-            if woerter:
-                mitte = woerter[len(woerter) // 2]
+            if wortanzahl > 12:
+                woerter = wort_tokens(satz)
+                if woerter:
+                    mitte = woerter[len(woerter) // 2]
+                    fuege_eindeutig(
+                        result["spannung"]["Halten"],
+                        wortnr(mitte),
+                        gueltige_nr
+                    )
+
+            if endet_mit_satzende:
                 fuege_eindeutig(
-                    result["spannung"]["Halten"],
-                    wortnr(mitte),
+                    result["spannung"]["Stoppen"],
+                    letzte_wortnr(satz),
                     gueltige_nr
                 )
 
-        if endet_mit_satzende and spannung_aktiv:
-            fuege_eindeutig(
-                result["spannung"]["Stoppen"],
-                letzte_wortnr(satz),
-                gueltige_nr
-            )
-            spannung_aktiv = False
-
     # --------------------------------------------------------
     # GEDANKENPAUSEN BEI GEDANKENSTRICH / ELLIPSE
+    # Überschriften ignorieren
     # --------------------------------------------------------
-    for idx, t in enumerate(tokens):
+    for idx, t in enumerate(prosodie_tokens):
         if not isinstance(t, dict):
             continue
 
+        if ist_ueberschrift_token(t):
+            continue
+
         if token_text(t) in GEDANKEN_PAUSE_TOKENS:
-            nr_davor = finde_vorherige_wortnr(tokens, idx)
+            nr_davor = finde_vorherige_wortnr(prosodie_tokens, idx)
 
             fuege_eindeutig(
                 result["gedanken"]["pause_gedanken"],
@@ -350,8 +379,10 @@ def regelbasierte_kombination(tokens):
         for subkey in result[hauptkey]:
             result[hauptkey][subkey] = sorted(set(result[hauptkey][subkey]))
 
-    return result
+    if DEBUG:
+        print("[PROSODIE DEBUG]", result)
 
+    return result
 
 def ermittle_kapitel_abschnitt_id(json_datei):
     json_datei = Path(json_datei)
@@ -392,16 +423,15 @@ def speichere_regel_json(ki_ordner, json_datei, daten, laufende_nr=1):
     kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
 
     ausgabe_datei = ki_ordner / (
-        f"KI_KOMBINATION_{kapitel_id}_{abschnitt_id}_{laufende_nr:03}.json"
+        f"KI_PROSODIE_REGEL_{kapitel_id}_{abschnitt_id}_{laufende_nr:03}.json"
     )
 
     with open(ausgabe_datei, "w", encoding="utf-8") as f:
         json.dump(daten, f, ensure_ascii=False, indent=2)
 
-    print(f"[INFO] Regelbasierte Kombinationsdatei gespeichert: {ausgabe_datei}")
+    print(f"[INFO] Regelbasierte Prosodie-Datei gespeichert: {ausgabe_datei}")
 
     return ausgabe_datei
-
 
 def verarbeite_regelbasiert(dateipfad, ki_ordner, force=False):
     print(f"[DEBUG] Schritt5_regelbasiert gestartet für {dateipfad}")
@@ -423,7 +453,7 @@ def verarbeite_regelbasiert(dateipfad, ki_ordner, force=False):
         kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
 
         ziel_datei = ki_ordner / (
-            f"KI_KOMBINATION_{kapitel_id}_{abschnitt_id}_001.json"
+            f"KI_PROSODIE_REGEL_{kapitel_id}_{abschnitt_id}_001.json"
         )
 
         if ziel_datei.exists() and not force:
@@ -718,6 +748,77 @@ def speichere_personen_regel_datei(json_datei, ki_ordner, personen_ergebnisse):
 
     print(f"[INFO] Regel-Personen gespeichert: {ziel}")
 
+def hat_bereits_betonung(t):
+    annotation = str(t.get("annotation", "") or "")
+    return (
+        "hauptbetonung" in annotation
+        or "nebenbetonung" in annotation
+        or "Betonung" in annotation
+    )
+
+
+def ist_eigenname_kandidat(t):
+    text = token_text(t)
+
+    if not ist_inhaltswort(t):
+        return False
+
+    if not text:
+        return False
+
+    # Satzanfänge nicht automatisch als Eigenname werten
+    if text[0].isupper() and token_norm(t) not in STOPWOERTER:
+        return True
+
+    return False
+
+
+def wort_vor_fragezeichen(satz):
+    for idx, t in enumerate(satz):
+        if (
+            ist_satzzeichen_ohne_space_davor(t)
+            and token_text(t) == "?"
+        ):
+            for j in range(idx - 1, -1, -1):
+                if ist_inhaltswort(satz[j]) and wortnr(satz[j]) is not None:
+                    return satz[j]
+
+    return None
+
+
+def beste_betonungskandidaten(satz):
+    kandidaten = [
+        t for t in inhaltswort_tokens(satz)
+        if not hat_bereits_betonung(t)
+    ]
+
+    if not kandidaten:
+        return []
+
+    frage_kandidat = wort_vor_fragezeichen(satz)
+    if frage_kandidat in kandidaten:
+        rest = [t for t in kandidaten if t is not frage_kandidat]
+        return [frage_kandidat] + rest
+
+    eigennamen = [t for t in kandidaten if ist_eigenname_kandidat(t)]
+    andere = [t for t in kandidaten if t not in eigennamen]
+
+    eigennamen = sorted(
+        eigennamen,
+        key=lambda t: wortnr(t) or 0
+    )
+
+    andere = sorted(
+        andere,
+        key=lambda t: (
+            len(token_text(t)),
+            wortnr(t) or 0
+        ),
+        reverse=True
+    )
+
+    return eigennamen + andere
+
 def verarbeite_ordner_regelbasiert(json_ordner, ki_ordner, force=False):
     json_ordner = Path(json_ordner)
     ki_ordner = Path(ki_ordner)
@@ -746,7 +847,7 @@ def verarbeite_ordner_regelbasiert(json_ordner, ki_ordner, force=False):
         if result:
             erzeugte_dateien.append(result)
 
-    print(f"[INFO] Schritt5 regelbasiert abgeschlossen. Dateien: {len(erzeugte_dateien)}")
+    print(f"[INFO] Schritt4 regelbasiert abgeschlossen. Dateien: {len(erzeugte_dateien)}")
 
     return erzeugte_dateien
 

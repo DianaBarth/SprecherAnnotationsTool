@@ -76,43 +76,63 @@ def lade_prompt_datei(ki_id):
             # Fange unerwartete Fehler ab
             raise RuntimeError(f"[FEHLER] Fehler beim Laden der Prompt-Datei '{dateipfad}': {e}")
         
-def warte_auf_freien_cpukern_und_ram(
-    max_auslastung_cpu: float = 50.0,
-    max_auslastung_ram: float = 80.0,
-    timeout: float = 30.0,
+def warte_auf_freie_ressourcen(
+    max_cpu_gesamt: float = 95.0,
+    min_freier_ram_gb: float = 2.0,
+    timeout: float = 5.0,
     sleep_intervall: float = 0.5,
-    verbose: bool = True
+    log_intervall: float = 3.0,
+    verbose: bool = True,
 ) -> bool:
     """
-    Warte, bis mindestens ein CPU-Kern unter max_auslastung_cpu ist und RAM-Auslastung unter max_auslastung_ram,
-    oder bis timeout abgelaufen ist. Gibt True zurück, wenn freie Ressourcen gefunden, sonst False.
+    Wartet kurz, bis CPU-Gesamtlast unter max_cpu_gesamt liegt
+    und mindestens min_freier_ram_gb verfügbar sind.
+
+    Gibt True zurück, wenn Ressourcen frei sind.
+    Gibt False zurück, wenn Timeout erreicht wurde.
     """
-    # Erster Aufruf für valide CPU-Werte (Datenbasis)
-    psutil.cpu_percent(percpu=True, interval=0.1)
 
     start_time = time.perf_counter()
-    while True:
-        cpu_last_pro_kern = psutil.cpu_percent(percpu=True, interval=0.1)
-        ram_auslastung = psutil.virtual_memory().percent
+    last_log = 0.0
 
-        cpu_ok = any(last < max_auslastung_cpu for last in cpu_last_pro_kern)
-        ram_ok = ram_auslastung < max_auslastung_ram
+    while True:
+        cpu_gesamt = psutil.cpu_percent(interval=0.1)
+        ram = psutil.virtual_memory()
+        freier_ram_gb = ram.available / (1024 ** 3)
+
+        cpu_ok = cpu_gesamt < max_cpu_gesamt
+        ram_ok = freier_ram_gb >= min_freier_ram_gb
 
         if cpu_ok and ram_ok:
             if verbose:
-                print(f"[INFO] Ressourcen frei: CPU-Kerne {cpu_last_pro_kern}, RAM {ram_auslastung:.1f}%")
+                print(
+                    f"[INFO] Ressourcen frei: CPU {cpu_gesamt:.1f}%, "
+                    f"RAM frei {freier_ram_gb:.2f} GB, RAM genutzt {ram.percent:.1f}%",
+                    flush=True
+                )
             return True
 
         elapsed = time.perf_counter() - start_time
+
         if elapsed > timeout:
             if verbose:
-                print(f"[WARNUNG] Timeout nach {timeout}s: CPU<{max_auslastung_cpu}%, RAM<{max_auslastung_ram}%, starte trotzdem.")
+                print(
+                    f"[WARNUNG] Ressourcen-Timeout nach {timeout:.1f}s: "
+                    f"CPU {cpu_gesamt:.1f}%, RAM frei {freier_ram_gb:.2f} GB "
+                    f"({ram.percent:.1f}% genutzt). Starte trotzdem.",
+                    flush=True
+                )
             return False
 
-        if verbose:
-            print(f"[INFO] Warte... CPU pro Kern: {cpu_last_pro_kern}, RAM: {ram_auslastung:.1f}%, verstrichene Zeit: {elapsed:.1f}s")
-        
-        print(f"warte_auf_freien_cpukern_und_ram geht schlafen")
+        if verbose and elapsed - last_log >= log_intervall:
+            print(
+                f"[INFO] Warte auf Ressourcen: CPU {cpu_gesamt:.1f}%, "
+                f"RAM frei {freier_ram_gb:.2f} GB ({ram.percent:.1f}% genutzt), "
+                f"Zeit {elapsed:.1f}s",
+                flush=True
+            )
+            last_log = elapsed
+
         time.sleep(sleep_intervall)
 
 class FehlerAnzeige(ttk.LabelFrame):
@@ -953,8 +973,9 @@ class DashBoard(ttk.Frame):
         # Button: manuell optimieren
         # ----------------------------------------------------
         btn_frame = ttk.Frame(self.aufg_frame)
-        btn_frame.grid(row=len(self.aufgaben_input) + 1, column=0, sticky="w", pady=5)
+        next_row = start_row + len(self.aufgaben_input)
 
+        btn_frame.grid(row=next_row, column=0, sticky="w", pady=5)
         btn_kapitel_bearbeiten = ttk.Button(
             btn_frame,
             text="Annotationen manuell optimieren",
@@ -1660,10 +1681,10 @@ class DashBoard(ttk.Frame):
                 ki_vorgeladenes_modell = None
 
         try:
-            warte_auf_freien_cpukern_und_ram(
-                max_auslastung_cpu=95.0,
-                max_auslastung_ram=80.0,
-                timeout=30.0
+            warte_auf_freie_ressourcen(
+                max_cpu_gesamt=95.0,
+                min_freier_ram_gb=2.0,
+                timeout=5.0
             )
 
             print(f"[DEBUG] Ressourcen-Check abgeschlossen für Kapitel: {kapitel_name}", flush=True)
@@ -1897,12 +1918,7 @@ class DashBoard(ttk.Frame):
                                                         
                         else:
                             print(f"[INFO] Modell bereits für Kapitel {kapitel_name} geladen: {modell_name}", flush=True)
-
-                        warte_auf_freien_cpukern_und_ram(
-                            max_auslastung_cpu=95.0,
-                            max_auslastung_ram=80.0,
-                            timeout=30.0
-                        )
+                     
 
                         result = self.ki_task_mit_client(
                             client=client,
