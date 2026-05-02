@@ -1,3 +1,4 @@
+from operator import index
 import os
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -43,7 +44,7 @@ class AnnotationRenderer:
         self.group_start_y = None
         self.group_width = 0
 
-        self.take_umbruch_indices = set()
+        self.take_umbruch_indices = {}
 
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
         """
@@ -216,7 +217,9 @@ class AnnotationRenderer:
 
         aktuelle_x = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
 
-        if index in getattr(self, "take_umbruch_indices", set()):
+        take_infos = getattr(self, "take_umbruch_indices", {})
+
+        if index in take_infos:
             self.y_pos += self.zeilen_hoehe
 
             if not self.ist_PDF:
@@ -230,7 +233,14 @@ class AnnotationRenderer:
                     tags=("take_umbruch",)
                 )
 
-            self.y_pos += self.zeilen_hoehe
+                self._zeichne_take_marker(
+                    canvas,
+                    config.LINKER_SEITENRAND,
+                    self.y_pos + 3,
+                    take_infos[index]
+                )
+
+            self.y_pos += self.zeilen_hoehe * 1.5
             self.letzte_zeile_y_pos = self.y_pos
             self.x_pos = aktuelle_x
 
@@ -1109,3 +1119,23 @@ class AnnotationRenderer:
         if self.ist_PDF:
             return zu_PDF_farbe(rgb)
         return zu_Hex_farbe(rgb)
+    
+
+    def _zeichne_take_marker(self, canvas, x, y, take_info):
+        take_nr = take_info.get("take_nr", "?")
+        wortanzahl = take_info.get("wortanzahl", "?")
+
+        text = f"Take {take_nr} · {wortanzahl} Wörter"
+
+        if self.ist_PDF:
+            return
+
+        canvas.create_text(
+            x,
+            y,
+            anchor="nw",
+            text=text,
+            fill="#777777",
+            font=("Arial", 9, "italic"),
+            tags=("take_marker",)
+        )

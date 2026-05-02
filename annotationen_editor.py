@@ -1132,24 +1132,22 @@ class AnnotationenEditor(ttk.Frame):
 
 
     def _berechne_take_umbruch_indices(self):
-        """
-        Gibt lokale Token-Indices zurück, VOR denen ein künstlicher Take-Umbruch gesetzt wird.
-        Die JSON-Daten werden nicht verändert.
-        """
         MIN_WOERTER = 50
         OPTIMAL_MIN = 70
         OPTIMAL_MAX = 120
         MAX_WOERTER = 170
 
-        breaks = set()
+        breaks = {}
         take_woerter = 0
+        take_nr = 1
         kandidat_idx = None
+        kandidat_wortzahl = None
 
         for idx, eintrag in enumerate(self.json_dicts):
-            # Echte Zeilenumbrüche haben Priorität und starten einen neuen Take.
             if self._hat_echten_zeilenumbruch(eintrag):
                 take_woerter = 0
                 kandidat_idx = None
+                kandidat_wortzahl = None
                 continue
 
             if self._ist_wort_token(eintrag):
@@ -1158,26 +1156,36 @@ class AnnotationenEditor(ttk.Frame):
             if not self._ist_satzende(eintrag):
                 continue
 
-            # Satzende im optimalen Bereich: sofort trennen.
             if OPTIMAL_MIN <= take_woerter <= OPTIMAL_MAX:
                 if idx + 1 < len(self.json_dicts):
-                    breaks.add(idx + 1)
+                    take_nr += 1
+                    breaks[idx + 1] = {
+                        "take_nr": take_nr,
+                        "wortanzahl": take_woerter
+                    }
+
                 take_woerter = 0
                 kandidat_idx = None
+                kandidat_wortzahl = None
                 continue
 
-            # Satzende im Mindestbereich merken.
             if MIN_WOERTER <= take_woerter < OPTIMAL_MIN:
                 kandidat_idx = idx
+                kandidat_wortzahl = take_woerter
 
-            # Zu lang: spätestens am besten bekannten Satzende trennen.
             if take_woerter >= MAX_WOERTER:
                 ziel_idx = kandidat_idx if kandidat_idx is not None else idx
+                wortzahl = kandidat_wortzahl if kandidat_wortzahl is not None else take_woerter
 
                 if ziel_idx + 1 < len(self.json_dicts):
-                    breaks.add(ziel_idx + 1)
+                    take_nr += 1
+                    breaks[ziel_idx + 1] = {
+                        "take_nr": take_nr,
+                        "wortanzahl": wortzahl
+                    }
 
                 take_woerter = 0
                 kandidat_idx = None
+                kandidat_wortzahl = None
 
         return breaks
