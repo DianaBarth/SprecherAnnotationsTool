@@ -80,7 +80,11 @@ class SprecherAnnotationsTool(tk.Tk):
                     while not self.progress_queue.empty():
                         kapitel_name, aufgaben_id, wert = self.progress_queue.get_nowait()
                         print(f"melde_KI_Tasks_fortschritt für {kapitel_name} id {aufgaben_id} mit wert {wert}", flush=True)
-                        self.dashboard.melde_KI_Tasks_fortschritt(kapitel_name, aufgaben_id, wert)  # deine GUI-Update-Funktion
+                        self.dashboard.aktualisiere_progressbar(
+                            kapitel_name=kapitel_name,
+                            task_id=aufgaben_id,
+                            wert=wert
+                        )# deine GUI-Update-Funktion
             except Exception as e:
                 print(f"[FEHLER bei Queue-Check] {e}")
 
@@ -118,5 +122,5 @@ if __name__ == "__main__":
     print("NEUSTART Sprecher-Annotationen-Tool")
     print("-------------------------------------------------------------------------------------------")
 
-    app = SprecherAnnotationsTool(logger)
+    app = SprecherAnnotationsTool(logger, quickload=args.quickload)
     app.mainloop()

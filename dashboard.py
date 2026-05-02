@@ -31,6 +31,7 @@ from annotationen_editor import AnnotationenEditor
 from Schritt1 import extrahiere_kapitel_mit_config
 from Schritt2 import verarbeite_kapitel_und_speichere_json
 from Schritt3 import daten_aufteilen
+from Schritt4_regel import ermittle_kapitel_abschnitt_id
 from Schritt4_regel import verarbeite_regelbasiert
 from Schritt5_KI import daten_verarbeiten
 
@@ -299,6 +300,14 @@ class DashBoard(ttk.Frame):
         self.kapitel_tasks = {}  # Struktur: {kapitel_name: {task_id: wert}}
         self._progress_lock = threading.Lock()
                 # UI-Elemente bauen (muss als Methode definiert sein)
+
+        self.person_statistik = {
+            "keine_rede": 0,
+            "regel_sicher": 0,
+            "ki_noetig": 0,
+        }
+
+
         self._build_widgets()
 
         self.audioanalyse_tab = AudioAnalyseTab(
@@ -438,6 +447,8 @@ class DashBoard(ttk.Frame):
         info_zeile.grid(row=5, column=0, columnspan=2, sticky="ew", pady=5, padx=10)
         info_zeile.columnconfigure(0, weight=1)
         info_zeile.columnconfigure(1, weight=1)
+        self.person_statistik_label = ttk.Label(self, text="")
+        self.person_statistik_label.grid(row=8, column=0, columnspan=2, sticky="w", padx=10)
 
         self.aktive_aufgabe_label.grid(in_=info_zeile, row=0, column=0, sticky="w")
         self._spinner_label.grid(in_=info_zeile, row=0, column=1, sticky="e")
@@ -567,9 +578,11 @@ class DashBoard(ttk.Frame):
             
             pb["value"] = progress_wert
 
-            if progress_wert == 0:
-                pb.grid_remove()
-                lbl.grid_remove()
+            if progress_wert <= 0:
+                pb["value"] = 0
+                pb.grid()
+                lbl.grid()
+           
             else:
                 if task_id is None:
                     label_text = "Aufgabe: -"
@@ -1193,6 +1206,17 @@ class DashBoard(ttk.Frame):
 
 
     def start_tasks(self):
+        thread = threading.Thread(target=self._start_tasks_worker, daemon=True)
+        thread.start()
+
+    def _start_tasks_worker(self):
+
+        self.person_statistik = {
+            "keine_rede": 0,
+            "regel_sicher": 0,
+            "ki_noetig": 0,
+        }
+
         global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
         IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
 
@@ -1212,7 +1236,7 @@ class DashBoard(ttk.Frame):
                 return
             self.tasks_running = True
 
-        self.disable_controls()
+        self.after(0, self.disable_controls)
 
         print("[DEBUG] Starte Aufgabenverarbeitung", flush=True)
         self.abort_flag.clear()
@@ -1231,20 +1255,20 @@ class DashBoard(ttk.Frame):
         task_flags = {key: var.get() for key, var in self.task_vars.items()}
 
         if not ausgewaehlte_kapitel:
-            messagebox.showwarning(
+            self.after(0, lambda: messagebox.showwarning(
                 "Keine Kapitel ausgewählt",
                 "Bitte wähle mindestens ein Kapitel aus."
-            )
+            ))
             self.enable_controls()
             with self.tasks_lock:
                 self.tasks_running = False
             return
 
         if not any(task_flags.values()):
-            messagebox.showwarning(
+            self.after(0, lambda: messagebox.showwarning(
                 "Keine Aufgaben ausgewählt",
                 "Bitte wähle mindestens eine Aufgabe aus."
-            )
+            ))
             self.enable_controls()
             with self.tasks_lock:
                 self.tasks_running = False
@@ -1396,12 +1420,22 @@ class DashBoard(ttk.Frame):
                         traceback.print_exc()
 
         finally:
-            self.enable_controls()
+            self.after(0, self.enable_controls)
 
             with self.tasks_lock:
                 self.tasks_running = False
 
-            self.master.stoppe_progress_pruefung()
+            self.after(0, self.master.stoppe_progress_pruefung)
+
+            text = (
+                f"Person-Erkennung: "
+                f"keine Rede {self.person_statistik['keine_rede']} | "
+                f"regel sicher {self.person_statistik['regel_sicher']} | "
+                f"KI nötig {self.person_statistik['ki_noetig']}"
+            )
+
+            self.after(0, lambda: self.person_statistik_label.config(text=text))
+     
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
             
     def _thread_worker(self,
@@ -1644,7 +1678,12 @@ class DashBoard(ttk.Frame):
                     aufgaben_name = str(config.KI_AUFGABEN.get(aid, "")).lower()
 
                     if aufgaben_name == "person":
-                        if not self.kapitel_hat_woertliche_rede(kapitel_name, ordner_nur_str["json"]):
+                        if not self.person_ki_noetig(
+                            kapitel_name=kapitel_name,
+                            json_ordner=ordner_nur_str["json"],
+                            ki_ordner=ordner_nur_str["ki"]
+                        ):
+                            progress_queue.put((kapitel_name, aid, 0))
                             continue
 
                     aktive_tasks_preload.append(aid)
@@ -1836,6 +1875,34 @@ class DashBoard(ttk.Frame):
                     aid for aid in alle_task_ids
                     if aid not in nicht_noetige
                 ]
+
+                # ----------------------------------------------------
+                # NEU: Person-KI nur wenn wirklich nötig
+                # ----------------------------------------------------
+                aktive_tasks_gefiltert = []
+
+                for aid in aktive_tasks:
+                    aufgaben_name = str(config.KI_AUFGABEN.get(aid, "")).lower()
+
+                    if aufgaben_name == "person":
+                        if not self.person_ki_noetig(
+                            kapitel_name=kapitel_name,
+                            json_ordner=ordner_nur_str["json"],
+                            ki_ordner=ordner_nur_str["ki"]
+                        ):
+                            print(
+                                f"[INFO] Person-KI entfernt aus Tasks für {kapitel_name}",
+                                flush=True
+                            )
+
+                            # UI sauber resetten
+                            progress_queue.put((kapitel_name, aid, 0))
+
+                            continue
+
+                    aktive_tasks_gefiltert.append(aid)
+
+                aktive_tasks = aktive_tasks_gefiltert
 
                 if not aktive_tasks:
                     print(f"[INFO] Keine aktiven und notwendigen KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
@@ -2041,3 +2108,95 @@ class DashBoard(ttk.Frame):
             )
 
 
+    def person_ki_noetig(self, kapitel_name, json_ordner, ki_ordner):
+        """
+        Gibt True zurück, wenn Person-KI nötig ist.
+        Gründe:
+        - Kapitel hat keine wörtliche Rede -> False
+        - Regeldateien fehlen -> True
+        - Es gibt unsichere/leere Sprecher -> True
+        - Alle Reden sicher erkannt -> False
+        """
+
+        self.after(0, lambda: self.person_statistik_label.config(
+            text=f"Person-Erkennung: "
+                f"keine Rede {self.person_statistik['keine_rede']} | "
+                f"regel sicher {self.person_statistik['regel_sicher']} | "
+                f"KI nötig {self.person_statistik['ki_noetig']}"
+        ))
+
+
+        if not self.kapitel_hat_woertliche_rede(kapitel_name, json_ordner):
+            print(f"[INFO] Person-KI nicht nötig für {kapitel_name}: keine wörtliche Rede.", flush=True)
+            self.person_statistik["keine_rede"] += 1
+            return False
+
+        json_ordner = Path(json_ordner)
+        ki_ordner = Path(ki_ordner)
+
+        json_dateien = sorted([
+            f for f in json_ordner.glob("*_annotierungen.json")
+            if f.name.startswith(f"{kapitel_name}_")
+        ])
+
+        if not json_dateien:
+            print(f"[WARNUNG] Person-KI nötig für {kapitel_name}: keine JSON-Dateien gefunden.", flush=True)
+            return True
+
+        regel_dateien = []
+
+        for json_datei in json_dateien:
+            try:
+                kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+            except Exception as e:
+                print(f"[WARNUNG] Konnte Kapitel/Abschnitt nicht bestimmen für {json_datei.name}: {e}", flush=True)
+                return True
+
+            regel_datei = ki_ordner / f"KI_PERSON_REGEL_{kapitel_id}_{abschnitt_id}_001.json"
+
+            if not regel_datei.exists():
+                print(f"[INFO] Person-KI nötig für {kapitel_name}: Regeldatei fehlt {regel_datei.name}", flush=True)
+                return True
+
+            regel_dateien.append(regel_datei)
+
+        hat_rede = False
+        unsicher = False
+
+        for regel_datei in regel_dateien:
+            try:
+                with open(regel_datei, "r", encoding="utf-8") as f:
+                    daten = json.load(f)
+
+                if not isinstance(daten, list):
+                    print(f"[WARNUNG] Person-KI nötig: Regeldatei ist keine Liste {regel_datei.name}", flush=True)
+                    return True
+
+                for eintrag in daten:
+                    if not isinstance(eintrag, dict):
+                        continue
+
+                    hat_rede = True
+
+                    sprecher = str(eintrag.get("Sprecher", "") or "").strip()
+                    sicherheit = str(eintrag.get("Sicherheit", "") or "").strip().lower()
+
+                    if not sprecher or sicherheit != "sicher":
+                        unsicher = True
+
+            except Exception as e:
+                print(f"[WARNUNG] Person-KI nötig: Regeldatei nicht lesbar {regel_datei.name}: {e}", flush=True)
+                return True
+
+        if not hat_rede:
+            print(f"[INFO] Person-KI nicht nötig für {kapitel_name}: keine Redeabschnitte in Regeldateien.", flush=True)
+            return False
+
+        if unsicher:
+            print(f"[INFO] Person-KI nötig für {kapitel_name}: mindestens ein Sprecher unsicher/leer.", flush=True)
+            self.person_statistik["ki_noetig"] += 1
+            return True
+
+        print(f"[INFO] Person-KI übersprungen für {kapitel_name}: alle Sprecher regelbasiert sicher erkannt.", flush=True)
+        self.person_statistik["regel_sicher"] += 1
+        return False
