@@ -70,6 +70,8 @@ class AnnotationenEditor(ttk.Frame):
         self.shortcut_icons = {}   
         self.sprecher_modus_var = tk.BooleanVar(value=False)
         self.rechts_frame= None
+
+        self.in_takes_aufteilen_var = tk.BooleanVar(value=False)
     
         # Widgets bauen
         self._erstelle_widgets()
@@ -285,6 +287,14 @@ class AnnotationenEditor(ttk.Frame):
         )
         zahlwoerter_checkbox.grid(row=0, column=0, sticky="w")
 
+        takes_checkbox = ttk.Checkbutton(
+            top_frame_2,
+            text="In Takes aufteilen",
+            variable=self.in_takes_aufteilen_var,
+            command=self._zeichne_alle_tokens
+        )
+        takes_checkbox.grid(row=0, column=1, sticky="w", padx=(15, 0))
+
         # ---------------------------
         # 3. Zeile: Filter (NEU!)
         # ---------------------------
@@ -394,6 +404,12 @@ class AnnotationenEditor(ttk.Frame):
         aktive_filter = [name for name, var in self.filter_vars.items() if var.get()]
         self.renderer.ignorierte_annotationen = set(a.lower() for a in aktive_filter)
         self.renderer.use_number_words = self.use_number_words_var.get()
+
+        self.renderer.take_umbruch_indices = (
+            self._berechne_take_umbruch_indices()
+            if self.in_takes_aufteilen_var.get()
+            else set()
+        )
 
         for idx, json_dict in enumerate(self.json_dicts):
             naechstes_element = self.json_dicts[idx + 1] if idx + 1 < len(self.json_dicts) else None
@@ -1092,3 +1108,76 @@ class AnnotationenEditor(ttk.Frame):
             if wortnr is not None:
                 self.wortnr_to_index[wortnr] = idx
                 self.wortnr_to_eintrag[wortnr] = eintrag
+
+    def _ist_wort_token(self, eintrag):
+        token = str(eintrag.get("token", "")).strip()
+        return bool(token) and re.search(r"\w", token, re.UNICODE)
+
+
+    def _ist_satzende(self, eintrag):
+        token = str(eintrag.get("token", "")).strip()
+        return token in {".", "!", "?", "…"} or token.endswith((".", "!", "?", "…"))
+
+
+    def _hat_echten_zeilenumbruch(self, eintrag):
+        annotation = eintrag.get("annotation", "")
+
+        if isinstance(annotation, dict):
+            return "zeilenumbruch" in {str(k).lower() for k in annotation.keys()}
+
+        if isinstance(annotation, list):
+            return any(str(a).lower() == "zeilenumbruch" for a in annotation)
+
+        return "zeilenumbruch" in str(annotation).lower()
+
+
+    def _berechne_take_umbruch_indices(self):
+        """
+        Gibt lokale Token-Indices zurück, VOR denen ein künstlicher Take-Umbruch gesetzt wird.
+        Die JSON-Daten werden nicht verändert.
+        """
+        MIN_WOERTER = 50
+        OPTIMAL_MIN = 70
+        OPTIMAL_MAX = 120
+        MAX_WOERTER = 170
+
+        breaks = set()
+        take_woerter = 0
+        kandidat_idx = None
+
+        for idx, eintrag in enumerate(self.json_dicts):
+            # Echte Zeilenumbrüche haben Priorität und starten einen neuen Take.
+            if self._hat_echten_zeilenumbruch(eintrag):
+                take_woerter = 0
+                kandidat_idx = None
+                continue
+
+            if self._ist_wort_token(eintrag):
+                take_woerter += 1
+
+            if not self._ist_satzende(eintrag):
+                continue
+
+            # Satzende im optimalen Bereich: sofort trennen.
+            if OPTIMAL_MIN <= take_woerter <= OPTIMAL_MAX:
+                if idx + 1 < len(self.json_dicts):
+                    breaks.add(idx + 1)
+                take_woerter = 0
+                kandidat_idx = None
+                continue
+
+            # Satzende im Mindestbereich merken.
+            if MIN_WOERTER <= take_woerter < OPTIMAL_MIN:
+                kandidat_idx = idx
+
+            # Zu lang: spätestens am besten bekannten Satzende trennen.
+            if take_woerter >= MAX_WOERTER:
+                ziel_idx = kandidat_idx if kandidat_idx is not None else idx
+
+                if ziel_idx + 1 < len(self.json_dicts):
+                    breaks.add(ziel_idx + 1)
+
+                take_woerter = 0
+                kandidat_idx = None
+
+        return breaks

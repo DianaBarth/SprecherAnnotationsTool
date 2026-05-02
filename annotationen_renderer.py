@@ -43,6 +43,8 @@ class AnnotationRenderer:
         self.group_start_y = None
         self.group_width = 0
 
+        self.take_umbruch_indices = set()
+
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
         """
         Berechnet die korrekte Y-Position für PDF, da PDF-Seiten bei (0,0) unten beginnen.
@@ -213,6 +215,24 @@ class AnnotationRenderer:
         self._handle_einrueckung(positions_annot, token, index)
 
         aktuelle_x = self.einrueckung_start_x if self.einrueckung_aktiv else config.LINKER_SEITENRAND
+
+        if index in getattr(self, "take_umbruch_indices", set()):
+            self.y_pos += self.zeilen_hoehe
+
+            if not self.ist_PDF:
+                canvas.create_line(
+                    config.LINKER_SEITENRAND,
+                    self.y_pos,
+                    max(self.max_breite - 40, config.LINKER_SEITENRAND + 200),
+                    self.y_pos,
+                    fill="#cccccc",
+                    dash=(4, 4),
+                    tags=("take_umbruch",)
+                )
+
+            self.y_pos += self.zeilen_hoehe
+            self.letzte_zeile_y_pos = self.y_pos
+            self.x_pos = aktuelle_x
 
         if self._hat_annotation(element_kopie, "zeilenumbruch"):
             if DEBUG_RENDERER:

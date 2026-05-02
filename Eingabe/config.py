@@ -1,14 +1,6 @@
 # ---------------------------------------------
-
-
-
-# Konfigurationsdatei (config.py), Automatisch generiert am 2026-05-02T07:32:25.966164
-
-
-
+# Konfigurationsdatei (config.py), Automatisch generiert am 2026-05-02T13:50:22.446680
 # ---------------------------------------------
-
-
 
 GLOBALORDNER = {'Eingabe': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/Eingabe', 'txt': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/txt', 'json': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/json', 'saetze': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/saetze', 'ki': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/ki', 'merge': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/merge', 'pdf': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf', 'manuell': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/manuell', 'pdf2': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/pdf2', 'audio': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/audio', 'audioanalyse': 'G:/Dokumente/DianaBuch_FinisPostPortam/Buch/VersionBuch2025/testdaten annotationstool/Annotationstoolergebnisse/Die Organisation [EXTENDED EDITION] - vorbereitet/audioanalyse'}	# Ordnerstruktur für Ein- und Ausgabe
 
