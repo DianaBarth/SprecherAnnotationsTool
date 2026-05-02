@@ -353,6 +353,12 @@ class AudioAnalyseTab(ttk.Frame):
         self.pause_tree.grid(row=0, column=0, sticky="nsew")
         pause_scroll_y.grid(row=0, column=1, sticky="ns")
 
+        self.pause_tree.tag_configure("kurz", background="#eeeeee")
+        self.pause_tree.tag_configure("normal", background="#ffffff")
+        self.pause_tree.tag_configure("lang", background="#fff3cd")        # gelb
+        self.pause_tree.tag_configure("sehr_lang", background="#ffe5b4")   # orange
+        self.pause_tree.tag_configure("problematisch", background="#f8d7da")  # rot
+
     def _build_segment_tab(self):
         self.tab_segmente = ttk.Frame(self.result_notebook)
         self.tab_segmente.columnconfigure(0, weight=1)
@@ -738,10 +744,41 @@ class AudioAnalyseTab(ttk.Frame):
         self.lbl_laengste_pause_var.set(str(result.laengste_pause))
 
     def _fill_result_views(self, result: AudioAnalyseResult):
-        self._fill_diff_view(result)
-        self._fill_pause_view(result)
+        self._fill_diff_view(result)     
         self._fill_segment_view(result)
         self._fill_transcript_view(result)
+
+        for p in self._sortiere_pausen(result.pausen):
+            kategorie = getattr(p, "kategorie", "normal")
+
+            self.pause_tree.insert(
+                "",
+                "end",
+                values=(
+                    f"{p.start:.3f}",
+                    f"{p.end:.3f}",
+                    f"{p.duration:.3f}",
+                    kategorie,
+                ),
+                tags=(kategorie,)
+            )
+
+    def _sortiere_pausen(self, pausen):
+        gewicht = {
+            "problematisch": 5,
+            "sehr_lang": 4,
+            "lang": 3,
+            "normal": 2,
+            "kurz": 1,
+        }
+
+        return sorted(
+            pausen,
+            key=lambda p: (
+                -gewicht.get(getattr(p, "kategorie", "normal"), 2),
+                -p.duration,
+            )
+        )
 
     def _fill_diff_view(self, result: AudioAnalyseResult):
         for entry in result.diff_entries[:self.MAX_DIFFS_IM_UI]:
@@ -759,18 +796,7 @@ class AudioAnalyseTab(ttk.Frame):
                 ),
             )
 
-    def _fill_pause_view(self, result: AudioAnalyseResult):
-        for p in result.pausen:
-            self.pause_tree.insert(
-                "",
-                "end",
-                values=(
-                    f"{p.start:.3f}",
-                    f"{p.end:.3f}",
-                    f"{p.duration:.3f}",
-                    getattr(p, "kategorie", ""),
-                ),
-            )
+
 
     def _fill_segment_view(self, result: AudioAnalyseResult):
         take_infos = []
