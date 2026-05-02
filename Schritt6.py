@@ -108,6 +108,43 @@ def parse_bereich(wert):
         return []
 
 
+def merge_personen_in_tokens(tokens, ki_personen_daten):
+    """
+    KI-Ergebnisse in Tokens einfügen, aber:
+    - Regel hat Vorrang
+    - KI nur bei unsicher/leer
+    """
+
+    for eintrag in ki_personen_daten:
+        try:
+            start = int(eintrag.get("RedeStart"))
+            ende = int(eintrag.get("RedeEnde"))
+            sprecher = eintrag.get("Sprecher", "").strip()
+        except Exception:
+            continue
+
+        if not sprecher:
+            continue
+
+        for t in tokens:
+            try:
+                nr = int(t.get("WortNr"))
+            except Exception:
+                continue
+
+            if not (start <= nr <= ende):
+                continue
+
+            # 🔥 REGEL SCHÜTZEN
+            if t.get("person_source") == "regel":
+                continue
+
+            # 🔥 NUR ÜBERSCHREIBEN WENN UNSICHER
+            if t.get("person_sicherheit") == "unsicher" or not t.get("person"):
+                t["person"] = sprecher
+                t["person_source"] = "ki"
+                t["person_sicherheit"] = "ki"
+
 def lade_json_robust(dateipfad):
     text = Path(dateipfad).read_text(encoding="utf-8").strip()
 
@@ -571,6 +608,59 @@ def Merge_annotationen(
         print(f"[Merge] KapitelID={kapitel_id}, AbschnittID={abschnitt_id}")
 
         # --------------------------------------------------
+        # 0) PERSON REGEL aus Schritt4
+        # Beispiel: KI_PERSON_REGEL_001_002_001.json
+        # --------------------------------------------------
+        regel_person_dateien = finde_ki_dateien_fuer_original(
+            quellordner_annotationen,
+            "PERSON_REGEL",
+            kapitel_id,
+            abschnitt_id
+        )
+
+        for regel_pfad in regel_person_dateien:
+            try:
+                print(f"[INFO] Merge PERSON_REGEL: {regel_pfad.name}")
+                regel_json = lade_json_robust(regel_pfad)
+
+                daten, report = merge_sprecher(
+                    daten,
+                    regel_json,
+                    kapitelnummer
+                )
+
+                # Regel-Quelle nachträglich korrekt markieren
+                for eintrag in regel_json:
+                    if not isinstance(eintrag, dict):
+                        continue
+
+                    sprecher = str(eintrag.get("Sprecher", "") or "").strip()
+                    sicherheit = str(eintrag.get("Sicherheit", "") or "").strip()
+
+                    if not sprecher:
+                        continue
+
+                    start = int(eintrag.get("RedeStart"))
+                    ende = int(eintrag.get("RedeEnde"))
+
+                    for t in daten:
+                        try:
+                            nr = int(t.get("WortNr"))
+                        except Exception:
+                            continue
+
+                        if start <= nr <= ende:
+                            t["person_source"] = "regel"
+                            t["person_sicherheit"] = sicherheit or "sicher"
+
+                print(f"[INFO] PERSON_REGEL geschrieben: {report.get('geschrieben', 0)}")
+
+            except Exception as e:
+                print(f"[FEHLER] PERSON_REGEL {regel_pfad.name}: {e}")
+                traceback.print_exc()
+                continue
+
+        # --------------------------------------------------
         # 1) PERSON aus neuer KI-Nomenklatur
         # Beispiel: KI_PERSON_001_002_001.json
         # --------------------------------------------------
@@ -585,7 +675,8 @@ def Merge_annotationen(
             try:
                 print(f"[INFO] Merge PERSON: {ki_pfad.name}")
                 ki_json = lade_json_robust(ki_pfad)
-                daten, report = merge_sprecher(daten, ki_json, kapitelnummer)
+                merge_personen_in_tokens(daten, ki_json)
+                print(f"[INFO] PERSON KI geschützt gemerged: {ki_pfad.name}")
                 print(f"[INFO] PERSON geschrieben: {report.get('geschrieben', 0)}")
             except Exception as e:
                 print(f"[FEHLER] PERSON {ki_pfad.name}: {e}")

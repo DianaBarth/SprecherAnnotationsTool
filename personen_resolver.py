@@ -2,6 +2,7 @@ import os
 import re
 import ast
 import yaml
+import json
 import unicodedata
 from datetime import date
 from pathlib import Path
@@ -95,17 +96,33 @@ def normalisiere_kapitel_titel(text):
 def parse_kapitel_und_abschnitt_aus_dateiname(dateipfad):
     name = Path(dateipfad).stem
 
-    match = re.match(r"^(.*?)_(\d+)_annotierungen$", name)
+    # Neues Format:
+    # 001_001.json -> kapitel_index=1, abschnitt_nummer=1
+    match_neu = re.match(r"^(\d{3})_(\d{3})$", name)
 
-    if not match:
-        print(f"[PersonenResolver] Dateiname nicht erkannt: {name}")
-        return None
+    if match_neu:
+        kapitel_index = int(match_neu.group(1))
+        abschnitt_nummer = int(match_neu.group(2))
 
-    return {
-        "kapitelname": match.group(1),
-        "abschnitt_nummer": int(match.group(2)),
-    }
+        return {
+            "kapitel_index": kapitel_index,
+            "kapitelname": None,
+            "abschnitt_nummer": abschnitt_nummer,
+        }
 
+    # Altes Format:
+    # I.Scelus sapiens matris_001_annotierungen
+    match_alt = re.match(r"^(.*?)_(\d+)_annotierungen$", name)
+
+    if match_alt:
+        return {
+            "kapitel_index": None,
+            "kapitelname": match_alt.group(1),
+            "abschnitt_nummer": int(match_alt.group(2)),
+        }
+
+    print(f"[PersonenResolver] Dateiname nicht erkannt: {name}")
+    return None
 
 # ------------------------------------------------------------
 # 🔥 Kapitel + Subchapter via ID (K01_10)
@@ -153,9 +170,48 @@ def hole_anchor_date_fuer_datei(dateipfad):
     mapping = hole_personen_mapping()
     subchapter_datum_key = mapping.get("subchapter_datum_feld", "anchor_date")
 
+    chapters = chapters_data.get("chapters", [])
+
+    # ------------------------------------------------------------
+    # Neues numerisches Format:
+    # 001_001.json -> chapter_id K01, sub_id K01_01
+    # 000_001.json -> chapter_id K00, sub_id K00_01
+    # ------------------------------------------------------------
+    if info.get("kapitel_index") is not None:
+        kapitel_index = int(info["kapitel_index"])
+        abschnitt_nummer = int(info["abschnitt_nummer"])
+
+        gesuchte_chapter_id = f"K{kapitel_index:02d}"
+        gesuchte_sub_id = f"{gesuchte_chapter_id}_{abschnitt_nummer:02d}"
+
+        for chapter in chapters:
+            if chapter.get("chapter_id") != gesuchte_chapter_id:
+                continue
+
+            for sub in chapter.get("subchapters", []):
+                if sub.get("sub_id") == gesuchte_sub_id:
+                    anchor = sub.get(subchapter_datum_key)
+
+                    print(
+                        f"[PersonenResolver] Anchor via neuer ID: "
+                        f"{gesuchte_chapter_id} -> {gesuchte_sub_id} -> {anchor}"
+                    )
+
+                    return anchor
+
+            print(f"[PersonenResolver] Subchapter nicht gefunden: {gesuchte_sub_id}")
+            return None
+
+        print(f"[PersonenResolver] Chapter nicht gefunden: {gesuchte_chapter_id}")
+        return None
+
+    # ------------------------------------------------------------
+    # Altes Format bleibt als Fallback:
+    # Titel aus Dateiname -> YAML-title matchen
+    # ------------------------------------------------------------
     kapitelname_norm = normalisiere_kapitel_titel(info["kapitelname"])
 
-    chapter = finde_chapter_obj(chapters_data.get("chapters", []), kapitelname_norm)
+    chapter = finde_chapter_obj(chapters, kapitelname_norm)
 
     if not chapter:
         print(f"[PersonenResolver] Kapitel nicht gefunden: {info['kapitelname']}")
@@ -169,12 +225,11 @@ def hole_anchor_date_fuer_datei(dateipfad):
     anchor = sub.get(subchapter_datum_key)
 
     print(
-        f"[PersonenResolver] Anchor via ID: "
+        f"[PersonenResolver] Anchor via altem Titelmatch: "
         f"{chapter.get('chapter_id')} -> {sub.get('sub_id')} -> {anchor}"
     )
 
     return anchor
-
 
 # ------------------------------------------------------------
 # 🔥 Personen aus YAML (für KI + Editor nutzbar)
@@ -249,7 +304,10 @@ def lade_personen_aus_yaml_fuer_datei(dateipfad):
 # ------------------------------------------------------------
 
 def lade_personen_aus_kapitel_config(kapitel_config, kapitelname):
-    zusatzinfo = kapitel_config.kapitel_daten.get(kapitelname, {}).get("ZusatzInfo_3", "")
+    person_id = int(getattr(config, "PERSON_AUFGABE_ID", 4))
+    key = f"ZusatzInfo_{person_id}"
+
+    zusatzinfo = kapitel_config.kapitel_daten.get(kapitelname, {}).get(key, "")
 
     if not zusatzinfo:
         return []
@@ -302,13 +360,75 @@ def formatiere_personen_fuer_prompt(personen):
 
     return "\n".join(f"- {p}" for p in personen)
 
+def parse_personen_zusatzinfo(zusatzinfo):
+    if not zusatzinfo:
+        return []
+
+    if isinstance(zusatzinfo, list):
+        return [str(x).strip() for x in zusatzinfo if str(x).strip()]
+
+    if isinstance(zusatzinfo, str):
+        return [
+            t.strip()
+            for t in re.split(r"[;,\n]", zusatzinfo)
+            if t.strip()
+        ]
+
+    return []
+
+
 def lade_personen_fuer_datei_ohne_kapitel_config(dateipfad):
+    # 1. YAML versuchen
     quelle = getattr(config, "PERSONEN_QUELLE", "yaml")
 
     if quelle == "yaml":
         personen = lade_personen_aus_yaml_fuer_datei(dateipfad)
-
         if personen:
             return personen
 
-    return []
+        print("[PersonenResolver] YAML leer → fallback kapitel_config.json")
+
+    # 2. Projekt-kapitel_config.json laden
+    try:
+        projekt_ordner = Path(config.GLOBALORDNER["Eingabe"]).parent
+        kapitel_config_pfad = projekt_ordner / "kapitel_config.json"
+
+        print(f"[PersonenResolver] Lade Projekt-kapitel_config: {kapitel_config_pfad}")
+
+        with open(kapitel_config_pfad, "r", encoding="utf-8") as f:
+            kapitel_config_data = json.load(f)
+
+        info = parse_kapitel_und_abschnitt_aus_dateiname(dateipfad)
+        if not info:
+            return []
+
+        kapitel_liste = kapitel_config_data.get("kapitel_liste", [])
+        kapitel_daten = kapitel_config_data.get("kapitel_daten", {})
+
+        if info.get("kapitel_index") is not None:
+            idx = int(info["kapitel_index"])
+            if 0 <= idx < len(kapitel_liste):
+                kapitelname = kapitel_liste[idx]
+            else:
+                print(f"[PersonenResolver] Kapitelindex außerhalb kapitel_liste: {idx}")
+                return []
+        else:
+            kapitelname = info.get("kapitelname")
+
+        person_id = int(getattr(config, "PERSON_AUFGABE_ID", 4))
+        key = f"ZusatzInfo_{person_id}"
+
+        zusatzinfo = kapitel_daten.get(kapitelname, {}).get(key, "")
+
+        personen = parse_personen_zusatzinfo(zusatzinfo)
+
+        print(
+            f"[PersonenResolver] Personen aus kapitel_config: "
+            f"kapitel={kapitelname!r}, key={key}, personen={personen}"
+        )
+
+        return personen
+
+    except Exception as e:
+        print(f"[PersonenResolver] Fallback kapitel_config fehlgeschlagen: {e}")
+        return []

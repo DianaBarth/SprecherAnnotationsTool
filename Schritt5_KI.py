@@ -252,7 +252,31 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
                     dateipfad=str(json_datei_fuer_personen or dateipfad)
                 )
 
+                # Fallback: Falls ZusatzInfo_4 roh an den Prompt angehängt wurde
+                if not personen:
+                    person_id = int(getattr(config, "PERSON_AUFGABE_ID", 4))
+                    zusatz_key = f"ZusatzInfo_{person_id}"
+
+                    # einfache Extraktion aus losem Zusatztext wie: Jott, Uh
+                    zeilen = [
+                        z.strip()
+                        for z in str(prompt).splitlines()
+                        if z.strip()
+                    ]
+
+                    kandidaten = []
+
+                    for z in zeilen:
+                        if z.startswith("- "):
+                            kandidaten.append(z[2:].strip())
+                        elif "," in z and not z.startswith("{") and "JSON" not in z:
+                            kandidaten.extend([x.strip() for x in z.split(",") if x.strip()])
+
+                    if kandidaten:
+                        personen = kandidaten
+
                 sprecher_liste_text = personen_resolver.formatiere_personen_fuer_prompt(personen)
+
 
                 prompt = prompt.replace(
                     "{SPRECHER_LISTE_HIER_EINFÜGEN}",
@@ -406,25 +430,69 @@ def daten_verarbeiten(client, prompt, dateipfad, ki_ordner, aufgabe, force=False
             # ------------------------------------------------
             # PERSON: Rededaten injizieren
             # ------------------------------------------------
+                        
             if ist_person_aufgabe:
-                prompt_fuer_abschnitt, reden = ersetze_rede_marker_fuer_person_prompt(
-                    prompt_fuer_abschnitt,
-                    tokens
+                alle_reden = extrahiere_reden_aus_tokens(tokens)
+
+                unsichere_regel_reden = lade_unsichere_regel_personen(
+                    ki_ordner=ki_ordner,
+                    json_datei=json_datei
+                )
+
+                reden = filtere_reden_auf_unsichere(
+                    alle_reden,
+                    unsichere_regel_reden
+                )
+
+                print("[DEBUG][PERSON] alle_reden:", alle_reden)
+                print("[DEBUG][PERSON] unsichere_regel_reden:", unsichere_regel_reden)
+                print("[DEBUG][PERSON] reden_nach_filter:", reden)
+
+
+                if not reden:
+                    print(
+                        f"[INFO][PERSON] Abschnitt {abschnitt_nr}: "
+                        f"keine unsicheren Reden → KI übersprungen."
+                    )
+                    continue
+
+                rede_daten_text = json.dumps(
+                    reden,
+                    ensure_ascii=False,
+                    indent=2
+                )
+
+                print("[DEBUG] unsichere:", unsichere_regel_reden[:2])
+                print("[DEBUG] alle reden:", alle_reden[:2])
+
+                prompt_fuer_abschnitt = prompt_fuer_abschnitt.replace(
+                    "{REDE_DATEN}",
+                    rede_daten_text
                 )
 
                 if "{REDE_DATEN}" in prompt_fuer_abschnitt:
                     print("[WARNUNG] Prompt enthält nach Ersetzung noch {REDE_DATEN}!")
 
-                if not reden:
-                    print(f"[INFO] Abschnitt {abschnitt_nr}: keine Rede → übersprungen.")
-                    continue
-
-                print(f"[INFO] Abschnitt {abschnitt_nr}: {len(reden)} Rede(n) extrahiert.")
+                print(
+                    f"[INFO][PERSON] Abschnitt {abschnitt_nr}: "
+                    f"{len(reden)} unsichere Rede(n) an KI."
+                )
 
             # ------------------------------------------------
             # Prompt für Abschnitt bauen
             # ------------------------------------------------
-            if ist_kombi_aufgabe:
+            if ist_person_aufgabe:
+                abschnitt_prompt = (
+                    "KONTEXT ZUR EINORDNUNG:\n"
+                    f"{abschnitt.get('text', '')}\n\n"
+                    "WICHTIG:\n"
+                    f"Es gibt exakt {len(reden)} Zielrede(n).\n"
+                    f"Antworte exakt mit {len(reden)} Namen im JSON-Array.\n"
+                    "Ordne NUR die Zielreden aus REDE_DATEN zu.\n"
+                    "Ignoriere andere Reden im Kontext, auch wenn dort Sprecher genannt werden.\n"
+                )
+
+            elif ist_kombi_aufgabe:
                 abschnitt_prompt = (
                     "ABSCHNITT ALS FLIESSTEXT:\n"
                     f"{abschnitt.get('text', '')}\n\n"
@@ -539,8 +607,12 @@ def validiere_person_antwort(antwort, erwartete_reden):
     if not isinstance(daten, list):
         return None, "Antwort ist kein JSON-Array"
 
-    if len(daten) != len(erwartete_reden):
-        return None, f"Anzahl falsch: erwartet {len(erwartete_reden)}, erhalten {len(daten)}"
+    if len(daten) < len(erwartete_reden):
+        daten = daten + ["Unbekannt"] * (len(erwartete_reden) - len(daten))
+
+    if len(daten) > len(erwartete_reden):
+        daten = daten[:len(erwartete_reden)]
+
 
     bereinigt = []
 
@@ -930,3 +1002,61 @@ def schaetze_satzanzahl(tokens):
             count += 1
 
     return max(1, count)
+
+
+def lade_unsichere_regel_personen(ki_ordner, json_datei):
+    ki_ordner = Path(ki_ordner)
+    kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+    pattern = f"KI_PERSON_REGEL_{kapitel_id}_{abschnitt_id}_*.json"
+    dateien = sorted(ki_ordner.glob(pattern))
+
+    unsichere = []
+
+    for datei in dateien:
+        try:
+            with open(datei, "r", encoding="utf-8") as f:
+                daten = json.load(f)
+
+            if not isinstance(daten, list):
+                continue
+
+            for eintrag in daten:
+                if not isinstance(eintrag, dict):
+                    continue
+
+                if str(eintrag.get("Sicherheit", "")).lower() == "unsicher":
+                    unsichere.append(eintrag)
+
+        except Exception as e:
+            print(f"[WARNUNG][PERSON] Regel-Personendatei konnte nicht gelesen werden: {datei} | {e}")
+
+    return unsichere
+
+def filtere_reden_auf_unsichere(reden, unsichere_regel_reden):
+    if not unsichere_regel_reden:
+        return []
+
+    unsicher_ranges = set()
+
+    for r in unsichere_regel_reden:
+        try:
+            start = int(r.get("RedeStart"))
+            ende = int(r.get("RedeEnde"))
+            unsicher_ranges.add((start, ende))
+        except Exception:
+            continue
+
+    gefiltert = []
+
+    for rede in reden:
+        try:
+            start = int(rede.get("RedeStart"))
+            ende = int(rede.get("RedeEnde"))
+        except Exception:
+            continue
+
+        if (start, ende) in unsicher_ranges:
+            gefiltert.append(rede)
+
+    return gefiltert

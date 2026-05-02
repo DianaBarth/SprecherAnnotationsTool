@@ -4,18 +4,21 @@
 
 # Ordnerstruktur für Ein- und Ausgabe
 GLOBALORDNER = {}
+DEFAULT_KI_MODELL = "Qwen/Qwen2.5-3B-Instruct"
 NUTZE_KI = True  # Schaltet alle KI-Funktionen zentral ein oder aus
 MAX_PARALLELE_KI_TASKS = 2
 KI_MAX_NEW_TOKENS = 768
 KI_AUFGABEN = {
-    3: "person",
-    4: "kombination",
-    5: "pause",        # bleibt (wird aber nicht mehr benutzt)
-    6: "gedanken",     # bleibt (wird aber nicht mehr benutzt)
-    7: "spannung",     # bleibt (wird aber nicht mehr benutzt)
-    8: "betonung",     # bleibt (wird aber nicht mehr benutzt)
-    9: "ig",
+    4: "person",
+    5: "kombination",
+    6: "pause",        # bleibt (wird aber nicht mehr benutzt)
+    7: "gedanken",     # bleibt (wird aber nicht mehr benutzt)
+    8: "spannung",     # bleibt (wird aber nicht mehr benutzt)
+    9: "betonung",     # bleibt (wird aber nicht mehr benutzt)
+    10: "ig",
 }
+
+AKTIVE_KI_AUFGABEN = [4, 10]
 
 KOMBI_AUFGABEN_MAPPING = {
     "kombination": {
@@ -25,7 +28,7 @@ KOMBI_AUFGABEN_MAPPING = {
         "spannung": "spannung",
     }
 }
-
+REGEL_AUFGABE_ID = 3
 MERGE_AUFGABE_ID = 99
 
 # Annotationen für jede Aufgabe

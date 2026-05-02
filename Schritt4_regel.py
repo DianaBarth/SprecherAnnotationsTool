@@ -2,7 +2,9 @@ import json
 import re
 import traceback
 from pathlib import Path
+import json
 
+import personen_resolver
 
 SATZENDE_TOKENS = {".", "!", "?", "…"}
 KOMMA_TOKENS = {","}
@@ -435,6 +437,23 @@ def verarbeite_regelbasiert(dateipfad, ki_ordner, force=False):
             print(f"[WARNUNG] JSON ist keine Tokenliste: {json_datei}")
             return None
 
+        personen_liste = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
+            str(json_datei)
+        )
+    
+        personen_ergebnisse = regelbasierte_personen(tokens, personen_liste)
+
+        tokens = wende_personen_ergebnisse_auf_tokens_an(
+            tokens,
+            personen_ergebnisse
+        ) 
+      
+        speichere_personen_regel_datei(
+            json_datei=json_datei,
+            ki_ordner=ki_ordner,
+            personen_ergebnisse=personen_ergebnisse
+        )
+
         daten = regelbasierte_kombination(tokens)
 
         ausgabe_datei = speichere_regel_json(
@@ -453,6 +472,251 @@ def verarbeite_regelbasiert(dateipfad, ki_ordner, force=False):
         traceback.print_exc()
         return None
 
+def regelbasierte_personen(tokens, personen_liste):
+    """
+    Erkennt einfache Sprecher-Zuordnungen regelbasiert.
+
+    Output:
+    [
+      {
+        "Sprecher": "Anna",
+        "RedeStart": 123,
+        "RedeEnde": 130,
+        "Sicherheit": "sicher" | "unsicher",
+        "Quelle": "regel_nachgestellt_name" | ...
+      }
+    ]
+    """
+
+    rede_verben = {
+        "sagte", "sagt",
+        "fragte", "fragt",
+        "rief", "ruft",
+        "flüsterte", "flüstert",
+        "meinte", "meint",
+        "antwortete", "antwortet",
+        "erwiderte", "erwidert",
+        "murmelte", "murmelt",
+        "schrie", "schreit",
+    }
+
+    pronomen = {
+        "er", "sie", "es",
+        "ich", "du",
+        "wir", "ihr",
+        "jemand",
+    }
+
+    personen_norm = {
+        str(p).strip().lower(): str(p).strip()
+        for p in personen_liste
+        if str(p).strip()
+    }
+
+    def tok(t):
+        return str(t.get("tokenInklZahlwoerter") or t.get("token") or "").strip()
+
+    def norm(t):
+        return tok(t).lower()
+
+    def nr(t):
+        try:
+            return int(t.get("WortNr"))
+        except Exception:
+            return None
+
+    def ist_name_token(t):
+        text = tok(t)
+        if not text:
+            return False
+        return text.lower() in personen_norm
+
+    def name_aus_token(t):
+        return personen_norm.get(tok(t).lower(), "")
+
+    def ist_rede_oeffner(t):
+        return tok(t) in {"„", '"', "«", "‚"}
+
+    def ist_rede_schliesser(t):
+        return tok(t) in {"“", '"', "»", "‘"}
+
+    def naechste_wort_tokens(start_idx, max_count=8):
+        result = []
+        i = start_idx
+
+        while i < len(tokens) and len(result) < max_count:
+            text = tok(tokens[i])
+            if text and text not in {",", ".", "!", "?", ":", ";", "„", "“", '"'}:
+                result.append((i, tokens[i]))
+            i += 1
+
+        return result
+
+    def vorherige_wort_tokens(start_idx, max_count=8):
+        result = []
+        i = start_idx
+
+        while i >= 0 and len(result) < max_count:
+            text = tok(tokens[i])
+            if text and text not in {",", ".", "!", "?", ":", ";", "„", "“", '"'}:
+                result.append((i, tokens[i]))
+            i -= 1
+
+        return result
+
+    reden = []
+    in_rede = False
+    rede_start_idx = None
+
+    for i, eintrag in enumerate(tokens):
+        if ist_rede_oeffner(eintrag) and not in_rede:
+            in_rede = True
+            rede_start_idx = i + 1
+            continue
+
+        if ist_rede_schliesser(eintrag) and in_rede:
+            rede_ende_idx = i - 1
+
+            while rede_start_idx <= rede_ende_idx and nr(tokens[rede_start_idx]) is None:
+                rede_start_idx += 1
+
+            while rede_ende_idx >= rede_start_idx and nr(tokens[rede_ende_idx]) is None:
+                rede_ende_idx -= 1
+
+            if rede_start_idx <= rede_ende_idx:
+                reden.append({
+                    "start_idx": rede_start_idx,
+                    "ende_idx": rede_ende_idx,
+                    "RedeStart": nr(tokens[rede_start_idx]),
+                    "RedeEnde": nr(tokens[rede_ende_idx]),
+                })
+
+            in_rede = False
+            rede_start_idx = None
+
+    ergebnisse = []
+
+    for rede in reden:
+        start_idx = rede["start_idx"]
+        ende_idx = rede["ende_idx"]
+
+        sprecher = ""
+        sicherheit = "unsicher"
+        quelle = "kein_regel_match"
+
+        # ----------------------------------------------------
+        # Regel 1:
+        # „...“, sagte Anna
+        # „...“, fragte Anna
+        # ----------------------------------------------------
+        nachher = naechste_wort_tokens(ende_idx + 1, max_count=10)
+
+        for pos, (_, t) in enumerate(nachher):
+            if norm(t) in rede_verben:
+                danach = nachher[pos + 1:pos + 4]
+
+              
+
+                for _, kandidat in danach:
+                    if ist_name_token(kandidat):
+                        sprecher = name_aus_token(kandidat)
+                        sicherheit = "sicher"
+                        quelle = "regel_nachgestellt_verb_name"
+                        break
+
+                    if norm(kandidat) in pronomen:
+                        sprecher = ""
+                        sicherheit = "unsicher"
+                        quelle = "regel_nachgestellt_verb_pronomen"
+                        break
+
+                break
+
+        # ----------------------------------------------------
+        # Regel 2:
+        # Anna sagte: „...“
+        # Anna fragte: „...“
+        # ----------------------------------------------------
+        if not sprecher and sicherheit != "sicher":
+            vorher = vorherige_wort_tokens(start_idx - 1, max_count=10)
+
+            # vorher ist rückwärts sortiert
+            vorher_vorwaerts = list(reversed(vorher))
+
+            for idx in range(len(vorher_vorwaerts) - 1):
+                _, kandidat_name = vorher_vorwaerts[idx]
+                _, kandidat_verb = vorher_vorwaerts[idx + 1]
+
+                if ist_name_token(kandidat_name) and norm(kandidat_verb) in rede_verben:
+                    sprecher = name_aus_token(kandidat_name)
+                    sicherheit = "sicher"
+                    quelle = "regel_vorangestellt_name_verb"
+                    break
+
+        # ----------------------------------------------------
+        # Regel 3:
+        # „...“ Anna
+        # nur sehr nah danach
+        # ----------------------------------------------------
+        if not sprecher and sicherheit != "sicher":
+            direkt_danach = naechste_wort_tokens(ende_idx + 1, max_count=3)
+
+            for _, kandidat in direkt_danach:
+                if ist_name_token(kandidat):
+                    sprecher = name_aus_token(kandidat)
+                    sicherheit = "sicher"
+                    quelle = "regel_direkt_danach_name"
+                    break
+
+        ergebnisse.append({
+            "Sprecher": sprecher,
+            "RedeStart": int(rede["RedeStart"]),
+            "RedeEnde": int(rede["RedeEnde"]),
+            "Sicherheit": sicherheit,
+            "Quelle": quelle,
+        })
+
+    return ergebnisse
+
+def wende_personen_ergebnisse_auf_tokens_an(tokens, personen_ergebnisse):
+    for erg in personen_ergebnisse:
+        sprecher = erg.get("Sprecher", "")
+        sicherheit = erg.get("Sicherheit", "")
+
+        start = int(erg["RedeStart"])
+        ende = int(erg["RedeEnde"])
+
+        for t in tokens:
+            try:
+                nr = int(t.get("WortNr"))
+            except Exception:
+                continue
+
+            if start <= nr <= ende:
+                if sprecher:
+                    t["person"] = sprecher
+                    t["person_source"] = "regel"
+                    t["person_sicherheit"] = sicherheit
+                else:
+                    t["person"] = ""
+                    t["person_source"] = ""
+                    t["person_sicherheit"] = "unsicher"
+
+    return tokens
+
+
+def speichere_personen_regel_datei(json_datei, ki_ordner, personen_ergebnisse):
+    ki_ordner = Path(ki_ordner)
+    ki_ordner.mkdir(parents=True, exist_ok=True)
+
+    kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+    ziel = ki_ordner / f"KI_PERSON_REGEL_{kapitel_id}_{abschnitt_id}_001.json"
+
+    with open(ziel, "w", encoding="utf-8") as f:
+        json.dump(personen_ergebnisse, f, ensure_ascii=False, indent=2)
+
+    print(f"[INFO] Regel-Personen gespeichert: {ziel}")
 
 def verarbeite_ordner_regelbasiert(json_ordner, ki_ordner, force=False):
     json_ordner = Path(json_ordner)
@@ -485,3 +749,4 @@ def verarbeite_ordner_regelbasiert(json_ordner, ki_ordner, force=False):
     print(f"[INFO] Schritt5 regelbasiert abgeschlossen. Dateien: {len(erzeugte_dateien)}")
 
     return erzeugte_dateien
+

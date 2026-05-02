@@ -749,8 +749,10 @@ class AnnotationenEditor(ttk.Frame):
   
     
     def _get_personen_feldname(self):
-        return config.KI_AUFGABEN.get(3, "person")
-
+        return config.KI_AUFGABEN.get(
+            getattr(config, "PERSON_AUFGABE_ID", 4),
+            "person"
+        )
     def _setze_person_im_bereich(self, start_idx, end_idx, personenname):
         if start_idx is None:
             return

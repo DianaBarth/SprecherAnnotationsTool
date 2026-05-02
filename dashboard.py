@@ -23,6 +23,7 @@ from docx import Document
 from multiprocessing import Manager
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
+import json
 
 from log_manager import LogManager
 import Eingabe.config as config
@@ -30,8 +31,9 @@ from annotationen_editor import AnnotationenEditor
 from Schritt1 import extrahiere_kapitel_mit_config
 from Schritt2 import verarbeite_kapitel_und_speichere_json
 from Schritt3 import daten_aufteilen
-from Schritt4 import daten_verarbeiten
-from Schritt5 import verarbeite_regelbasiert
+from Schritt4_regel import verarbeite_regelbasiert
+from Schritt5_KI import daten_verarbeiten
+
 from Schritt6 import Merge_annotationen
 # from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
@@ -1713,6 +1715,49 @@ class DashBoard(ttk.Frame):
 
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
 
+
+            # ----------------------------------------------------
+            # Aufgabe 3: Regelbasierte Annotation - Schritt4_regelbasiert
+            # ----------------------------------------------------
+            regel_key = int(getattr(config, "REGEL_AUFGABE_ID", 3))
+
+            if task_flags.get(regel_key, False):
+                if abort_flag.is_set():
+                    print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Regelannotation.", flush=True)
+                    return
+
+                print(f"[DEBUG] Starte regelbasierte Annotation für Kapitel {kapitel_name}", flush=True)
+                progress_queue.put((kapitel_name, regel_key, 0.1))
+
+                json_ordner = Path(ordner_nur_str["json"])
+
+                json_dateien = sorted([
+                    f for f in json_ordner.glob("*_annotierungen.json")
+                    if f.name.startswith(f"{kapitel_name}_")
+                ])
+
+                if not json_dateien:
+                    print(f"[WARNUNG] Keine JSON-Dateien für Regelannotation gefunden: {kapitel_name}", flush=True)
+                else:
+                    anzahl = len(json_dateien)
+
+                    for idx, json_datei in enumerate(json_dateien, start=1):
+                        verarbeite_regelbasiert(
+                            dateipfad=json_datei,
+                            ki_ordner=ordner_nur_str["ki"],
+                            force=False
+                        )
+
+                        fortschritt = int((idx / anzahl) * 100)
+                        progress_queue.put((kapitel_name, regel_key, fortschritt))
+
+                progress_queue.put((kapitel_name, regel_key, 100))
+                # progress_queue.put((kapitel_name, regel_key, 0))
+
+                print(f"[INFO] Regelbasierte Annotation abgeschlossen für Kapitel {kapitel_name}", flush=True)
+
+
+
             # ----------------------------------------------------
             # Merge-Aufgaben-Key bestimmen
             # ----------------------------------------------------
@@ -1855,47 +1900,7 @@ class DashBoard(ttk.Frame):
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
 
 
-            # ----------------------------------------------------
-            # Aufgabe 5: Regelbasierte Annotation
-            # ----------------------------------------------------
-            regel_key = int(getattr(config, "REGEL_AUFGABE_ID", 5))
-
-            if task_flags.get(regel_key, False):
-                if abort_flag.is_set():
-                    print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Regelannotation.", flush=True)
-                    return
-
-                print(f"[DEBUG] Starte regelbasierte Annotation für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, regel_key, 0.1))
-
-                json_ordner = Path(ordner_nur_str["json"])
-
-                json_dateien = sorted([
-                    f for f in json_ordner.glob("*_annotierungen.json")
-                    if f.name.startswith(f"{kapitel_name}_")
-                ])
-
-                if not json_dateien:
-                    print(f"[WARNUNG] Keine JSON-Dateien für Regelannotation gefunden: {kapitel_name}", flush=True)
-                else:
-                    anzahl = len(json_dateien)
-
-                    for idx, json_datei in enumerate(json_dateien, start=1):
-                        verarbeite_regelbasiert(
-                            dateipfad=json_datei,
-                            ki_ordner=ordner_nur_str["ki"],
-                            force=False
-                        )
-
-                        fortschritt = int((idx / anzahl) * 100)
-                        progress_queue.put((kapitel_name, regel_key, fortschritt))
-
-                progress_queue.put((kapitel_name, regel_key, 100))
-                # progress_queue.put((kapitel_name, regel_key, 0))
-
-                print(f"[INFO] Regelbasierte Annotation abgeschlossen für Kapitel {kapitel_name}", flush=True)
-
-
+          
             # ----------------------------------------------------
             # Merge + PDF
             # ----------------------------------------------------
