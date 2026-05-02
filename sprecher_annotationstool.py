@@ -10,6 +10,7 @@ from kapitel_config import KapitelConfig
 from dashboard import DashBoard
 from modellwahl import InstallationModellwahl
 from config_editor import ConfigEditor
+import argparse
 
 import torch
 import Eingabe.config as config
@@ -24,10 +25,10 @@ except RuntimeError as e:
 class SprecherAnnotationsTool(tk.Tk):
     """Hauptanwendung mit Tab-Notebook"""
 
-    def __init__(self, logger):
+    def __init__(self, logger, quickload=False):
         super().__init__()
         self.title("Sprecher-Annotationen-Tool")
-
+        self.quickload = quickload
         # Queue und Flag initialisieren
         self.progress_queue = queue.Queue()
         manager = Manager()
@@ -49,7 +50,7 @@ class SprecherAnnotationsTool(tk.Tk):
         # KapitelConfig, Dashboard etc. anlegen
         self.kapitel_config = KapitelConfig(self, self.notebook)
         self.modellwahl = InstallationModellwahl(self, self.notebook, self.client)
-        self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client)
+        self.dashboard = DashBoard(self, self.notebook, self.kapitel_config, self.client,quickload=self.quickload)
        
         self.kapitel_config.dashboard = self.dashboard
         self.config_editor = ConfigEditor(self, self.notebook, self.dashboard)        
@@ -105,6 +106,11 @@ class SprecherAnnotationsTool(tk.Tk):
             self.after(200, self.pruefe_mp_progress_queue)
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--quickload", action="store_true")
+    args = parser.parse_args()
+
     multiprocessing.set_start_method("spawn", force=True)
     logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 

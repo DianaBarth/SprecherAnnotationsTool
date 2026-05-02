@@ -10,7 +10,7 @@ import subprocess
 import os
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
-
+import argparse
 
 class CommitDialog(tk.Toplevel):
     def __init__(self, parent, changed_files):
@@ -104,6 +104,11 @@ def auto_git_commit():
         print(f"❌ Git-Auto-Commit fehlgeschlagen: {e}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--quickload", action="store_true")
+    args = parser.parse_args()
+
+
     # Haupttool
     logger = LogManager('meinlog_Komplett.log', extra_logfile='meinLog_letzterDurchlauf.log')
 
@@ -113,7 +118,7 @@ if __name__ == "__main__":
     
     try:
         multiprocessing.set_start_method("spawn", force=True)
-        app = SprecherAnnotationsTool(logger)
+        app = SprecherAnnotationsTool(logger, quickload=args.quickload)
         app.mainloop()
     except Exception as e:
         print(f"Fehler im Haupttool: {e}")

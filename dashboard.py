@@ -215,13 +215,14 @@ class FehlerAnzeige(ttk.LabelFrame):
             self.expanded[idx] = True
 
 class DashBoard(ttk.Frame):
-    def __init__(self, parent, notebook, kapitel_config, client):
+    def __init__(self, parent, notebook, kapitel_config, client, quickload=False):
         super().__init__(notebook)
         self.client = client
      
         # manager = Manager()
         # self.progress_queue = manager.Queue()  # Queue wird zwischen Prozessen geteilt
         # self.progress_queue_active =
+        self.quickload = quickload
         self.thread_queue = queue.Queue()
         self.tasks_running = False
         self.tasks_lock = threading.Lock()
@@ -829,29 +830,42 @@ class DashBoard(ttk.Frame):
         # ----------------------------------------------------
         # Modelle abrufen
         # ----------------------------------------------------
-        try:
-            modelle = self.client.get_installed_models()
-            text_modelle = [
-                m for m in modelle
-                if "whisper" not in m.lower()
-                and "wav2vec" not in m.lower()
-                and "speech" not in m.lower()
-                and "asr" not in m.lower()
-            ]
+        text_modelle = []
 
-            if not text_modelle:
-                raise RuntimeError("Keine Modelle gefunden.")
+        if self.quickload:
+            print("[INFO] Quickload aktiv – Modellabfrage beim GUI-Aufbau wird übersprungen.")
 
-        except Exception as e:
-            messagebox.showwarning(
-                "Warnung",
-                f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab."
+            quickload_label = ttk.Label(
+                self.aufg_frame,
+                text="Quickload aktiv – Modelle werden erst beim Start benötigt.",
+                foreground="gray"
             )
-            for tab_id in self.notebook.tabs():
-                if self.notebook.tab(tab_id, "text") == "InstallationModellwahl":
-                    self.notebook.select(tab_id)
-                    break
-            return
+            quickload_label.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 8))
+
+        else:
+            try:
+                modelle = self.client.get_installed_models()
+                text_modelle = [
+                    m for m in modelle
+                    if "whisper" not in m.lower()
+                    and "wav2vec" not in m.lower()
+                    and "speech" not in m.lower()
+                    and "asr" not in m.lower()
+                ]
+
+                if not text_modelle:
+                    raise RuntimeError("Keine Modelle gefunden.")
+
+            except Exception as e:
+                messagebox.showwarning(
+                    "Warnung",
+                    f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab."
+                )
+                for tab_id in self.notebook.tabs():
+                    if self.notebook.tab(tab_id, "text") == "InstallationModellwahl":
+                        self.notebook.select(tab_id)
+                        break
+                return
 
         # ----------------------------------------------------
         # Tooltip-Funktion
@@ -890,7 +904,9 @@ class DashBoard(ttk.Frame):
         # ----------------------------------------------------
         # UI-Zeilen erzeugen
         # ----------------------------------------------------
-        for i, (schritt_nr, beschreibung) in enumerate(sorted(self.aufgaben_input.items()), start=1):
+        start_row = 2 if self.quickload else 1
+
+        for i, (schritt_nr, beschreibung) in enumerate(sorted(self.aufgaben_input.items()), start=start_row):
             var = tk.BooleanVar(value=True)
             var.trace_add("write", lambda *args: update_all_tasks_var())
 
@@ -1616,9 +1632,17 @@ class DashBoard(ttk.Frame):
                     return
 
                 erste_aufgabe = aktive_tasks_preload[0]
-                erstes_modell = modelle_für_tasks.get(erste_aufgabe)
+                
+                erstes_modell = (
+                    modelle_für_tasks.get(erste_aufgabe)
+                    or getattr(config, "DEFAULT_KI_MODELL", None)
+                )
 
                 if not erstes_modell:
+                    print(
+                        "[WARNUNG] KI-Preload übersprungen: kein Modell gewählt und kein DEFAULT_KI_MODELL gesetzt.",
+                        flush=True
+                    )
                     return
 
                 print(f"[INFO] Preload KI-Modell für {kapitel_name}: {erstes_modell}", flush=True)
@@ -1846,10 +1870,17 @@ class DashBoard(ttk.Frame):
                         )
 
                         prompt = prompt_datei_text + "\n" + str(zusatz_info)
-                        modell_name = modelle_für_tasks.get(aufgaben_id, None)
+
+                        modell_name = (
+                            modelle_für_tasks.get(aufgaben_id)
+                            or getattr(config, "DEFAULT_KI_MODELL", None)
+                        )
 
                         if not modell_name:
-                            print(f"[FEHLER] Kein Modell für Aufgabe {aufgaben_id} gewählt.", flush=True)
+                            print(
+                                "[FEHLER] Kein Modell gewählt und kein DEFAULT_KI_MODELL gesetzt.",
+                                flush=True
+                            )
                             return
 
                         modell_name_norm = str(modell_name or "").strip().replace("\\", "/")
