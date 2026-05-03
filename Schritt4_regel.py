@@ -1,0 +1,853 @@
+import json
+import re
+import traceback
+from pathlib import Path
+import json
+
+import personen_resolver
+
+DEBUG = False
+
+PAUSE_TOKENS = {",", ":", ";", "–", "—"}
+SPANNUNG_STARTER = {"plötzlich", "dann"}
+SATZENDE_TOKENS = {".", "!", "?", "…"}
+KOMMA_TOKENS = {","}
+GEDANKEN_PAUSE_TOKENS = {"–", "—", "...", "…"}
+KONNEKTOREN = {"und", "aber", "doch", "denn"}
+
+
+STOPWOERTER = {
+    "der", "die", "das", "den", "dem", "des",
+    "ein", "eine", "einer", "einem", "einen", "eines",
+    "und", "oder", "aber", "doch", "denn",
+    "ich", "du", "er", "sie", "es", "wir", "ihr",
+    "mich", "dich", "sich", "uns", "euch",
+    "mein", "dein", "sein", "ihr", "unser", "euer",
+    "ist", "war", "bin", "bist", "sind", "seid", "waren",
+    "hat", "habe", "hast", "haben", "hatte", "hatten",
+    "zu", "in", "im", "am", "an", "auf", "mit", "von", "für",
+    "nicht", "nur", "noch", "schon", "so", "da", "dort",
+}
+
+
+def leeres_kombi_json():
+    return {
+        "pause": {
+            "atempause": [],
+            "staupause": []
+        },
+        "gedanken": {
+            "gedanken_weiter": [],
+            "gedanken_ende": [],
+            "pause_gedanken": []
+        },
+        "betonung": {
+            "hauptbetonung": [],
+            "nebenbetonung": []
+        },
+        "spannung": {
+            "Starten": [],
+            "Halten": [],
+            "Stoppen": []
+        }
+    }
+
+
+def token_text(eintrag):
+    return str(
+        eintrag.get("tokenInklZahlwoerter")
+        or eintrag.get("token")
+        or ""
+    ).strip()
+
+
+def token_norm(eintrag):
+    return token_text(eintrag).lower().strip()
+
+
+def ist_ueberschrift_token(t):
+    if not isinstance(t, dict):
+        return False
+    return "Überschrift" in str(t.get("annotation", "") or "")
+
+def wortnr(eintrag):
+    try:
+        nr = eintrag.get("WortNr")
+        if nr is None or nr == "":
+            return None
+        return int(nr)
+    except Exception:
+        return None
+
+
+def ist_satzzeichen_ohne_space_davor(eintrag):
+    annotation = str(eintrag.get("annotation", "") or "")
+    return "satzzeichenOhneSpaceDavor" in annotation
+
+
+def ist_satzende(eintrag):
+    if ist_ueberschrift_token(eintrag):
+        return False
+
+    return (
+        ist_satzzeichen_ohne_space_davor(eintrag)
+        and token_text(eintrag) in SATZENDE_TOKENS
+    )
+
+
+def ist_wort(eintrag):
+    if ist_ueberschrift_token(eintrag):
+        return False
+
+    tok = token_text(eintrag)
+    return bool(re.fullmatch(r"[A-Za-zÄÖÜäöüß]+", tok))
+
+
+def ist_inhaltswort(eintrag):
+    if ist_ueberschrift_token(eintrag):
+        return False
+
+    return ist_wort(eintrag) and not ist_stopwort(eintrag)
+
+def ist_stopwort(eintrag):
+    return token_norm(eintrag) in STOPWOERTER
+
+
+def splitte_saetze(tokens):
+    saetze = []
+    aktueller_satz = []
+
+    for eintrag in tokens:
+        if not isinstance(eintrag, dict):
+            continue
+
+        if ist_ueberschrift_token(eintrag):
+            continue
+
+        aktueller_satz.append(eintrag)
+
+        if ist_satzende(eintrag):
+            saetze.append(aktueller_satz)
+            aktueller_satz = []
+
+    if aktueller_satz:
+        saetze.append(aktueller_satz)
+
+    return saetze
+
+def gueltige_wortnr_set(tokens):
+    return {
+        wortnr(t)
+        for t in tokens
+        if isinstance(t, dict) and wortnr(t) is not None
+    }
+
+
+def erste_inhaltswort_nr(satz):
+    for t in satz:
+        if ist_inhaltswort(t):
+            return wortnr(t)
+    return None
+
+
+def letzte_wortnr(satz):
+    for t in reversed(satz):
+        nr = wortnr(t)
+        if nr is not None:
+            return nr
+    return None
+
+
+def wort_tokens(satz):
+    return [
+        t for t in satz
+        if ist_wort(t) and wortnr(t) is not None
+    ]
+
+
+def inhaltswort_tokens(satz):
+    return [
+        t for t in satz
+        if ist_inhaltswort(t) and wortnr(t) is not None
+    ]
+
+
+def satz_wortanzahl(satz):
+    return len(wort_tokens(satz))
+
+
+def erstes_wort_norm(satz):
+    for t in satz:
+        if ist_wort(t):
+            return token_norm(t)
+    return ""
+
+
+def satz_beginnt_mit_auf_einmal(satz):
+    woerter = [token_norm(t) for t in satz if ist_wort(t)]
+    return len(woerter) >= 2 and woerter[0] == "auf" and woerter[1] == "einmal"
+
+
+def finde_vorherige_wortnr(tokens, index):
+    for i in range(index - 1, -1, -1):
+        if not isinstance(tokens[i], dict):
+            continue
+
+        if ist_wort(tokens[i]):
+            nr = wortnr(tokens[i])
+            if nr is not None:
+                return nr
+
+    return None
+
+
+def fuege_eindeutig(ziel_liste, nr, gueltige_nr):
+    if nr is None:
+        return
+
+    try:
+        nr = int(nr)
+    except Exception:
+        return
+
+    if nr not in gueltige_nr:
+        return
+
+    if nr not in ziel_liste:
+        ziel_liste.append(nr)
+
+
+def regelbasierte_kombination(tokens):
+    result = leeres_kombi_json()
+
+    if not isinstance(tokens, list) or not tokens:
+        return result
+
+    prosodie_tokens = [
+        t for t in tokens
+        if isinstance(t, dict) and not ist_ueberschrift_token(t)
+    ]
+
+    gueltige_nr = gueltige_wortnr_set(prosodie_tokens)
+    saetze = splitte_saetze(prosodie_tokens)
+
+    for satz_index, satz in enumerate(saetze, start=1):
+        if not satz:
+            continue
+
+        wortanzahl = satz_wortanzahl(satz)
+        erstes_wort = erstes_wort_norm(satz)
+        endet_mit_satzende = any(ist_satzende(t) for t in satz)
+
+        # ----------------------------------------------------
+        # PAUSEN
+        # max. 1 Atempause pro Satz
+        # keine Pause in sehr kurzen Sätzen
+        # ----------------------------------------------------
+        if wortanzahl >= 4:
+            pause_kandidaten = [
+                t for t in satz
+                if not ist_ueberschrift_token(t)
+                and ist_satzzeichen_ohne_space_davor(t)
+                and token_text(t) in PAUSE_TOKENS
+                and wortnr(t) is not None
+            ]
+
+            if pause_kandidaten:
+                satz_start_nr = erste_inhaltswort_nr(satz) or wortnr(satz[0]) or 0
+
+                bester_pause_marker = max(
+                    pause_kandidaten,
+                    key=lambda t: abs((wortnr(t) or 0) - satz_start_nr)
+                )
+
+                fuege_eindeutig(
+                    result["pause"]["atempause"],
+                    wortnr(bester_pause_marker),
+                    gueltige_nr
+                )
+
+        if endet_mit_satzende and wortanzahl > 6:
+            fuege_eindeutig(
+                result["pause"]["staupause"],
+                letzte_wortnr(satz),
+                gueltige_nr
+            )
+
+        # ----------------------------------------------------
+        # GEDANKEN
+        # ----------------------------------------------------
+        if erstes_wort in KONNEKTOREN:
+            fuege_eindeutig(
+                result["gedanken"]["gedanken_weiter"],
+                erste_inhaltswort_nr(satz),
+                gueltige_nr
+            )
+
+        if endet_mit_satzende and satz_index % 3 == 0:
+            fuege_eindeutig(
+                result["gedanken"]["gedanken_ende"],
+                letzte_wortnr(satz),
+                gueltige_nr
+            )
+
+        # ----------------------------------------------------
+        # BETONUNG
+        # vorhandene Betonungen nicht überschreiben
+        # Frage: Wort vor ? bevorzugen
+        # Eigennamen bevorzugen
+        # längere Inhaltswörter fallback
+        # ----------------------------------------------------
+        betonungs_kandidaten = beste_betonungskandidaten(satz)
+
+        if betonungs_kandidaten:
+            fuege_eindeutig(
+                result["betonung"]["hauptbetonung"],
+                wortnr(betonungs_kandidaten[0]),
+                gueltige_nr
+            )
+
+            if wortanzahl > 6 and len(betonungs_kandidaten) > 1:
+                fuege_eindeutig(
+                    result["betonung"]["nebenbetonung"],
+                    wortnr(betonungs_kandidaten[1]),
+                    gueltige_nr
+                )
+
+        # ----------------------------------------------------
+        # SPANNUNG
+        # reduziert:
+        # Start nur bei plötzlich/dann/auf einmal
+        # Halten nur in langen Startsätzen
+        # Stoppen immer am nächsten Satzende
+        # ----------------------------------------------------
+        startet_spannung = (
+            erstes_wort in SPANNUNG_STARTER
+            or satz_beginnt_mit_auf_einmal(satz)
+        )
+
+        if startet_spannung:
+            start_nr = erste_inhaltswort_nr(satz)
+
+            fuege_eindeutig(
+                result["spannung"]["Starten"],
+                start_nr,
+                gueltige_nr
+            )
+
+            if wortanzahl > 12:
+                woerter = wort_tokens(satz)
+                if woerter:
+                    mitte = woerter[len(woerter) // 2]
+                    fuege_eindeutig(
+                        result["spannung"]["Halten"],
+                        wortnr(mitte),
+                        gueltige_nr
+                    )
+
+            if endet_mit_satzende:
+                fuege_eindeutig(
+                    result["spannung"]["Stoppen"],
+                    letzte_wortnr(satz),
+                    gueltige_nr
+                )
+
+    # --------------------------------------------------------
+    # GEDANKENPAUSEN BEI GEDANKENSTRICH / ELLIPSE
+    # Überschriften ignorieren
+    # --------------------------------------------------------
+    for idx, t in enumerate(prosodie_tokens):
+        if not isinstance(t, dict):
+            continue
+
+        if ist_ueberschrift_token(t):
+            continue
+
+        if token_text(t) in GEDANKEN_PAUSE_TOKENS:
+            nr_davor = finde_vorherige_wortnr(prosodie_tokens, idx)
+
+            fuege_eindeutig(
+                result["gedanken"]["pause_gedanken"],
+                nr_davor,
+                gueltige_nr
+            )
+
+    # --------------------------------------------------------
+    # FINAL: sortieren, Duplikate entfernen
+    # --------------------------------------------------------
+    for hauptkey in result:
+        for subkey in result[hauptkey]:
+            result[hauptkey][subkey] = sorted(set(result[hauptkey][subkey]))
+
+    if DEBUG:
+        print("[PROSODIE DEBUG]", result)
+
+    return result
+
+def ermittle_kapitel_abschnitt_id(json_datei):
+    json_datei = Path(json_datei)
+
+    with open(json_datei, "r", encoding="utf-8") as f:
+        daten = json.load(f)
+
+    kapitelnummer = None
+
+    if isinstance(daten, list):
+        for eintrag in daten:
+            if (
+                isinstance(eintrag, dict)
+                and eintrag.get("KapitelNummer") not in (None, "")
+            ):
+                kapitelnummer = eintrag.get("KapitelNummer")
+                break
+
+    if kapitelnummer is None:
+        raise ValueError(f"Keine KapitelNummer in Datei gefunden: {json_datei.name}")
+
+    kapitel_id = f"{int(kapitelnummer):03d}"
+
+    match = re.search(r"_(\d+)_annotierungen\.json$", json_datei.name)
+
+    if match:
+        abschnitt_id = f"{int(match.group(1)):03d}"
+    else:
+        abschnitt_id = "001"
+
+    return kapitel_id, abschnitt_id
+
+
+def speichere_regel_json(ki_ordner, json_datei, daten, laufende_nr=1):
+    ki_ordner = Path(ki_ordner)
+    ki_ordner.mkdir(parents=True, exist_ok=True)
+
+    kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+    ausgabe_datei = ki_ordner / (
+        f"KI_PROSODIE_REGEL_{kapitel_id}_{abschnitt_id}_{laufende_nr:03}.json"
+    )
+
+    with open(ausgabe_datei, "w", encoding="utf-8") as f:
+        json.dump(daten, f, ensure_ascii=False, indent=2)
+
+    print(f"[INFO] Regelbasierte Prosodie-Datei gespeichert: {ausgabe_datei}")
+
+    return ausgabe_datei
+
+def verarbeite_regelbasiert(dateipfad, ki_ordner, force=False):
+    print(f"[DEBUG] Schritt5_regelbasiert gestartet für {dateipfad}")
+
+    try:
+        json_datei = Path(dateipfad)
+
+        if not json_datei.exists():
+            print(f"[WARNUNG] JSON-Datei existiert nicht: {json_datei}")
+            return None
+
+        if not json_datei.name.endswith("_annotierungen.json"):
+            print(f"[WARNUNG] Keine Annotierungsdatei, überspringe: {json_datei.name}")
+            return None
+
+        ki_ordner = Path(ki_ordner)
+        ki_ordner.mkdir(parents=True, exist_ok=True)
+
+        kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+        ziel_datei = ki_ordner / (
+            f"KI_PROSODIE_REGEL_{kapitel_id}_{abschnitt_id}_001.json"
+        )
+
+        if ziel_datei.exists() and not force:
+            print(f"[INFO] Regel-Datei existiert bereits, überspringe: {ziel_datei}")
+            return ziel_datei
+
+        with open(json_datei, "r", encoding="utf-8") as f:
+            tokens = json.load(f)
+
+        if not isinstance(tokens, list):
+            print(f"[WARNUNG] JSON ist keine Tokenliste: {json_datei}")
+            return None
+
+        personen_liste = personen_resolver.lade_personen_fuer_datei_ohne_kapitel_config(
+            str(json_datei)
+        )
+    
+        personen_ergebnisse = regelbasierte_personen(tokens, personen_liste)
+
+        tokens = wende_personen_ergebnisse_auf_tokens_an(
+            tokens,
+            personen_ergebnisse
+        ) 
+      
+        speichere_personen_regel_datei(
+            json_datei=json_datei,
+            ki_ordner=ki_ordner,
+            personen_ergebnisse=personen_ergebnisse
+        )
+
+        daten = regelbasierte_kombination(tokens)
+
+        ausgabe_datei = speichere_regel_json(
+            ki_ordner=ki_ordner,
+            json_datei=json_datei,
+            daten=daten,
+            laufende_nr=1
+        )
+
+        print(f"[INFO] Regelbasierte Annotation abgeschlossen: {json_datei.name}")
+
+        return ausgabe_datei
+
+    except Exception as e:
+        print(f"[FEHLER] Fehler in Schritt5_regelbasiert bei {dateipfad}: {e}")
+        traceback.print_exc()
+        return None
+
+def regelbasierte_personen(tokens, personen_liste):
+    """
+    Erkennt einfache Sprecher-Zuordnungen regelbasiert.
+
+    Output:
+    [
+      {
+        "Sprecher": "Anna",
+        "RedeStart": 123,
+        "RedeEnde": 130,
+        "Sicherheit": "sicher" | "unsicher",
+        "Quelle": "regel_nachgestellt_name" | ...
+      }
+    ]
+    """
+
+    rede_verben = {
+        "sagte", "sagt",
+        "fragte", "fragt",
+        "rief", "ruft",
+        "flüsterte", "flüstert",
+        "meinte", "meint",
+        "antwortete", "antwortet",
+        "erwiderte", "erwidert",
+        "murmelte", "murmelt",
+        "schrie", "schreit",
+    }
+
+    pronomen = {
+        "er", "sie", "es",
+        "ich", "du",
+        "wir", "ihr",
+        "jemand",
+    }
+
+    personen_norm = {
+        str(p).strip().lower(): str(p).strip()
+        for p in personen_liste
+        if str(p).strip()
+    }
+
+    def tok(t):
+        return str(t.get("tokenInklZahlwoerter") or t.get("token") or "").strip()
+
+    def norm(t):
+        return tok(t).lower()
+
+    def nr(t):
+        try:
+            return int(t.get("WortNr"))
+        except Exception:
+            return None
+
+    def ist_name_token(t):
+        text = tok(t)
+        if not text:
+            return False
+        return text.lower() in personen_norm
+
+    def name_aus_token(t):
+        return personen_norm.get(tok(t).lower(), "")
+
+    def ist_rede_oeffner(t):
+        return tok(t) in {"„", '"', "«", "‚"}
+
+    def ist_rede_schliesser(t):
+        return tok(t) in {"“", '"', "»", "‘"}
+
+    def naechste_wort_tokens(start_idx, max_count=8):
+        result = []
+        i = start_idx
+
+        while i < len(tokens) and len(result) < max_count:
+            text = tok(tokens[i])
+            if text and text not in {",", ".", "!", "?", ":", ";", "„", "“", '"'}:
+                result.append((i, tokens[i]))
+            i += 1
+
+        return result
+
+    def vorherige_wort_tokens(start_idx, max_count=8):
+        result = []
+        i = start_idx
+
+        while i >= 0 and len(result) < max_count:
+            text = tok(tokens[i])
+            if text and text not in {",", ".", "!", "?", ":", ";", "„", "“", '"'}:
+                result.append((i, tokens[i]))
+            i -= 1
+
+        return result
+
+    reden = []
+    in_rede = False
+    rede_start_idx = None
+
+    for i, eintrag in enumerate(tokens):
+        if ist_rede_oeffner(eintrag) and not in_rede:
+            in_rede = True
+            rede_start_idx = i + 1
+            continue
+
+        if ist_rede_schliesser(eintrag) and in_rede:
+            rede_ende_idx = i - 1
+
+            while rede_start_idx <= rede_ende_idx and nr(tokens[rede_start_idx]) is None:
+                rede_start_idx += 1
+
+            while rede_ende_idx >= rede_start_idx and nr(tokens[rede_ende_idx]) is None:
+                rede_ende_idx -= 1
+
+            if rede_start_idx <= rede_ende_idx:
+                reden.append({
+                    "start_idx": rede_start_idx,
+                    "ende_idx": rede_ende_idx,
+                    "RedeStart": nr(tokens[rede_start_idx]),
+                    "RedeEnde": nr(tokens[rede_ende_idx]),
+                })
+
+            in_rede = False
+            rede_start_idx = None
+
+    ergebnisse = []
+
+    for rede in reden:
+        start_idx = rede["start_idx"]
+        ende_idx = rede["ende_idx"]
+
+        sprecher = ""
+        sicherheit = "unsicher"
+        quelle = "kein_regel_match"
+
+        # ----------------------------------------------------
+        # Regel 1:
+        # „...“, sagte Anna
+        # „...“, fragte Anna
+        # ----------------------------------------------------
+        nachher = naechste_wort_tokens(ende_idx + 1, max_count=10)
+
+        for pos, (_, t) in enumerate(nachher):
+            if norm(t) in rede_verben:
+                danach = nachher[pos + 1:pos + 4]
+
+              
+
+                for _, kandidat in danach:
+                    if ist_name_token(kandidat):
+                        sprecher = name_aus_token(kandidat)
+                        sicherheit = "sicher"
+                        quelle = "regel_nachgestellt_verb_name"
+                        break
+
+                    if norm(kandidat) in pronomen:
+                        sprecher = ""
+                        sicherheit = "unsicher"
+                        quelle = "regel_nachgestellt_verb_pronomen"
+                        break
+
+                break
+
+        # ----------------------------------------------------
+        # Regel 2:
+        # Anna sagte: „...“
+        # Anna fragte: „...“
+        # ----------------------------------------------------
+        if not sprecher and sicherheit != "sicher":
+            vorher = vorherige_wort_tokens(start_idx - 1, max_count=10)
+
+            # vorher ist rückwärts sortiert
+            vorher_vorwaerts = list(reversed(vorher))
+
+            for idx in range(len(vorher_vorwaerts) - 1):
+                _, kandidat_name = vorher_vorwaerts[idx]
+                _, kandidat_verb = vorher_vorwaerts[idx + 1]
+
+                if ist_name_token(kandidat_name) and norm(kandidat_verb) in rede_verben:
+                    sprecher = name_aus_token(kandidat_name)
+                    sicherheit = "sicher"
+                    quelle = "regel_vorangestellt_name_verb"
+                    break
+
+        # ----------------------------------------------------
+        # Regel 3:
+        # „...“ Anna
+        # nur sehr nah danach
+        # ----------------------------------------------------
+        if not sprecher and sicherheit != "sicher":
+            direkt_danach = naechste_wort_tokens(ende_idx + 1, max_count=3)
+
+            for _, kandidat in direkt_danach:
+                if ist_name_token(kandidat):
+                    sprecher = name_aus_token(kandidat)
+                    sicherheit = "sicher"
+                    quelle = "regel_direkt_danach_name"
+                    break
+
+        ergebnisse.append({
+            "Sprecher": sprecher,
+            "RedeStart": int(rede["RedeStart"]),
+            "RedeEnde": int(rede["RedeEnde"]),
+            "Sicherheit": sicherheit,
+            "Quelle": quelle,
+        })
+
+    return ergebnisse
+
+def wende_personen_ergebnisse_auf_tokens_an(tokens, personen_ergebnisse):
+    for erg in personen_ergebnisse:
+        sprecher = erg.get("Sprecher", "")
+        sicherheit = erg.get("Sicherheit", "")
+
+        start = int(erg["RedeStart"])
+        ende = int(erg["RedeEnde"])
+
+        for t in tokens:
+            try:
+                nr = int(t.get("WortNr"))
+            except Exception:
+                continue
+
+            if start <= nr <= ende:
+                if sprecher:
+                    t["person"] = sprecher
+                    t["person_source"] = "regel"
+                    t["person_sicherheit"] = sicherheit
+                else:
+                    t["person"] = ""
+                    t["person_source"] = ""
+                    t["person_sicherheit"] = "unsicher"
+
+    return tokens
+
+
+def speichere_personen_regel_datei(json_datei, ki_ordner, personen_ergebnisse):
+    ki_ordner = Path(ki_ordner)
+    ki_ordner.mkdir(parents=True, exist_ok=True)
+
+    kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+
+    ziel = ki_ordner / f"KI_PERSON_REGEL_{kapitel_id}_{abschnitt_id}_001.json"
+
+    with open(ziel, "w", encoding="utf-8") as f:
+        json.dump(personen_ergebnisse, f, ensure_ascii=False, indent=2)
+
+    print(f"[INFO] Regel-Personen gespeichert: {ziel}")
+
+def hat_bereits_betonung(t):
+    annotation = str(t.get("annotation", "") or "")
+    return (
+        "hauptbetonung" in annotation
+        or "nebenbetonung" in annotation
+        or "Betonung" in annotation
+    )
+
+
+def ist_eigenname_kandidat(t):
+    text = token_text(t)
+
+    if not ist_inhaltswort(t):
+        return False
+
+    if not text:
+        return False
+
+    # Satzanfänge nicht automatisch als Eigenname werten
+    if text[0].isupper() and token_norm(t) not in STOPWOERTER:
+        return True
+
+    return False
+
+
+def wort_vor_fragezeichen(satz):
+    for idx, t in enumerate(satz):
+        if (
+            ist_satzzeichen_ohne_space_davor(t)
+            and token_text(t) == "?"
+        ):
+            for j in range(idx - 1, -1, -1):
+                if ist_inhaltswort(satz[j]) and wortnr(satz[j]) is not None:
+                    return satz[j]
+
+    return None
+
+
+def beste_betonungskandidaten(satz):
+    kandidaten = [
+        t for t in inhaltswort_tokens(satz)
+        if not hat_bereits_betonung(t)
+    ]
+
+    if not kandidaten:
+        return []
+
+    frage_kandidat = wort_vor_fragezeichen(satz)
+    if frage_kandidat in kandidaten:
+        rest = [t for t in kandidaten if t is not frage_kandidat]
+        return [frage_kandidat] + rest
+
+    eigennamen = [t for t in kandidaten if ist_eigenname_kandidat(t)]
+    andere = [t for t in kandidaten if t not in eigennamen]
+
+    eigennamen = sorted(
+        eigennamen,
+        key=lambda t: wortnr(t) or 0
+    )
+
+    andere = sorted(
+        andere,
+        key=lambda t: (
+            len(token_text(t)),
+            wortnr(t) or 0
+        ),
+        reverse=True
+    )
+
+    return eigennamen + andere
+
+def verarbeite_ordner_regelbasiert(json_ordner, ki_ordner, force=False):
+    json_ordner = Path(json_ordner)
+    ki_ordner = Path(ki_ordner)
+
+    if not json_ordner.exists():
+        print(f"[FEHLER] JSON-Ordner existiert nicht: {json_ordner}")
+        return []
+
+    json_dateien = sorted(json_ordner.glob("*_annotierungen.json"))
+
+    if not json_dateien:
+        print(f"[WARNUNG] Keine *_annotierungen.json-Dateien gefunden in: {json_ordner}")
+        return []
+
+    print(f"[INFO] Starte regelbasierte Annotation für {len(json_dateien)} Datei(en).")
+
+    erzeugte_dateien = []
+
+    for json_datei in json_dateien:
+        result = verarbeite_regelbasiert(
+            dateipfad=json_datei,
+            ki_ordner=ki_ordner,
+            force=force
+        )
+
+        if result:
+            erzeugte_dateien.append(result)
+
+    print(f"[INFO] Schritt4 regelbasiert abgeschlossen. Dateien: {len(erzeugte_dateien)}")
+
+    return erzeugte_dateien
+

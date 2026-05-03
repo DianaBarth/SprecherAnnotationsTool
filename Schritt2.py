@@ -170,6 +170,7 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
     )
 
     global_wortnr = 1
+    global_satz_id = 1  # 🔥 NEU
 
     for datei in textdateien:
         kapitelname_original = datei.stem
@@ -195,6 +196,12 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         cleaned_annotations = []
         positions = []
         betonungen = []
+
+        # 🔥 Satztracking
+        satz_ids = []
+        satz_nr_im_abschnitt_liste = []
+        aktueller_satz_id = global_satz_id
+        satz_nr_im_abschnitt = 1
 
         pending_position_start = None
         active_positions = set()
@@ -277,6 +284,10 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                 cleaned_annotations.append("zeilenumbruch")
                 positions.append("")
                 betonungen.append("")
+
+                satz_ids.append(aktueller_satz_id)
+                satz_nr_im_abschnitt_liste.append(satz_nr_im_abschnitt)
+
                 i += 1
                 continue
 
@@ -302,7 +313,6 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                     position_wert = f"{pending_position_start}Start"
                     pending_position_start = None
 
-                # 🔥 WICHTIG: immer alle aktiven aktualisieren
                 for aktiver_typ in active_positions:
                     last_token_idx[aktiver_typ] = aktueller_idx
 
@@ -318,12 +328,24 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
             positions.append(position_wert)
             betonungen.append(betonung_wert)
 
+            # 🔥 Satz zuweisen
+            satz_ids.append(aktueller_satz_id)
+            satz_nr_im_abschnitt_liste.append(satz_nr_im_abschnitt)
+
+            # 🔥 Satzende erkennen
+            if token in {".", "!", "?", "…"} or token.endswith((".", "!", "?", "…")):
+                global_satz_id += 1
+                aktueller_satz_id = global_satz_id
+                satz_nr_im_abschnitt += 1
+
             i += 1
 
         # ------------------ DATAFRAME ------------------
         df = pd.DataFrame({
             "KapitelNummer": kapitelname,
             "WortNr": range(global_wortnr, global_wortnr + len(cleaned_tokens)),
+            "SatzID": satz_ids,  # 🔥 NEU
+            "SatzNrImAbschnitt": satz_nr_im_abschnitt_liste,  # 🔥 NEU
             "token": cleaned_tokens,
             "annotation": cleaned_annotations,
             "position": positions,
@@ -333,7 +355,12 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
         json_filename = ausgabeordner / f"{kapitelname_original}_annotierungen.json"
 
         with open(json_filename, "w", encoding="utf-8") as out_f:
-            json.dump(json.loads(df.to_json(orient="records", force_ascii=False)), out_f, indent=2, ensure_ascii=False)
+            json.dump(
+                json.loads(df.to_json(orient="records", force_ascii=False)),
+                out_f,
+                indent=2,
+                ensure_ascii=False
+            )
 
         global_wortnr += len(cleaned_tokens)
 

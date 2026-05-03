@@ -23,6 +23,7 @@ from docx import Document
 from multiprocessing import Manager
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from pathlib import Path
+import json
 
 from log_manager import LogManager
 import Eingabe.config as config
@@ -30,8 +31,10 @@ from annotationen_editor import AnnotationenEditor
 from Schritt1 import extrahiere_kapitel_mit_config
 from Schritt2 import verarbeite_kapitel_und_speichere_json
 from Schritt3 import daten_aufteilen
-from Schritt4 import daten_verarbeiten
-from Schritt5 import verarbeite_regelbasiert
+from Schritt4_regel import ermittle_kapitel_abschnitt_id
+from Schritt4_regel import verarbeite_regelbasiert
+from Schritt5_KI import daten_verarbeiten
+
 from Schritt6 import Merge_annotationen
 # from Schritt6 import visualisiere_annotationen
 from huggingface_client import HuggingFaceClient
@@ -74,43 +77,63 @@ def lade_prompt_datei(ki_id):
             # Fange unerwartete Fehler ab
             raise RuntimeError(f"[FEHLER] Fehler beim Laden der Prompt-Datei '{dateipfad}': {e}")
         
-def warte_auf_freien_cpukern_und_ram(
-    max_auslastung_cpu: float = 50.0,
-    max_auslastung_ram: float = 80.0,
-    timeout: float = 30.0,
+def warte_auf_freie_ressourcen(
+    max_cpu_gesamt: float = 95.0,
+    min_freier_ram_gb: float = 2.0,
+    timeout: float = 5.0,
     sleep_intervall: float = 0.5,
-    verbose: bool = True
+    log_intervall: float = 3.0,
+    verbose: bool = True,
 ) -> bool:
     """
-    Warte, bis mindestens ein CPU-Kern unter max_auslastung_cpu ist und RAM-Auslastung unter max_auslastung_ram,
-    oder bis timeout abgelaufen ist. Gibt True zurück, wenn freie Ressourcen gefunden, sonst False.
+    Wartet kurz, bis CPU-Gesamtlast unter max_cpu_gesamt liegt
+    und mindestens min_freier_ram_gb verfügbar sind.
+
+    Gibt True zurück, wenn Ressourcen frei sind.
+    Gibt False zurück, wenn Timeout erreicht wurde.
     """
-    # Erster Aufruf für valide CPU-Werte (Datenbasis)
-    psutil.cpu_percent(percpu=True, interval=0.1)
 
     start_time = time.perf_counter()
-    while True:
-        cpu_last_pro_kern = psutil.cpu_percent(percpu=True, interval=0.1)
-        ram_auslastung = psutil.virtual_memory().percent
+    last_log = 0.0
 
-        cpu_ok = any(last < max_auslastung_cpu for last in cpu_last_pro_kern)
-        ram_ok = ram_auslastung < max_auslastung_ram
+    while True:
+        cpu_gesamt = psutil.cpu_percent(interval=0.1)
+        ram = psutil.virtual_memory()
+        freier_ram_gb = ram.available / (1024 ** 3)
+
+        cpu_ok = cpu_gesamt < max_cpu_gesamt
+        ram_ok = freier_ram_gb >= min_freier_ram_gb
 
         if cpu_ok and ram_ok:
             if verbose:
-                print(f"[INFO] Ressourcen frei: CPU-Kerne {cpu_last_pro_kern}, RAM {ram_auslastung:.1f}%")
+                print(
+                    f"[INFO] Ressourcen frei: CPU {cpu_gesamt:.1f}%, "
+                    f"RAM frei {freier_ram_gb:.2f} GB, RAM genutzt {ram.percent:.1f}%",
+                    flush=True
+                )
             return True
 
         elapsed = time.perf_counter() - start_time
+
         if elapsed > timeout:
             if verbose:
-                print(f"[WARNUNG] Timeout nach {timeout}s: CPU<{max_auslastung_cpu}%, RAM<{max_auslastung_ram}%, starte trotzdem.")
+                print(
+                    f"[WARNUNG] Ressourcen-Timeout nach {timeout:.1f}s: "
+                    f"CPU {cpu_gesamt:.1f}%, RAM frei {freier_ram_gb:.2f} GB "
+                    f"({ram.percent:.1f}% genutzt). Starte trotzdem.",
+                    flush=True
+                )
             return False
 
-        if verbose:
-            print(f"[INFO] Warte... CPU pro Kern: {cpu_last_pro_kern}, RAM: {ram_auslastung:.1f}%, verstrichene Zeit: {elapsed:.1f}s")
-        
-        print(f"warte_auf_freien_cpukern_und_ram geht schlafen")
+        if verbose and elapsed - last_log >= log_intervall:
+            print(
+                f"[INFO] Warte auf Ressourcen: CPU {cpu_gesamt:.1f}%, "
+                f"RAM frei {freier_ram_gb:.2f} GB ({ram.percent:.1f}% genutzt), "
+                f"Zeit {elapsed:.1f}s",
+                flush=True
+            )
+            last_log = elapsed
+
         time.sleep(sleep_intervall)
 
 class FehlerAnzeige(ttk.LabelFrame):
@@ -213,13 +236,14 @@ class FehlerAnzeige(ttk.LabelFrame):
             self.expanded[idx] = True
 
 class DashBoard(ttk.Frame):
-    def __init__(self, parent, notebook, kapitel_config, client):
+    def __init__(self, parent, notebook, kapitel_config, client, quickload=False):
         super().__init__(notebook)
         self.client = client
      
         # manager = Manager()
         # self.progress_queue = manager.Queue()  # Queue wird zwischen Prozessen geteilt
         # self.progress_queue_active =
+        self.quickload = quickload
         self.thread_queue = queue.Queue()
         self.tasks_running = False
         self.tasks_lock = threading.Lock()
@@ -276,6 +300,14 @@ class DashBoard(ttk.Frame):
         self.kapitel_tasks = {}  # Struktur: {kapitel_name: {task_id: wert}}
         self._progress_lock = threading.Lock()
                 # UI-Elemente bauen (muss als Methode definiert sein)
+
+        self.person_statistik = {
+            "keine_rede": 0,
+            "regel_sicher": 0,
+            "ki_noetig": 0,
+        }
+
+
         self._build_widgets()
 
         self.audioanalyse_tab = AudioAnalyseTab(
@@ -415,6 +447,8 @@ class DashBoard(ttk.Frame):
         info_zeile.grid(row=5, column=0, columnspan=2, sticky="ew", pady=5, padx=10)
         info_zeile.columnconfigure(0, weight=1)
         info_zeile.columnconfigure(1, weight=1)
+        self.person_statistik_label = ttk.Label(self, text="")
+        self.person_statistik_label.grid(row=8, column=0, columnspan=2, sticky="w", padx=10)
 
         self.aktive_aufgabe_label.grid(in_=info_zeile, row=0, column=0, sticky="w")
         self._spinner_label.grid(in_=info_zeile, row=0, column=1, sticky="e")
@@ -544,9 +578,11 @@ class DashBoard(ttk.Frame):
             
             pb["value"] = progress_wert
 
-            if progress_wert == 0:
-                pb.grid_remove()
-                lbl.grid_remove()
+            if progress_wert <= 0:
+                pb["value"] = 0
+                pb.grid()
+                lbl.grid()
+           
             else:
                 if task_id is None:
                     label_text = "Aufgabe: -"
@@ -827,29 +863,42 @@ class DashBoard(ttk.Frame):
         # ----------------------------------------------------
         # Modelle abrufen
         # ----------------------------------------------------
-        try:
-            modelle = self.client.get_installed_models()
-            text_modelle = [
-                m for m in modelle
-                if "whisper" not in m.lower()
-                and "wav2vec" not in m.lower()
-                and "speech" not in m.lower()
-                and "asr" not in m.lower()
-            ]
+        text_modelle = []
 
-            if not text_modelle:
-                raise RuntimeError("Keine Modelle gefunden.")
+        if self.quickload:
+            print("[INFO] Quickload aktiv – Modellabfrage beim GUI-Aufbau wird übersprungen.")
 
-        except Exception as e:
-            messagebox.showwarning(
-                "Warnung",
-                f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab."
+            quickload_label = ttk.Label(
+                self.aufg_frame,
+                text="Quickload aktiv – Modelle werden erst beim Start benötigt.",
+                foreground="gray"
             )
-            for tab_id in self.notebook.tabs():
-                if self.notebook.tab(tab_id, "text") == "InstallationModellwahl":
-                    self.notebook.select(tab_id)
-                    break
-            return
+            quickload_label.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 8))
+
+        else:
+            try:
+                modelle = self.client.get_installed_models()
+                text_modelle = [
+                    m for m in modelle
+                    if "whisper" not in m.lower()
+                    and "wav2vec" not in m.lower()
+                    and "speech" not in m.lower()
+                    and "asr" not in m.lower()
+                ]
+
+                if not text_modelle:
+                    raise RuntimeError("Keine Modelle gefunden.")
+
+            except Exception as e:
+                messagebox.showwarning(
+                    "Warnung",
+                    f"Modelle konnten nicht geladen werden:\n{e}\nWechsle zum Modellwahl-Tab."
+                )
+                for tab_id in self.notebook.tabs():
+                    if self.notebook.tab(tab_id, "text") == "InstallationModellwahl":
+                        self.notebook.select(tab_id)
+                        break
+                return
 
         # ----------------------------------------------------
         # Tooltip-Funktion
@@ -888,7 +937,9 @@ class DashBoard(ttk.Frame):
         # ----------------------------------------------------
         # UI-Zeilen erzeugen
         # ----------------------------------------------------
-        for i, (schritt_nr, beschreibung) in enumerate(sorted(self.aufgaben_input.items()), start=1):
+        start_row = 2 if self.quickload else 1
+
+        for i, (schritt_nr, beschreibung) in enumerate(sorted(self.aufgaben_input.items()), start=start_row):
             var = tk.BooleanVar(value=True)
             var.trace_add("write", lambda *args: update_all_tasks_var())
 
@@ -935,8 +986,9 @@ class DashBoard(ttk.Frame):
         # Button: manuell optimieren
         # ----------------------------------------------------
         btn_frame = ttk.Frame(self.aufg_frame)
-        btn_frame.grid(row=len(self.aufgaben_input) + 1, column=0, sticky="w", pady=5)
+        next_row = start_row + len(self.aufgaben_input)
 
+        btn_frame.grid(row=next_row, column=0, sticky="w", pady=5)
         btn_kapitel_bearbeiten = ttk.Button(
             btn_frame,
             text="Annotationen manuell optimieren",
@@ -1154,6 +1206,17 @@ class DashBoard(ttk.Frame):
 
 
     def start_tasks(self):
+        thread = threading.Thread(target=self._start_tasks_worker, daemon=True)
+        thread.start()
+
+    def _start_tasks_worker(self):
+
+        self.person_statistik = {
+            "keine_rede": 0,
+            "regel_sicher": 0,
+            "ki_noetig": 0,
+        }
+
         global IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT
         IG_ANALYSE_IN_DIESEM_LAUF_ERLEDIGT = False
 
@@ -1173,7 +1236,7 @@ class DashBoard(ttk.Frame):
                 return
             self.tasks_running = True
 
-        self.disable_controls()
+        self.after(0, self.disable_controls)
 
         print("[DEBUG] Starte Aufgabenverarbeitung", flush=True)
         self.abort_flag.clear()
@@ -1192,20 +1255,20 @@ class DashBoard(ttk.Frame):
         task_flags = {key: var.get() for key, var in self.task_vars.items()}
 
         if not ausgewaehlte_kapitel:
-            messagebox.showwarning(
+            self.after(0, lambda: messagebox.showwarning(
                 "Keine Kapitel ausgewählt",
                 "Bitte wähle mindestens ein Kapitel aus."
-            )
+            ))
             self.enable_controls()
             with self.tasks_lock:
                 self.tasks_running = False
             return
 
         if not any(task_flags.values()):
-            messagebox.showwarning(
+            self.after(0, lambda: messagebox.showwarning(
                 "Keine Aufgaben ausgewählt",
                 "Bitte wähle mindestens eine Aufgabe aus."
-            )
+            ))
             self.enable_controls()
             with self.tasks_lock:
                 self.tasks_running = False
@@ -1357,12 +1420,22 @@ class DashBoard(ttk.Frame):
                         traceback.print_exc()
 
         finally:
-            self.enable_controls()
+            self.after(0, self.enable_controls)
 
             with self.tasks_lock:
                 self.tasks_running = False
 
-            self.master.stoppe_progress_pruefung()
+            self.after(0, self.master.stoppe_progress_pruefung)
+
+            text = (
+                f"Person-Erkennung: "
+                f"keine Rede {self.person_statistik['keine_rede']} | "
+                f"regel sicher {self.person_statistik['regel_sicher']} | "
+                f"KI nötig {self.person_statistik['ki_noetig']}"
+            )
+
+            self.after(0, lambda: self.person_statistik_label.config(text=text))
+     
             print("[DEBUG] Aufgabenverarbeitung abgeschlossen", flush=True)
             
     def _thread_worker(self,
@@ -1605,7 +1678,12 @@ class DashBoard(ttk.Frame):
                     aufgaben_name = str(config.KI_AUFGABEN.get(aid, "")).lower()
 
                     if aufgaben_name == "person":
-                        if not self.kapitel_hat_woertliche_rede(kapitel_name, ordner_nur_str["json"]):
+                        if not self.person_ki_noetig(
+                            kapitel_name=kapitel_name,
+                            json_ordner=ordner_nur_str["json"],
+                            ki_ordner=ordner_nur_str["ki"]
+                        ):
+                            progress_queue.put((kapitel_name, aid, 0))
                             continue
 
                     aktive_tasks_preload.append(aid)
@@ -1614,9 +1692,17 @@ class DashBoard(ttk.Frame):
                     return
 
                 erste_aufgabe = aktive_tasks_preload[0]
-                erstes_modell = modelle_für_tasks.get(erste_aufgabe)
+                
+                erstes_modell = (
+                    modelle_für_tasks.get(erste_aufgabe)
+                    or getattr(config, "DEFAULT_KI_MODELL", None)
+                )
 
                 if not erstes_modell:
+                    print(
+                        "[WARNUNG] KI-Preload übersprungen: kein Modell gewählt und kein DEFAULT_KI_MODELL gesetzt.",
+                        flush=True
+                    )
                     return
 
                 print(f"[INFO] Preload KI-Modell für {kapitel_name}: {erstes_modell}", flush=True)
@@ -1634,10 +1720,10 @@ class DashBoard(ttk.Frame):
                 ki_vorgeladenes_modell = None
 
         try:
-            warte_auf_freien_cpukern_und_ram(
-                max_auslastung_cpu=95.0,
-                max_auslastung_ram=80.0,
-                timeout=30.0
+            warte_auf_freie_ressourcen(
+                max_cpu_gesamt=95.0,
+                min_freier_ram_gb=2.0,
+                timeout=5.0
             )
 
             print(f"[DEBUG] Ressourcen-Check abgeschlossen für Kapitel: {kapitel_name}", flush=True)
@@ -1713,6 +1799,49 @@ class DashBoard(ttk.Frame):
 
                 print(f"[DEBUG] Aufgabe 2 abgeschlossen für Kapitel: {kapitel_name}", flush=True)
 
+
+            # ----------------------------------------------------
+            # Aufgabe 3: Regelbasierte Annotation - Schritt4_regelbasiert
+            # ----------------------------------------------------
+            regel_key = int(getattr(config, "REGEL_AUFGABE_ID", 3))
+
+            if task_flags.get(regel_key, False):
+                if abort_flag.is_set():
+                    print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Regelannotation.", flush=True)
+                    return
+
+                print(f"[DEBUG] Starte regelbasierte Annotation für Kapitel {kapitel_name}", flush=True)
+                progress_queue.put((kapitel_name, regel_key, 0.1))
+
+                json_ordner = Path(ordner_nur_str["json"])
+
+                json_dateien = sorted([
+                    f for f in json_ordner.glob("*_annotierungen.json")
+                    if f.name.startswith(f"{kapitel_name}_")
+                ])
+
+                if not json_dateien:
+                    print(f"[WARNUNG] Keine JSON-Dateien für Regelannotation gefunden: {kapitel_name}", flush=True)
+                else:
+                    anzahl = len(json_dateien)
+
+                    for idx, json_datei in enumerate(json_dateien, start=1):
+                        verarbeite_regelbasiert(
+                            dateipfad=json_datei,
+                            ki_ordner=ordner_nur_str["ki"],
+                            force=False
+                        )
+
+                        fortschritt = int((idx / anzahl) * 100)
+                        progress_queue.put((kapitel_name, regel_key, fortschritt))
+
+                progress_queue.put((kapitel_name, regel_key, 100))
+                # progress_queue.put((kapitel_name, regel_key, 0))
+
+                print(f"[INFO] Regelbasierte Annotation abgeschlossen für Kapitel {kapitel_name}", flush=True)
+
+
+
             # ----------------------------------------------------
             # Merge-Aufgaben-Key bestimmen
             # ----------------------------------------------------
@@ -1746,6 +1875,34 @@ class DashBoard(ttk.Frame):
                     aid for aid in alle_task_ids
                     if aid not in nicht_noetige
                 ]
+
+                # ----------------------------------------------------
+                # NEU: Person-KI nur wenn wirklich nötig
+                # ----------------------------------------------------
+                aktive_tasks_gefiltert = []
+
+                for aid in aktive_tasks:
+                    aufgaben_name = str(config.KI_AUFGABEN.get(aid, "")).lower()
+
+                    if aufgaben_name == "person":
+                        if not self.person_ki_noetig(
+                            kapitel_name=kapitel_name,
+                            json_ordner=ordner_nur_str["json"],
+                            ki_ordner=ordner_nur_str["ki"]
+                        ):
+                            print(
+                                f"[INFO] Person-KI entfernt aus Tasks für {kapitel_name}",
+                                flush=True
+                            )
+
+                            # UI sauber resetten
+                            progress_queue.put((kapitel_name, aid, 0))
+
+                            continue
+
+                    aktive_tasks_gefiltert.append(aid)
+
+                aktive_tasks = aktive_tasks_gefiltert
 
                 if not aktive_tasks:
                     print(f"[INFO] Keine aktiven und notwendigen KI-Aufgaben für Kapitel {kapitel_name}.", flush=True)
@@ -1801,10 +1958,17 @@ class DashBoard(ttk.Frame):
                         )
 
                         prompt = prompt_datei_text + "\n" + str(zusatz_info)
-                        modell_name = modelle_für_tasks.get(aufgaben_id, None)
+
+                        modell_name = (
+                            modelle_für_tasks.get(aufgaben_id)
+                            or getattr(config, "DEFAULT_KI_MODELL", None)
+                        )
 
                         if not modell_name:
-                            print(f"[FEHLER] Kein Modell für Aufgabe {aufgaben_id} gewählt.", flush=True)
+                            print(
+                                "[FEHLER] Kein Modell gewählt und kein DEFAULT_KI_MODELL gesetzt.",
+                                flush=True
+                            )
                             return
 
                         modell_name_norm = str(modell_name or "").strip().replace("\\", "/")
@@ -1821,12 +1985,7 @@ class DashBoard(ttk.Frame):
                                                         
                         else:
                             print(f"[INFO] Modell bereits für Kapitel {kapitel_name} geladen: {modell_name}", flush=True)
-
-                        warte_auf_freien_cpukern_und_ram(
-                            max_auslastung_cpu=95.0,
-                            max_auslastung_ram=80.0,
-                            timeout=30.0
-                        )
+                     
 
                         result = self.ki_task_mit_client(
                             client=client,
@@ -1855,47 +2014,7 @@ class DashBoard(ttk.Frame):
                     print(f"[INFO] KI-Verarbeitung abgeschlossen für Kapitel {kapitel_name}", flush=True)
 
 
-            # ----------------------------------------------------
-            # Aufgabe 5: Regelbasierte Annotation
-            # ----------------------------------------------------
-            regel_key = int(getattr(config, "REGEL_AUFGABE_ID", 5))
-
-            if task_flags.get(regel_key, False):
-                if abort_flag.is_set():
-                    print(f"[INFO] Verarbeitung von Kapitel {kapitel_name} abgebrochen vor Regelannotation.", flush=True)
-                    return
-
-                print(f"[DEBUG] Starte regelbasierte Annotation für Kapitel {kapitel_name}", flush=True)
-                progress_queue.put((kapitel_name, regel_key, 0.1))
-
-                json_ordner = Path(ordner_nur_str["json"])
-
-                json_dateien = sorted([
-                    f for f in json_ordner.glob("*_annotierungen.json")
-                    if f.name.startswith(f"{kapitel_name}_")
-                ])
-
-                if not json_dateien:
-                    print(f"[WARNUNG] Keine JSON-Dateien für Regelannotation gefunden: {kapitel_name}", flush=True)
-                else:
-                    anzahl = len(json_dateien)
-
-                    for idx, json_datei in enumerate(json_dateien, start=1):
-                        verarbeite_regelbasiert(
-                            dateipfad=json_datei,
-                            ki_ordner=ordner_nur_str["ki"],
-                            force=False
-                        )
-
-                        fortschritt = int((idx / anzahl) * 100)
-                        progress_queue.put((kapitel_name, regel_key, fortschritt))
-
-                progress_queue.put((kapitel_name, regel_key, 100))
-                # progress_queue.put((kapitel_name, regel_key, 0))
-
-                print(f"[INFO] Regelbasierte Annotation abgeschlossen für Kapitel {kapitel_name}", flush=True)
-
-
+          
             # ----------------------------------------------------
             # Merge + PDF
             # ----------------------------------------------------
@@ -1989,3 +2108,95 @@ class DashBoard(ttk.Frame):
             )
 
 
+    def person_ki_noetig(self, kapitel_name, json_ordner, ki_ordner):
+        """
+        Gibt True zurück, wenn Person-KI nötig ist.
+        Gründe:
+        - Kapitel hat keine wörtliche Rede -> False
+        - Regeldateien fehlen -> True
+        - Es gibt unsichere/leere Sprecher -> True
+        - Alle Reden sicher erkannt -> False
+        """
+
+        self.after(0, lambda: self.person_statistik_label.config(
+            text=f"Person-Erkennung: "
+                f"keine Rede {self.person_statistik['keine_rede']} | "
+                f"regel sicher {self.person_statistik['regel_sicher']} | "
+                f"KI nötig {self.person_statistik['ki_noetig']}"
+        ))
+
+
+        if not self.kapitel_hat_woertliche_rede(kapitel_name, json_ordner):
+            print(f"[INFO] Person-KI nicht nötig für {kapitel_name}: keine wörtliche Rede.", flush=True)
+            self.person_statistik["keine_rede"] += 1
+            return False
+
+        json_ordner = Path(json_ordner)
+        ki_ordner = Path(ki_ordner)
+
+        json_dateien = sorted([
+            f for f in json_ordner.glob("*_annotierungen.json")
+            if f.name.startswith(f"{kapitel_name}_")
+        ])
+
+        if not json_dateien:
+            print(f"[WARNUNG] Person-KI nötig für {kapitel_name}: keine JSON-Dateien gefunden.", flush=True)
+            return True
+
+        regel_dateien = []
+
+        for json_datei in json_dateien:
+            try:
+                kapitel_id, abschnitt_id = ermittle_kapitel_abschnitt_id(json_datei)
+            except Exception as e:
+                print(f"[WARNUNG] Konnte Kapitel/Abschnitt nicht bestimmen für {json_datei.name}: {e}", flush=True)
+                return True
+
+            regel_datei = ki_ordner / f"KI_PERSON_REGEL_{kapitel_id}_{abschnitt_id}_001.json"
+
+            if not regel_datei.exists():
+                print(f"[INFO] Person-KI nötig für {kapitel_name}: Regeldatei fehlt {regel_datei.name}", flush=True)
+                return True
+
+            regel_dateien.append(regel_datei)
+
+        hat_rede = False
+        unsicher = False
+
+        for regel_datei in regel_dateien:
+            try:
+                with open(regel_datei, "r", encoding="utf-8") as f:
+                    daten = json.load(f)
+
+                if not isinstance(daten, list):
+                    print(f"[WARNUNG] Person-KI nötig: Regeldatei ist keine Liste {regel_datei.name}", flush=True)
+                    return True
+
+                for eintrag in daten:
+                    if not isinstance(eintrag, dict):
+                        continue
+
+                    hat_rede = True
+
+                    sprecher = str(eintrag.get("Sprecher", "") or "").strip()
+                    sicherheit = str(eintrag.get("Sicherheit", "") or "").strip().lower()
+
+                    if not sprecher or sicherheit != "sicher":
+                        unsicher = True
+
+            except Exception as e:
+                print(f"[WARNUNG] Person-KI nötig: Regeldatei nicht lesbar {regel_datei.name}: {e}", flush=True)
+                return True
+
+        if not hat_rede:
+            print(f"[INFO] Person-KI nicht nötig für {kapitel_name}: keine Redeabschnitte in Regeldateien.", flush=True)
+            return False
+
+        if unsicher:
+            print(f"[INFO] Person-KI nötig für {kapitel_name}: mindestens ein Sprecher unsicher/leer.", flush=True)
+            self.person_statistik["ki_noetig"] += 1
+            return True
+
+        print(f"[INFO] Person-KI übersprungen für {kapitel_name}: alle Sprecher regelbasiert sicher erkannt.", flush=True)
+        self.person_statistik["regel_sicher"] += 1
+        return False

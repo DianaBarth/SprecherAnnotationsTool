@@ -10,16 +10,16 @@ import re
 import unicodedata
 
 
-# ------------------------------------------------------------
-# Datamodelle
-# ------------------------------------------------------------
+from text_builder import baue_text_aus_tokens
 
 @dataclass
 class PauseInfo:
     start: float
     end: float
     duration: float
-
+    kategorie: str = ""
+    text_davor: str = ""
+    text_danach: str = ""
 
 @dataclass
 class DiffEntry:
@@ -27,6 +27,9 @@ class DiffEntry:
     score: float
     ref_text: str
     spoken_text: str
+    ref_diff: str = ""
+    spoken_diff: str = ""
+    summary: str = ""
 
 
 @dataclass
@@ -36,6 +39,15 @@ class SegmentInfo:
     text: str
     word_count: int
     local_wpm: float
+
+    ref_text: str = ""
+    ref_marked: str = ""
+    spoken_marked: str = ""
+    diff_summary: str = ""
+    status: str = "OK"
+    match_score: float = 0.0
+    ref_satz_nr: int = 0
+    satz_id: int = 0
 
 
 @dataclass
@@ -68,42 +80,49 @@ class AudioAnalyseResult:
     transcript_text: str
 
 
-# ------------------------------------------------------------
-# Service
-# ------------------------------------------------------------
 
 class AudioAnalyseService:
-    """
-    Reine Fachlogik für Kapitel-Audioanalyse.
-
-    Aufgaben:
-    - Referenztexte finden
-    - Audiodateien finden
-    - faster-whisper lazy laden
-    - Audio transkribieren
-    - Kennzahlen berechnen
-    - grobe Textabweichungen ermitteln
-    - Ergebnisse speichern / laden
-    - Cache-Validierung
-    """
-
     AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".wma")
 
     def __init__(
         self,
         model_size: str = "small",
-        device: str = "auto",
+         device: str = "auto",
         compute_type: str = "auto",
         pause_threshold: float = 0.7,
         diff_threshold: float = 0.85,
+        use_number_words: bool = False,
     ) -> None:
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
         self.pause_threshold = pause_threshold
         self.diff_threshold = diff_threshold
-
+        self.use_number_words = use_number_words
         self._model = None
+   
+
+    def lade_json_tokens(self, json_path: Path) -> list[dict]:
+        with open(json_path, "r", encoding="utf-8") as f:
+            daten = json.load(f)
+
+        if not isinstance(daten, list):
+            raise ValueError(f"JSON enthält keine Liste: {json_path}")
+
+        return daten
+
+
+    @staticmethod
+    def klassifiziere_pause(duration: float) -> str:
+        if duration < 0.5:
+            return "kurz"
+        elif duration < 1.0:
+            return "normal"
+        elif duration < 1.8:
+            return "lang"
+        elif duration < 2.5:
+            return "sehr_lang"
+        return "problematisch"
 
     # --------------------------------------------------------
     # Öffentliche API
@@ -117,19 +136,19 @@ class AudioAnalyseService:
         sprache: str = "de",
         progress_callback: Optional[Callable[[str, float], None]] = None,
     ) -> AudioAnalyseResult:
-        """
-        Führt die Analyse für genau ein Kapitel aus.
-        """
         audio_path = Path(audio_path)
         referenz_path = Path(referenz_path)
 
         if not audio_path.is_file():
             raise FileNotFoundError(f"Audio-Datei nicht gefunden: {audio_path}")
         if not referenz_path.is_file():
-            raise FileNotFoundError(f"Referenztext nicht gefunden: {referenz_path}")
+            raise FileNotFoundError(f"Referenzdatei nicht gefunden: {referenz_path}")
 
-        self._report(progress_callback, "Referenztext laden", 5)
-        referenz_text = self.lade_text(referenz_path)
+        self._report(progress_callback, "Referenz laden", 5)
+        json_daten = self.lade_json_tokens(referenz_path)
+        
+        ref_saetze = self.baue_referenzsaetze_aus_json(json_daten)
+        referenz_text = " ".join(s["text"] for s in ref_saetze)
 
         self._report(progress_callback, "Whisper-Modell initialisieren", 15)
         model = self._get_model()
@@ -151,14 +170,15 @@ class AudioAnalyseService:
         wpm = round((wortanzahl / audio_dauer * 60.0), 2) if audio_dauer > 0 else 0.0
 
         self._report(progress_callback, "Pausen analysieren", 80)
-        pausen = self.extrahiere_pausen(segments, self.pause_threshold)
+        pausen = self.extrahiere_pausen(segments, self.pause_threshold, segments)
 
-        self._report(progress_callback, "Segmente auswerten", 88)
-        segmente = self.baue_segment_infos(segments)
+        self._report(progress_callback, "Segmente mit Originaltext vergleichen", 88)
+        segmente = self.baue_segment_infos_mit_referenzsaetzen(segments, ref_saetze)
+
 
         self._report(progress_callback, "Textabweichungen vergleichen", 94)
-        diffs = self.simple_diff(
-            referenz_text,
+        diffs = self.simple_diff_mit_referenzsaetzen(
+            ref_saetze,
             transcript_text,
             threshold=self.diff_threshold,
         )
@@ -198,22 +218,20 @@ class AudioAnalyseService:
         self._report(progress_callback, "Fertig", 100)
         return result
 
-    def finde_referenztext(self, kapitel_name: str, txt_ordner: Path) -> Optional[Path]:
-        """
-        Sucht eine passende Referenz-TXT für ein Kapitel.
-        """
-        txt_ordner = Path(txt_ordner)
-        if not txt_ordner.exists():
+    def finde_referenztext(self, kapitel_name: str, ref_ordner: Path) -> Optional[Path]:
+        ref_ordner = Path(ref_ordner)
+        if not ref_ordner.exists():
             return None
 
         key = self.normalisiere_dateinamen(kapitel_name)
-        kandidaten = sorted(txt_ordner.glob("*.txt"))
+
+        kandidaten = sorted(ref_ordner.glob("*.json"))
+        if not kandidaten:
+            kandidaten = sorted(ref_ordner.glob("*.txt"))
+
         return self._finde_besten_dateitreffer(key, kandidaten)
 
     def finde_audiodatei(self, kapitel_name: str, audio_ordner: Path) -> Optional[Path]:
-        """
-        Sucht eine passende Audiodatei für ein Kapitel.
-        """
         audio_ordner = Path(audio_ordner)
         if not audio_ordner.exists():
             return None
@@ -223,6 +241,12 @@ class AudioAnalyseService:
             p for p in sorted(audio_ordner.iterdir())
             if p.is_file() and p.suffix.lower() in self.AUDIO_EXTENSIONS
         ]
+
+        # exakter Treffer bevorzugt (neu!)
+        for p in kandidaten:
+            if p.stem == key:
+                return p
+    
         return self._finde_besten_dateitreffer(key, kandidaten)
 
     def speichere_json(self, result: AudioAnalyseResult, ziel_datei: Path) -> None:
@@ -294,19 +318,34 @@ class AudioAnalyseService:
             and int(result.referenz_size) == int(ref_size)
         )
 
+    # --------------------------------------------------------
+    # Export
+    # --------------------------------------------------------
+
     def speichere_diff_csv(self, result: AudioAnalyseResult, ziel_datei: Path) -> None:
         ziel_datei = Path(ziel_datei)
         ziel_datei.parent.mkdir(parents=True, exist_ok=True)
 
         with open(ziel_datei, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter=";")
-            writer.writerow(["typ", "score", "referenz", "gesprochen"])
+            writer.writerow([
+                "typ",
+                "score",
+                "referenz",
+                "gesprochen",
+                "referenz_markiert",
+                "gesprochen_markiert",
+                "summary",
+            ])
             for entry in result.diff_entries:
                 writer.writerow([
                     entry.typ,
                     f"{entry.score:.4f}",
                     entry.ref_text,
                     entry.spoken_text,
+                    entry.ref_diff,
+                    entry.spoken_diff,
+                    entry.summary,
                 ])
 
     def speichere_pausen_csv(self, result: AudioAnalyseResult, ziel_datei: Path) -> None:
@@ -315,12 +354,13 @@ class AudioAnalyseService:
 
         with open(ziel_datei, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter=";")
-            writer.writerow(["start", "end", "duration"])
+            writer.writerow(["start", "end", "duration", "kategorie"])
             for p in result.pausen:
                 writer.writerow([
                     f"{p.start:.3f}",
                     f"{p.end:.3f}",
                     f"{p.duration:.3f}",
+                    p.kategorie,
                 ])
 
     def speichere_segmente_csv(self, result: AudioAnalyseResult, ziel_datei: Path) -> None:
@@ -329,72 +369,121 @@ class AudioAnalyseService:
 
         with open(ziel_datei, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f, delimiter=";")
-            writer.writerow(["start", "end", "word_count", "local_wpm", "text"])
+            writer.writerow([
+                "start",
+                "end",
+                "word_count",
+                "local_wpm",
+                "status",
+                "match_score",
+                "ref_satz_nr",
+                "original",
+                "gesprochen",
+                "differenz",
+            ])
             for s in result.segmente:
                 writer.writerow([
                     f"{s.start:.3f}",
                     f"{s.end:.3f}",
                     s.word_count,
                     f"{s.local_wpm:.2f}",
+                    s.status,
+                    f"{s.match_score:.4f}",
+                    s.ref_satz_nr,
+                    s.ref_text,
                     s.text,
+                    s.diff_summary,
                 ])
 
     # --------------------------------------------------------
-    # Hilfsfunktionen: Dateien / Kapitel
+    # Referenz aus TXT oder JSON
     # --------------------------------------------------------
 
     @staticmethod
-    def lade_text(datei: Path) -> str:
-        return Path(datei).read_text(encoding="utf-8").strip()
+    def lade_referenz(datei: Path, use_number_words: bool = True) -> str:
+        datei = Path(datei)
+
+        if datei.suffix.lower() == ".json":
+            daten = json.loads(datei.read_text(encoding="utf-8"))
+            return AudioAnalyseService.rekonstruiere_text_aus_json(
+                daten,
+                use_number_words=use_number_words,
+            )
+
+        return datei.read_text(encoding="utf-8").strip()
 
     @staticmethod
-    def normalisiere_dateinamen(text: str) -> str:
-        """
-        Macht aus Kapitel-/Dateinamen einen stabilen Vergleichsschlüssel.
-        """
-        text = text.strip().lower()
+    def rekonstruiere_text_aus_json(daten: Any, use_number_words: bool = False) -> str:
+        if isinstance(daten, dict):
+            if isinstance(daten.get("tokens"), list):
+                daten = daten["tokens"]
+            elif isinstance(daten.get("daten"), list):
+                daten = daten["daten"]
+            else:
+                daten = list(daten.values())
 
-        # Deutsche Sonderfälle zuerst
-        text = (
-            text.replace("ä", "ae")
-                .replace("ö", "oe")
-                .replace("ü", "ue")
-                .replace("ß", "ss")
-        )
+        tokens: list[str] = []
 
-        # Unicode normalisieren und Akzente entfernen
-        text = unicodedata.normalize("NFKD", text)
-        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        for eintrag in daten:
+            if not isinstance(eintrag, dict):
+                continue
 
-        # typische Trenner vereinheitlichen
-        text = text.replace("–", "_").replace("—", "_").replace("-", "_")
+            token = (
+                eintrag.get("tokenInklZahlwoerter")
+                if use_number_words and eintrag.get("tokenInklZahlwoerter")
+                else eintrag.get("token")
+            )
 
-        # alles außer a-z0-9 und _/Leerzeichen raus
-        text = re.sub(r"[^a-z0-9_ ]+", "", text)
-        text = re.sub(r"\s+", "_", text)
-        text = re.sub(r"_+", "_", text)
+            token = str(token or "").strip()
 
-        return text.strip("_")
+            if not token:
+                continue
 
-    def make_output_key(self, kapitel_name: str) -> str:
-        return self.normalisiere_dateinamen(kapitel_name)
+            if token.startswith("|") and token.endswith("|"):
+                continue
 
-    def standard_output_paths(self, kapitel_name: str, audioanalyse_ordner: Path) -> dict[str, Path]:
-        """
-        Liefert Standard-Ausgabepfade für ein Kapitel.
-        """
-        audioanalyse_ordner = Path(audioanalyse_ordner)
-        key = self.make_output_key(kapitel_name)
+            tokens.append(token)
 
-        return {
-            "json": audioanalyse_ordner / f"{key}_analyse.json",
-            "diff_csv": audioanalyse_ordner / f"{key}_problemstellen.csv",
-            "pausen_csv": audioanalyse_ordner / f"{key}_pausen.csv",
-            "segmente_csv": audioanalyse_ordner / f"{key}_segmente.csv",
-        }
+        return AudioAnalyseService.tokens_zu_text_mit_annotationen(tokens)
 
+    @staticmethod
+    def tokens_zu_text_mit_annotationen(eintraege: list[dict]) -> str:
+        text = ""
+
+        for i, eintrag in enumerate(eintraege):
+            token = str(eintrag.get("token", "")).strip()
+            if not token:
+                continue
+
+            annotation = eintrag.get("annotation", "")
+
+            # Normalisieren (egal ob dict / list / string)
+            if isinstance(annotation, dict):
+                annot_set = {str(k).lower() for k in annotation.keys()}
+            elif isinstance(annotation, list):
+                annot_set = {str(a).lower() for a in annotation}
+            else:
+                annot_set = {str(annotation).lower()}
+
+            if not text:
+                text = token
+                continue
+
+            if "satzzeichenohnespacedavor" in annot_set:
+                text += token
+
+            elif "satzzeichenohnespacedanach" in annot_set:
+                text += " " + token  # kein Space danach → davor normal
+
+            elif "satzzeichenmitspace" in annot_set:
+                text += " " + token
+
+            else:
+                text += " " + token
+
+        return text.strip()
     # --------------------------------------------------------
-    # Hilfsfunktionen: Analyse
+    # Analyse-Helfer
     # --------------------------------------------------------
 
     @staticmethod
@@ -412,29 +501,39 @@ class AudioAnalyseService:
         return " ".join(teile).strip()
 
     def extrahiere_pausen(
-        self,
-        segments: Iterable[Any],
-        pause_threshold: Optional[float] = None,
-    ) -> list[PauseInfo]:
+    self,
+    segments: Iterable[Any],
+    pause_threshold: Optional[float] = None,
+    segments_list: Optional[list] = None,
+) -> list[PauseInfo]:
+        segments_list = list(segments_list or segments)
         threshold = self.pause_threshold if pause_threshold is None else pause_threshold
 
         pausen: list[PauseInfo] = []
-        prev_end: Optional[float] = None
 
-        for seg in segments:
-            start = float(getattr(seg, "start", 0.0) or 0.0)
-            end = float(getattr(seg, "end", 0.0) or 0.0)
+        for i in range(len(segments_list) - 1):
+            current_seg = segments_list[i]
+            next_seg = segments_list[i + 1]
 
-            if prev_end is not None:
-                delta = start - prev_end
-                if delta >= threshold:
-                    pausen.append(
-                        PauseInfo(
-                            start=round(prev_end, 3),
-                            end=round(start, 3),
-                            duration=round(delta, 3),
-                        )
+            end = float(getattr(current_seg, "end", 0.0) or 0.0)
+            start = float(getattr(next_seg, "start", 0.0) or 0.0)
+
+            delta = start - end
+
+            if delta >= threshold:
+                text_davor = (getattr(current_seg, "text", "") or "").strip()
+                text_danach = (getattr(next_seg, "text", "") or "").strip()
+
+                pausen.append(
+                    PauseInfo(
+                        start=round(end, 3),
+                        end=round(start, 3),
+                        duration=round(delta, 3),
+                        kategorie=self.klassifiziere_pause(delta),
+                        text_davor=text_davor[:200],
+                        text_danach=text_danach[:200],
                     )
+                )
             prev_end = end
 
         return pausen
@@ -463,6 +562,121 @@ class AudioAnalyseService:
 
         return infos
 
+    def baue_segment_infos_mit_referenz(
+        self,
+        segments: Iterable[Any],
+        referenz_text: str,
+    ) -> list[SegmentInfo]:
+        infos: list[SegmentInfo] = []
+
+        ref_saetze = self._split_saetze(referenz_text)
+        ref_pool = [
+            {
+                "satz_nr": idx + 1,
+                "text": satz,
+                "norm": self._normalisiere_fuer_vergleich(satz),
+                "used": False,
+            }
+            for idx, satz in enumerate(ref_saetze)
+        ]
+
+        for seg in segments:
+            start = float(getattr(seg, "start", 0.0) or 0.0)
+            end = float(getattr(seg, "end", 0.0) or 0.0)
+            hyp_text = (getattr(seg, "text", "") or "").strip()
+
+            ref_match = self._finde_besten_referenzsatz(
+                hyp_text=hyp_text,
+                ref_pool=ref_pool,
+            )
+
+            if ref_match:
+                ref_match["used"] = True
+                ref_text = ref_match["text"]
+                ref_satz_nr = int(ref_match["satz_nr"])
+                match_score = float(ref_match["score"])
+            else:
+                ref_text = ""
+                ref_satz_nr = 0
+                match_score = 0.0
+
+            ref_marked, hyp_marked, summary = self.markiere_wort_diffs(ref_text, hyp_text)
+
+            dauer = max(end - start, 0.0)
+            word_count = self.zaehle_woerter(hyp_text)
+            local_wpm = round((word_count / dauer * 60.0), 2) if dauer > 0 else 0.0
+
+            status = "OK" if match_score >= self.diff_threshold and not summary else "Abweichung"
+            if match_score >= 0.96 and not summary:
+                status = "OK"
+
+            infos.append(
+                SegmentInfo(
+                    start=round(start, 3),
+                    end=round(end, 3),
+                    text=hyp_text,
+                    word_count=word_count,
+                    local_wpm=local_wpm,
+                    ref_text=ref_text,
+                    ref_marked=ref_marked,
+                    spoken_marked=hyp_marked,
+                    diff_summary=summary,
+                    status=status,
+                    match_score=round(match_score, 4),
+                    ref_satz_nr=ref_satz_nr,
+                )
+            )
+
+        return infos
+
+    def _finde_besten_referenzsatz(
+        self,
+        hyp_text: str,
+        ref_pool: list[dict[str, Any]],
+        window_unused_bonus: float = 0.03,
+    ) -> Optional[dict[str, Any]]:
+        hyp_norm = self._normalisiere_fuer_vergleich(hyp_text)
+
+        if not hyp_norm:
+            return None
+
+        best: Optional[dict[str, Any]] = None
+        best_score = -1.0
+
+        for ref in ref_pool:
+            ref_norm = ref["norm"]
+
+            if not ref_norm:
+                continue
+
+            score = difflib.SequenceMatcher(None, ref_norm, hyp_norm).ratio()
+
+            # Noch nicht verwendete Referenzsätze leicht bevorzugen.
+            if not ref.get("used"):
+                score += window_unused_bonus
+
+            # Grober Längenabgleich verhindert sehr absurde Matches.
+            ref_wc = self.zaehle_woerter(ref["text"])
+            hyp_wc = self.zaehle_woerter(hyp_text)
+            if ref_wc and hyp_wc:
+                ratio = min(ref_wc, hyp_wc) / max(ref_wc, hyp_wc)
+                score += ratio * 0.08
+
+            if score > best_score:
+                best_score = score
+                best = ref
+
+        if best is None:
+            return None
+
+        result = dict(best)
+        result["score"] = max(0.0, min(1.0, best_score))
+        return result
+
+    # --------------------------------------------------------
+    # Diff-Logik
+    # --------------------------------------------------------
+
     def simple_diff(
         self,
         referenz_text: str,
@@ -470,61 +684,209 @@ class AudioAnalyseService:
         threshold: float = 0.85,
         max_entries: int = 50,
     ) -> list[DiffEntry]:
-        """
-        Robusteres MVP-Alignment auf Satzebene:
-        - Satzlisten via SequenceMatcher vergleichen
-        - replace / insert / delete Blöcke melden
-        - bei equal-Blöcken zusätzlich Near-Matches prüfen
-        """
         ref_saetze = self._split_saetze(referenz_text)
         hyp_saetze = self._split_saetze(transcript_text)
 
-        diffs: list[DiffEntry] = []
-        sm = difflib.SequenceMatcher(None, ref_saetze, hyp_saetze)
+        ref_pool = [
+            {
+                "satz_nr": idx + 1,
+                "text": satz,
+                "norm": self._normalisiere_fuer_vergleich(satz),
+                "used": False,
+            }
+            for idx, satz in enumerate(ref_saetze)
+        ]
 
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        diffs: list[DiffEntry] = []
+
+        for hyp in hyp_saetze:
+            match = self._finde_besten_referenzsatz(hyp, ref_pool)
+
+            if not match:
+                diffs.append(
+                    DiffEntry(
+                        typ="kein_match",
+                        score=0.0,
+                        ref_text="",
+                        spoken_text=hyp,
+                        summary=f"zusätzlich/unklar: '{hyp[:200]}'",
+                    )
+                )
+                continue
+
+            for ref in ref_pool:
+                if ref["satz_nr"] == match["satz_nr"]:
+                    ref["used"] = True
+                    break
+
+            ref_text = match["text"]
+            score = float(match["score"])
+
+            ref_marked, hyp_marked, summary = self.markiere_wort_diffs(ref_text, hyp)
+
+            if score < threshold or summary:
+                diffs.append(
+                    DiffEntry(
+                        typ="abweichung",
+                        score=round(score, 4),
+                        ref_text=ref_text,
+                        spoken_text=hyp,
+                        ref_diff=ref_marked,
+                        spoken_diff=hyp_marked,
+                        summary=summary,
+                    )
+                )
+
             if len(diffs) >= max_entries:
                 break
 
-            if tag == "equal":
-                for ref, hyp in zip(ref_saetze[i1:i2], hyp_saetze[j1:j2]):
-                    score = difflib.SequenceMatcher(None, ref, hyp).ratio()
-                    if score < threshold:
-                        diffs.append(
-                            DiffEntry(
-                                typ="abweichung",
-                                score=round(score, 4),
-                                ref_text=ref[:500],
-                                spoken_text=hyp[:500],
-                            )
+        if len(diffs) < max_entries:
+            for ref in ref_pool:
+                if not ref.get("used"):
+                    diffs.append(
+                        DiffEntry(
+                            typ="fehlt",
+                            score=0.0,
+                            ref_text=ref["text"],
+                            spoken_text="",
+                            ref_diff=f"**{ref['text']}**",
+                            spoken_diff="",
+                            summary=f"fehlt: '{ref['text'][:200]}'",
                         )
-                        if len(diffs) >= max_entries:
-                            break
-                continue
-
-            ref_block = " ".join(ref_saetze[i1:i2]).strip()[:500]
-            hyp_block = " ".join(hyp_saetze[j1:j2]).strip()[:500]
-
-            diffs.append(
-                DiffEntry(
-                    typ=tag,  # replace / delete / insert
-                    score=0.0,
-                    ref_text=ref_block,
-                    spoken_text=hyp_block,
-                )
-            )
-
-        if len(diffs) < max_entries and len(ref_saetze) != len(hyp_saetze):
-            diffs.append(
-                DiffEntry(
-                    typ="satzanzahl_unterschiedlich",
-                    score=0.0,
-                    ref_text=f"{len(ref_saetze)} Referenz-Sätze",
-                    spoken_text=f"{len(hyp_saetze)} gesprochene Sätze",
-                )
-            )
+                    )
+                    if len(diffs) >= max_entries:
+                        break
 
         return diffs[:max_entries]
+
+    @staticmethod
+    def _wort_liste(text: str) -> list[str]:
+        return re.findall(r"\w+|[^\w\s]", text, flags=re.UNICODE)
+
+    @staticmethod
+    def _normalisiere_wort(w: str) -> str:
+        w = w.casefold()
+        w = re.sub(r"[^\wäöüß]+", "", w, flags=re.UNICODE)
+        return w
+
+    @staticmethod
+    def _normalisiere_fuer_vergleich(text: str) -> str:
+        text = text.casefold()
+        text = unicodedata.normalize("NFKC", text)
+        text = text.replace("„", '"').replace("“", '"').replace("”", '"')
+        text = text.replace("‚", "'").replace("‘", "'").replace("’", "'")
+        text = re.sub(r"[^\wäöüß ]+", " ", text, flags=re.UNICODE)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+    
+    @staticmethod
+    def tokens_zu_text(tokens: list[str]) -> str:
+        text = ""
+
+        ohne_space_davor = {
+            ".", ",", ":", ";", "!", "?", "…",
+            ")", "]", "}", "”", "“", "’", "»",
+        }
+        ohne_space_danach = {"(", "[", "{", "„", "‚", "«"}
+
+        for token in tokens:
+            token = str(token or "").strip()
+            if not token:
+                continue
+
+            if not text:
+                text = token
+            elif token in ohne_space_davor:
+                text += token
+            elif text[-1] in ohne_space_danach:
+                text += token
+            else:
+                text += " " + token
+
+        return text.strip()
+
+    def markiere_wort_diffs(self, ref: str, hyp: str) -> tuple[str, str, str]:
+        ref_tokens = self._wort_liste(ref)
+        hyp_tokens = self._wort_liste(hyp)
+
+        ref_norm = [self._normalisiere_wort(t) for t in ref_tokens]
+        hyp_norm = [self._normalisiere_wort(t) for t in hyp_tokens]
+
+        sm = difflib.SequenceMatcher(None, ref_norm, hyp_norm)
+
+        ref_out: list[str] = []
+        hyp_out: list[str] = []
+        summary: list[str] = []
+
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            ref_part = ref_tokens[i1:i2]
+            hyp_part = hyp_tokens[j1:j2]
+
+            if tag == "equal":
+                ref_out.extend(ref_part)
+                hyp_out.extend(hyp_part)
+                continue
+
+            ref_text = self.tokens_zu_text(ref_part)
+            hyp_text = self.tokens_zu_text(hyp_part)
+
+            if ref_part:
+                ref_out.append(f"**{ref_text}**")
+            if hyp_part:
+                hyp_out.append(f"**{hyp_text}**")
+
+            if tag == "replace":
+                summary.append(f"anders: '{ref_text}' → '{hyp_text}'")
+            elif tag == "delete":
+                summary.append(f"fehlt: '{ref_text}'")
+            elif tag == "insert":
+                summary.append(f"zusätzlich: '{hyp_text}'")
+
+        return (
+            self.tokens_zu_text(ref_out),
+            self.tokens_zu_text(hyp_out),
+            "; ".join(summary),
+        )
+
+    # --------------------------------------------------------
+    # Dateien / Kapitel
+    # --------------------------------------------------------
+
+    @staticmethod
+    def normalisiere_dateinamen(text: str) -> str:
+        text = text.strip().lower()
+
+        text = (
+            text.replace("ä", "ae")
+                .replace("ö", "oe")
+                .replace("ü", "ue")
+                .replace("ß", "ss")
+        )
+
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+
+        text = text.replace("–", "_").replace("—", "_").replace("-", "_")
+        text = re.sub(r"[^a-z0-9_ ]+", "", text)
+        text = re.sub(r"\s+", "_", text)
+        text = re.sub(r"_+", "_", text)
+
+        return text.strip("_")
+
+    def make_output_key(self, kapitel_name: str) -> str:
+        return self.normalisiere_dateinamen(kapitel_name)
+
+    def standard_output_paths(self, kapitel_name: str, audioanalyse_ordner: Path) -> dict[str, Path]:
+        audioanalyse_ordner = Path(audioanalyse_ordner)
+        key = self.make_output_key(kapitel_name)
+
+        return {
+            "json": audioanalyse_ordner / f"{key}_analyse.json",
+            "diff_csv": audioanalyse_ordner / f"{key}_problemstellen.csv",
+            "pausen_csv": audioanalyse_ordner / f"{key}_pausen.csv",
+            "segmente_csv": audioanalyse_ordner / f"{key}_segmente.csv",
+            "satzanalyse_json": audioanalyse_ordner / f"{key}_satzanalyse.json",
+        }
 
     # --------------------------------------------------------
     # Private Helfer
@@ -555,7 +917,7 @@ class AudioAnalyseService:
         if not text:
             return []
 
-        saetze = re.split(r"(?<=[.!?])\s+", text)
+        saetze = re.split(r"(?<=[.!?…])\s+", text)
         return [s.strip() for s in saetze if s.strip()]
 
     @staticmethod
@@ -599,16 +961,13 @@ class AudioAnalyseService:
 
             score = difflib.SequenceMatcher(None, key, stem_key).ratio()
 
-            # Nummernbonus
             if key_num is not None and stem_num is not None and key_num == stem_num:
                 score += 0.25
 
-            # Token-Overlap
             if key_tokens and stem_tokens:
                 overlap = len(key_tokens & stem_tokens) / max(len(key_tokens), 1)
                 score += overlap * 0.25
 
-            # Teiltrefferbonus
             if key in stem_key or stem_key in key:
                 score += 0.15
 
@@ -617,3 +976,237 @@ class AudioAnalyseService:
                 best_path = p
 
         return best_path if best_score >= 0.55 else None
+    
+    @staticmethod
+    def baue_satzid_map(json_daten):
+        mapping = {}
+
+        for eintrag in json_daten:
+            if not isinstance(eintrag, dict):
+                continue
+
+            sid = eintrag.get("SatzID")
+            if sid is not None:
+                mapping.setdefault(int(sid), []).append(eintrag)
+
+        return mapping
+    
+    def baue_referenzsaetze_aus_json(self, json_daten: list[dict]) -> list[dict]:
+        satz_map = self.baue_satzid_map(json_daten)
+
+        ref_saetze = []
+
+        for satz_id in sorted(satz_map.keys()):
+            eintraege = satz_map[satz_id]
+
+            # Leere reine Zeilenumbrüche überspringen
+            echte_tokens = [
+                e for e in eintraege
+                if str(e.get("token", "") or "").strip()
+            ]
+
+            if not echte_tokens:
+                continue
+
+            text = baue_text_aus_tokens(
+                echte_tokens,
+                use_number_words=self.use_number_words,
+            )
+
+            if not text:
+                continue
+
+            ref_saetze.append({
+                "satz_id": int(satz_id),
+                "satz_nr": len(ref_saetze) + 1,
+                "text": text,
+                "norm": self._normalisiere_fuer_vergleich(text),
+                "used": False,
+            })
+
+        return ref_saetze
+    
+    def baue_segment_infos_mit_referenzsaetzen(
+    self,
+    segments: Iterable[Any],
+    ref_saetze: list[dict],
+) -> list[SegmentInfo]:
+        infos: list[SegmentInfo] = []
+
+        ref_pool = [dict(s) for s in ref_saetze]
+
+        for seg in segments:
+            start = float(getattr(seg, "start", 0.0) or 0.0)
+            end = float(getattr(seg, "end", 0.0) or 0.0)
+            hyp_text = (getattr(seg, "text", "") or "").strip()
+
+            ref_match = self._finde_besten_referenzsatz(
+                hyp_text=hyp_text,
+                ref_pool=ref_pool,
+            )
+
+            if ref_match:
+                for ref in ref_pool:
+                    if ref.get("satz_id") == ref_match.get("satz_id"):
+                        ref["used"] = True
+                        break
+
+                ref_text = ref_match["text"]
+                ref_satz_nr = int(ref_match["satz_nr"])
+                satz_id = int(ref_match["satz_id"])
+                match_score = float(ref_match["score"])
+            else:
+                ref_text = ""
+                ref_satz_nr = 0
+                satz_id = 0
+                match_score = 0.0
+
+            ref_marked, hyp_marked, summary = self.markiere_wort_diffs(ref_text, hyp_text)
+
+            dauer = max(end - start, 0.0)
+            word_count = self.zaehle_woerter(hyp_text)
+            local_wpm = round((word_count / dauer * 60.0), 2) if dauer > 0 else 0.0
+
+            status = "OK" if match_score >= self.diff_threshold and not summary else "Abweichung"
+
+            infos.append(
+                SegmentInfo(
+                    start=round(start, 3),
+                    end=round(end, 3),
+                    text=hyp_text,
+                    word_count=word_count,
+                    local_wpm=local_wpm,
+                    ref_text=ref_text,
+                    ref_marked=ref_marked,
+                    spoken_marked=hyp_marked,
+                    diff_summary=summary,
+                    status=status,
+                    match_score=round(match_score, 4),
+                    ref_satz_nr=ref_satz_nr,
+                    satz_id=satz_id,
+                )
+            )
+
+        return infos
+    
+    def simple_diff_mit_referenzsaetzen(
+        self,
+        ref_saetze: list[dict],
+        transcript_text: str,
+        threshold: float = 0.85,
+        max_entries: int = 50,
+    ) -> list[DiffEntry]:
+        hyp_saetze = self._split_saetze(transcript_text)
+        ref_pool = [dict(s) for s in ref_saetze]
+
+        diffs: list[DiffEntry] = []
+
+        for hyp in hyp_saetze:
+            match = self._finde_besten_referenzsatz(hyp, ref_pool)
+
+            if not match:
+                diffs.append(
+                    DiffEntry(
+                        typ="kein_match",
+                        score=0.0,
+                        ref_text="",
+                        spoken_text=hyp,
+                        summary=f"zusätzlich/unklar: '{hyp[:200]}'",
+                    )
+                )
+                continue
+
+            for ref in ref_pool:
+                if ref.get("satz_id") == match.get("satz_id"):
+                    ref["used"] = True
+                    break
+
+            ref_text = match["text"]
+            score = float(match["score"])
+
+            ref_marked, hyp_marked, summary = self.markiere_wort_diffs(ref_text, hyp)
+
+            if score < threshold or summary:
+                diffs.append(
+                    DiffEntry(
+                        typ="abweichung",
+                        score=round(score, 4),
+                        ref_text=ref_text,
+                        spoken_text=hyp,
+                        ref_diff=ref_marked,
+                        spoken_diff=hyp_marked,
+                        summary=summary,
+                    )
+                )
+
+            if len(diffs) >= max_entries:
+                break
+
+        if len(diffs) < max_entries:
+            for ref in ref_pool:
+                if not ref.get("used"):
+                    diffs.append(
+                        DiffEntry(
+                            typ="fehlt",
+                            score=0.0,
+                            ref_text=ref["text"],
+                            spoken_text="",
+                            ref_diff=f"**{ref['text']}**",
+                            spoken_diff="",
+                            summary=f"fehlt: '{ref['text'][:200]}'",
+                        )
+                    )
+                    if len(diffs) >= max_entries:
+                        break
+
+        return diffs[:max_entries]
+    
+    def speichere_satzanalyse_json(self, result: AudioAnalyseResult, ziel_datei: Path) -> None:
+        ziel_datei = Path(ziel_datei)
+        ziel_datei.parent.mkdir(parents=True, exist_ok=True)
+
+        satz_map = {}
+
+        for seg in result.segmente:
+            satz_id = getattr(seg, "satz_id", 0)
+            ref_satz_nr = getattr(seg, "ref_satz_nr", 0)
+
+            if not satz_id:
+                continue
+
+            key = str(int(satz_id))
+
+            entry = satz_map.setdefault(key, {
+                "satz_id": int(satz_id),
+                "ref_satz_nr": int(ref_satz_nr or 0),
+                "satz_nr": int(ref_satz_nr or 0),
+                "tempo": "ok",
+                "pausen": [],
+                "probleme": [],
+                "start": float(seg.start),
+                "end": float(seg.end),
+            })
+
+            entry["start"] = min(entry["start"], float(seg.start))
+            entry["end"] = max(entry["end"], float(seg.end))
+
+            if seg.local_wpm > 190:
+                entry["tempo"] = "zu_schnell"
+            elif seg.local_wpm < 90:
+                entry["tempo"] = "zu_langsam"
+
+            if getattr(seg, "diff_summary", ""):
+                entry["probleme"].append(seg.diff_summary)
+
+        for pause in result.pausen:
+            for entry in satz_map.values():
+                if entry["start"] <= pause.start <= entry["end"]:
+                    entry["pausen"].append({
+                        "dauer": pause.duration,
+                        "kategorie": pause.kategorie,
+                    })
+
+        ziel_datei.write_text(
+            json.dumps(satz_map, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
