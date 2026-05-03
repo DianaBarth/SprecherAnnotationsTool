@@ -47,6 +47,7 @@ class SegmentInfo:
     status: str = "OK"
     match_score: float = 0.0
     ref_satz_nr: int = 0
+    satz_id: int = 0
 
 
 @dataclass
@@ -77,6 +78,7 @@ class AudioAnalyseResult:
     segmente: list[SegmentInfo]
 
     transcript_text: str
+
 
 
 class AudioAnalyseService:
@@ -144,11 +146,9 @@ class AudioAnalyseService:
 
         self._report(progress_callback, "Referenz laden", 5)
         json_daten = self.lade_json_tokens(referenz_path)
-
-        referenz_text = baue_text_aus_tokens(
-            json_daten,
-            use_number_words=False
-        )
+        
+        ref_saetze = self.baue_referenzsaetze_aus_json(json_daten)
+        referenz_text = " ".join(s["text"] for s in ref_saetze)
 
         self._report(progress_callback, "Whisper-Modell initialisieren", 15)
         model = self._get_model()
@@ -173,11 +173,12 @@ class AudioAnalyseService:
         pausen = self.extrahiere_pausen(segments, self.pause_threshold, segments)
 
         self._report(progress_callback, "Segmente mit Originaltext vergleichen", 88)
-        segmente = self.baue_segment_infos_mit_referenz(segments, referenz_text)
+        segmente = self.baue_segment_infos_mit_referenzsaetzen(segments, ref_saetze)
+
 
         self._report(progress_callback, "Textabweichungen vergleichen", 94)
-        diffs = self.simple_diff(
-            referenz_text,
+        diffs = self.simple_diff_mit_referenzsaetzen(
+            ref_saetze,
             transcript_text,
             threshold=self.diff_threshold,
         )
@@ -884,6 +885,7 @@ class AudioAnalyseService:
             "diff_csv": audioanalyse_ordner / f"{key}_problemstellen.csv",
             "pausen_csv": audioanalyse_ordner / f"{key}_pausen.csv",
             "segmente_csv": audioanalyse_ordner / f"{key}_segmente.csv",
+            "satzanalyse_json": audioanalyse_ordner / f"{key}_satzanalyse.json",
         }
 
     # --------------------------------------------------------
@@ -974,3 +976,237 @@ class AudioAnalyseService:
                 best_path = p
 
         return best_path if best_score >= 0.55 else None
+    
+    @staticmethod
+    def baue_satzid_map(json_daten):
+        mapping = {}
+
+        for eintrag in json_daten:
+            if not isinstance(eintrag, dict):
+                continue
+
+            sid = eintrag.get("SatzID")
+            if sid is not None:
+                mapping.setdefault(int(sid), []).append(eintrag)
+
+        return mapping
+    
+    def baue_referenzsaetze_aus_json(self, json_daten: list[dict]) -> list[dict]:
+        satz_map = self.baue_satzid_map(json_daten)
+
+        ref_saetze = []
+
+        for satz_id in sorted(satz_map.keys()):
+            eintraege = satz_map[satz_id]
+
+            # Leere reine Zeilenumbrüche überspringen
+            echte_tokens = [
+                e for e in eintraege
+                if str(e.get("token", "") or "").strip()
+            ]
+
+            if not echte_tokens:
+                continue
+
+            text = baue_text_aus_tokens(
+                echte_tokens,
+                use_number_words=self.use_number_words,
+            )
+
+            if not text:
+                continue
+
+            ref_saetze.append({
+                "satz_id": int(satz_id),
+                "satz_nr": len(ref_saetze) + 1,
+                "text": text,
+                "norm": self._normalisiere_fuer_vergleich(text),
+                "used": False,
+            })
+
+        return ref_saetze
+    
+    def baue_segment_infos_mit_referenzsaetzen(
+    self,
+    segments: Iterable[Any],
+    ref_saetze: list[dict],
+) -> list[SegmentInfo]:
+        infos: list[SegmentInfo] = []
+
+        ref_pool = [dict(s) for s in ref_saetze]
+
+        for seg in segments:
+            start = float(getattr(seg, "start", 0.0) or 0.0)
+            end = float(getattr(seg, "end", 0.0) or 0.0)
+            hyp_text = (getattr(seg, "text", "") or "").strip()
+
+            ref_match = self._finde_besten_referenzsatz(
+                hyp_text=hyp_text,
+                ref_pool=ref_pool,
+            )
+
+            if ref_match:
+                for ref in ref_pool:
+                    if ref.get("satz_id") == ref_match.get("satz_id"):
+                        ref["used"] = True
+                        break
+
+                ref_text = ref_match["text"]
+                ref_satz_nr = int(ref_match["satz_nr"])
+                satz_id = int(ref_match["satz_id"])
+                match_score = float(ref_match["score"])
+            else:
+                ref_text = ""
+                ref_satz_nr = 0
+                satz_id = 0
+                match_score = 0.0
+
+            ref_marked, hyp_marked, summary = self.markiere_wort_diffs(ref_text, hyp_text)
+
+            dauer = max(end - start, 0.0)
+            word_count = self.zaehle_woerter(hyp_text)
+            local_wpm = round((word_count / dauer * 60.0), 2) if dauer > 0 else 0.0
+
+            status = "OK" if match_score >= self.diff_threshold and not summary else "Abweichung"
+
+            infos.append(
+                SegmentInfo(
+                    start=round(start, 3),
+                    end=round(end, 3),
+                    text=hyp_text,
+                    word_count=word_count,
+                    local_wpm=local_wpm,
+                    ref_text=ref_text,
+                    ref_marked=ref_marked,
+                    spoken_marked=hyp_marked,
+                    diff_summary=summary,
+                    status=status,
+                    match_score=round(match_score, 4),
+                    ref_satz_nr=ref_satz_nr,
+                    satz_id=satz_id,
+                )
+            )
+
+        return infos
+    
+    def simple_diff_mit_referenzsaetzen(
+        self,
+        ref_saetze: list[dict],
+        transcript_text: str,
+        threshold: float = 0.85,
+        max_entries: int = 50,
+    ) -> list[DiffEntry]:
+        hyp_saetze = self._split_saetze(transcript_text)
+        ref_pool = [dict(s) for s in ref_saetze]
+
+        diffs: list[DiffEntry] = []
+
+        for hyp in hyp_saetze:
+            match = self._finde_besten_referenzsatz(hyp, ref_pool)
+
+            if not match:
+                diffs.append(
+                    DiffEntry(
+                        typ="kein_match",
+                        score=0.0,
+                        ref_text="",
+                        spoken_text=hyp,
+                        summary=f"zusätzlich/unklar: '{hyp[:200]}'",
+                    )
+                )
+                continue
+
+            for ref in ref_pool:
+                if ref.get("satz_id") == match.get("satz_id"):
+                    ref["used"] = True
+                    break
+
+            ref_text = match["text"]
+            score = float(match["score"])
+
+            ref_marked, hyp_marked, summary = self.markiere_wort_diffs(ref_text, hyp)
+
+            if score < threshold or summary:
+                diffs.append(
+                    DiffEntry(
+                        typ="abweichung",
+                        score=round(score, 4),
+                        ref_text=ref_text,
+                        spoken_text=hyp,
+                        ref_diff=ref_marked,
+                        spoken_diff=hyp_marked,
+                        summary=summary,
+                    )
+                )
+
+            if len(diffs) >= max_entries:
+                break
+
+        if len(diffs) < max_entries:
+            for ref in ref_pool:
+                if not ref.get("used"):
+                    diffs.append(
+                        DiffEntry(
+                            typ="fehlt",
+                            score=0.0,
+                            ref_text=ref["text"],
+                            spoken_text="",
+                            ref_diff=f"**{ref['text']}**",
+                            spoken_diff="",
+                            summary=f"fehlt: '{ref['text'][:200]}'",
+                        )
+                    )
+                    if len(diffs) >= max_entries:
+                        break
+
+        return diffs[:max_entries]
+    
+    def speichere_satzanalyse_json(self, result: AudioAnalyseResult, ziel_datei: Path) -> None:
+        ziel_datei = Path(ziel_datei)
+        ziel_datei.parent.mkdir(parents=True, exist_ok=True)
+
+        satz_map = {}
+
+        for seg in result.segmente:
+            satz_id = getattr(seg, "satz_id", 0)
+            ref_satz_nr = getattr(seg, "ref_satz_nr", 0)
+
+            if not satz_id:
+                continue
+
+            key = str(int(satz_id))
+
+            entry = satz_map.setdefault(key, {
+                "satz_id": int(satz_id),
+                "ref_satz_nr": int(ref_satz_nr or 0),
+                "satz_nr": int(ref_satz_nr or 0),
+                "tempo": "ok",
+                "pausen": [],
+                "probleme": [],
+                "start": float(seg.start),
+                "end": float(seg.end),
+            })
+
+            entry["start"] = min(entry["start"], float(seg.start))
+            entry["end"] = max(entry["end"], float(seg.end))
+
+            if seg.local_wpm > 190:
+                entry["tempo"] = "zu_schnell"
+            elif seg.local_wpm < 90:
+                entry["tempo"] = "zu_langsam"
+
+            if getattr(seg, "diff_summary", ""):
+                entry["probleme"].append(seg.diff_summary)
+
+        for pause in result.pausen:
+            for entry in satz_map.values():
+                if entry["start"] <= pause.start <= entry["end"]:
+                    entry["pausen"].append({
+                        "dauer": pause.duration,
+                        "kategorie": pause.kategorie,
+                    })
+
+        ziel_datei.write_text(
+            json.dumps(satz_map, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )

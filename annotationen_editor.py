@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import re
 import json
 import tkinter as tk
@@ -72,7 +73,8 @@ class AnnotationenEditor(ttk.Frame):
         self.rechts_frame= None
 
         self.in_takes_aufteilen_var = tk.BooleanVar(value=False)
-    
+        self.audioanalyse_anzeigen_var = tk.BooleanVar(value=False)
+
         # Widgets bauen
         self._erstelle_widgets()
 
@@ -295,6 +297,15 @@ class AnnotationenEditor(ttk.Frame):
         )
         takes_checkbox.grid(row=0, column=1, sticky="w", padx=(15, 0))
 
+
+        audioanalyse_checkbox = ttk.Checkbutton(
+            top_frame_2,
+            text="Audioanalyse anzeigen",
+            variable=self.audioanalyse_anzeigen_var,
+            command=self._zeichne_alle_tokens
+        )
+        audioanalyse_checkbox.grid(row=0, column=3, sticky="w", padx=(15, 0))
+
         # ---------------------------
         # 3. Zeile: Filter (NEU!)
         # ---------------------------
@@ -408,7 +419,15 @@ class AnnotationenEditor(ttk.Frame):
         self.renderer.take_umbruch_indices = (
             self._berechne_take_umbruch_indices()
             if self.in_takes_aufteilen_var.get()
-            else set()
+            else {}
+        )
+
+        self.renderer.audioanalyse_anzeigen = self.audioanalyse_anzeigen_var.get()
+
+        self.renderer.satzanalyse_map = (
+            self._lade_satzanalyse_map()
+            if self.audioanalyse_anzeigen_var.get()
+            else {}
         )
 
         for idx, json_dict in enumerate(self.json_dicts):
@@ -1138,16 +1157,37 @@ class AnnotationenEditor(ttk.Frame):
         MAX_WOERTER = 170
 
         breaks = {}
+
         take_woerter = 0
         take_nr = 1
+
+        aktueller_take_start_satz_nr = 1
+        satz_nr = 1
+
         kandidat_idx = None
         kandidat_wortzahl = None
+        kandidat_end_satz_nr = None
 
         for idx, eintrag in enumerate(self.json_dicts):
             if self._hat_echten_zeilenumbruch(eintrag):
+                if take_woerter > 0 and idx + 1 < len(self.json_dicts):
+                    end_satz_nr = max(aktueller_take_start_satz_nr, satz_nr)
+
+                    take_nr += 1
+                    breaks[idx + 1] = {
+                        "take_nr": take_nr,
+                        "wortanzahl": take_woerter,
+                        "start_satz_nr": aktueller_take_start_satz_nr,
+                        "end_satz_nr": end_satz_nr,
+                        "grund": "manueller_zeilenumbruch",
+                    }
+
+                    aktueller_take_start_satz_nr = end_satz_nr + 1
+
                 take_woerter = 0
                 kandidat_idx = None
                 kandidat_wortzahl = None
+                kandidat_end_satz_nr = None
                 continue
 
             if self._ist_wort_token(eintrag):
@@ -1156,36 +1196,78 @@ class AnnotationenEditor(ttk.Frame):
             if not self._ist_satzende(eintrag):
                 continue
 
+            aktueller_satz_nr = satz_nr
+            satz_nr += 1
+
             if OPTIMAL_MIN <= take_woerter <= OPTIMAL_MAX:
                 if idx + 1 < len(self.json_dicts):
                     take_nr += 1
                     breaks[idx + 1] = {
                         "take_nr": take_nr,
-                        "wortanzahl": take_woerter
+                        "wortanzahl": take_woerter,
+                        "start_satz_nr": aktueller_take_start_satz_nr,
+                        "end_satz_nr": aktueller_satz_nr,
+                        "grund": "optimal",
                     }
+
+                    aktueller_take_start_satz_nr = aktueller_satz_nr + 1
 
                 take_woerter = 0
                 kandidat_idx = None
                 kandidat_wortzahl = None
+                kandidat_end_satz_nr = None
                 continue
 
             if MIN_WOERTER <= take_woerter < OPTIMAL_MIN:
                 kandidat_idx = idx
                 kandidat_wortzahl = take_woerter
+                kandidat_end_satz_nr = aktueller_satz_nr
 
             if take_woerter >= MAX_WOERTER:
                 ziel_idx = kandidat_idx if kandidat_idx is not None else idx
                 wortzahl = kandidat_wortzahl if kandidat_wortzahl is not None else take_woerter
+                end_satz_nr = kandidat_end_satz_nr if kandidat_end_satz_nr is not None else aktueller_satz_nr
 
                 if ziel_idx + 1 < len(self.json_dicts):
                     take_nr += 1
                     breaks[ziel_idx + 1] = {
                         "take_nr": take_nr,
-                        "wortanzahl": wortzahl
+                        "wortanzahl": wortzahl,
+                        "start_satz_nr": aktueller_take_start_satz_nr,
+                        "end_satz_nr": end_satz_nr,
+                        "grund": "maximum",
                     }
+
+                    aktueller_take_start_satz_nr = end_satz_nr + 1
 
                 take_woerter = 0
                 kandidat_idx = None
                 kandidat_wortzahl = None
+                kandidat_end_satz_nr = None
 
         return breaks
+    
+    def _lade_satzanalyse_map(self):
+        try:
+            audioanalyse_ordner = config.GLOBALORDNER.get("audioanalyse")
+            if not audioanalyse_ordner:
+                return {}
+
+            basis = Path(self.dateipfad_json).stem  # z.B. 002_001
+            pfad = Path(audioanalyse_ordner) / f"{basis}_satzanalyse.json"
+
+            if not pfad.is_file():
+                return {}
+
+            with open(pfad, "r", encoding="utf-8") as f:
+                daten = json.load(f)
+
+            return {
+                int(k): v
+                for k, v in daten.items()
+                if str(k).isdigit()
+            }
+
+        except Exception as e:
+            print(f"[Audioanalyse] Satzanalyse konnte nicht geladen werden: {e}")
+            return {}

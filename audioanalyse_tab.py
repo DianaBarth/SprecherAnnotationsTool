@@ -596,32 +596,26 @@ class AudioAnalyseTab(ttk.Frame):
         )
         worker.start()
 
+
     def _analysis_worker(self, run_id, kapitel_name, audio_path, ref_path, sprache, use_cache: bool):
         try:
             output_paths = self._get_output_paths(kapitel_name)
-  
+
             result: Optional[AudioAnalyseResult] = None
             cache_hit = False
 
-            # ----------------------------------
-            # 1. Cache nur wenn explizit erlaubt
-            # ----------------------------------
-            if use_cache:
-                if output_paths["json"].is_file():
-                    try:
-                        cached = self.service.lade_json_result(output_paths["json"])
-                        if self.service.ist_cache_gueltig(cached, audio_path, ref_path, sprache):
-                            result = cached
-                            cache_hit = True
-                            self._threadsafe_progress_update(
-                                "Cache-Treffer: vorhandenes Ergebnis geladen", 100, run_id
-                            )
-                    except Exception:
-                        result = None
+            if use_cache and output_paths["json"].is_file():
+                try:
+                    cached = self.service.lade_json_result(output_paths["json"])
+                    if self.service.ist_cache_gueltig(cached, audio_path, ref_path, sprache):
+                        result = cached
+                        cache_hit = True
+                        self._threadsafe_progress_update(
+                            "Cache-Treffer: vorhandenes Ergebnis geladen", 100, run_id
+                        )
+                except Exception:
+                    result = None
 
-            # ----------------------------------
-            # 2. IMMER neu analysieren wenn kein Cache gewünscht
-            # ----------------------------------
             if result is None:
                 self._threadsafe_progress_update("Starte NEUE Analyse (Whisper)...", 5, run_id)
 
@@ -633,11 +627,16 @@ class AudioAnalyseTab(ttk.Frame):
                     progress_callback=lambda status, prog: self._threadsafe_progress_update(status, prog, run_id),
                 )
 
-                # Cache überschreiben
                 self.service.speichere_json(result, output_paths["json"])
                 self.service.speichere_diff_csv(result, output_paths["diff_csv"])
                 self.service.speichere_pausen_csv(result, output_paths["pausen_csv"])
                 self.service.speichere_segmente_csv(result, output_paths["segmente_csv"])
+
+            # Wichtig: erst HIER, nachdem result sicher gesetzt ist
+            self.service.speichere_satzanalyse_json(
+                result,
+                output_paths["satzanalyse_json"]
+            )
 
             self._safe_after(
                 lambda rid=run_id, res=result, paths=output_paths, hit=cache_hit:
@@ -650,6 +649,7 @@ class AudioAnalyseTab(ttk.Frame):
                 lambda err=e, rid=run_id:
                     self._handle_analysis_error_if_current(rid, err)
             )
+
 
     def _threadsafe_progress_update(self, status: str, progress: float, run_id: Optional[int] = None):
         if run_id is None:
@@ -916,7 +916,14 @@ class AudioAnalyseTab(ttk.Frame):
             "Export abgeschlossen",
             f"Dateien gespeichert in:\n{output_paths['json'].parent}",
         )
+        
+        basis = Path(self.current_result.referenz_path).stem
+        satzanalyse_pfad = output_paths["json"].parent / f"{basis}_satzanalyse.json"
 
+        self.service.speichere_satzanalyse_json(
+            self.current_result,
+            output_paths["satzanalyse_json"]
+        )
     # ---------------------------------------------------------
     # Dateifindung / Projektkontext
     # ---------------------------------------------------------
@@ -1030,11 +1037,21 @@ class AudioAnalyseTab(ttk.Frame):
         return fallback
 
     def _get_output_paths(self, kapitel_name: str) -> dict[str, Path]:
-        return self.service.standard_output_paths(
-            kapitel_name=kapitel_name,
-            audioanalyse_ordner=self._get_audioanalyse_dir(),
-        )
+        audioanalyse_dir = self._get_audioanalyse_dir()
 
+        ref_text = self.ref_path_var.get().strip()
+        if ref_text:
+            key = Path(ref_text).stem  # z.B. 002_001
+        else:
+            key = self.service.make_output_key(kapitel_name)
+
+        return {
+            "json": audioanalyse_dir / f"{key}_analyse.json",
+            "diff_csv": audioanalyse_dir / f"{key}_problemstellen.csv",
+            "pausen_csv": audioanalyse_dir / f"{key}_pausen.csv",
+            "segmente_csv": audioanalyse_dir / f"{key}_segmente.csv",
+            "satzanalyse_json": audioanalyse_dir / f"{key}_satzanalyse.json",
+        }
 
     def _get_selected_abschnitt_nr(self) -> Optional[int]:
         text = self.abschnitt_var.get().strip()
