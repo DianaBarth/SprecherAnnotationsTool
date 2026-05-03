@@ -208,6 +208,7 @@ class AudioAnalyseTab(ttk.Frame):
 
         self._build_diff_tab()
         self._build_pausen_tab()
+        self._build_tempo_tab()
         self._build_segment_tab()
         self._build_transkript_tab()
 
@@ -333,7 +334,7 @@ class AudioAnalyseTab(ttk.Frame):
 
         self.pause_tree = ttk.Treeview(
             self.tab_pausen,
-            columns=("start", "end", "duration", "kategorie"),
+            columns=("start", "end", "duration", "kategorie", "davor", "danach"),
             show="headings",
         )
 
@@ -342,10 +343,15 @@ class AudioAnalyseTab(ttk.Frame):
         self.pause_tree.heading("duration", text="Dauer")
         self.pause_tree.heading("kategorie", text="Kategorie")
         self.pause_tree.column("kategorie", width=140, anchor="center")
+        self.pause_tree.heading("davor", text="Text davor")
+        self.pause_tree.heading("danach", text="Text danach")
 
         self.pause_tree.column("start", width=120, anchor="center")
         self.pause_tree.column("end", width=120, anchor="center")
         self.pause_tree.column("duration", width=120, anchor="center")
+        self.pause_tree.column("davor", width=350, anchor="w")
+        self.pause_tree.column("danach", width=350, anchor="w")
+        
 
         pause_scroll_y = ttk.Scrollbar(self.tab_pausen, orient="vertical", command=self.pause_tree.yview)
         self.pause_tree.configure(yscrollcommand=pause_scroll_y.set)
@@ -723,7 +729,7 @@ class AudioAnalyseTab(ttk.Frame):
     def _reset_result_views(self):
         self.current_result = None
 
-        for tree in (self.diff_tree, self.pause_tree):
+        for tree in (self.diff_tree, self.pause_tree, self.tempo_tree):
             for item in tree.get_children():
                 tree.delete(item)
 
@@ -747,6 +753,7 @@ class AudioAnalyseTab(ttk.Frame):
         self._fill_diff_view(result)     
         self._fill_segment_view(result)
         self._fill_transcript_view(result)
+        self._fill_tempo_view(result)
 
         for p in self._sortiere_pausen(result.pausen):
             kategorie = getattr(p, "kategorie", "normal")
@@ -759,7 +766,9 @@ class AudioAnalyseTab(ttk.Frame):
                     f"{p.end:.3f}",
                     f"{p.duration:.3f}",
                     kategorie,
-                ),
+                    getattr(p, "text_davor", ""),
+                    getattr(p, "text_danach", ""),
+                 ),
                 tags=(kategorie,)
             )
 
@@ -1143,3 +1152,112 @@ class AudioAnalyseTab(ttk.Frame):
     def _json_eintrag_ist_satzende(self, eintrag: dict) -> bool:
         token = str(eintrag.get("token", "") or "").strip()
         return token in {".", "!", "?", "…"} or token.endswith((".", "!", "?", "…"))
+
+    def _build_tempo_tab(self):
+        self.tab_tempo = ttk.Frame(self.result_notebook)
+        self.tab_tempo.columnconfigure(0, weight=1)
+        self.tab_tempo.rowconfigure(0, weight=1)
+        self.result_notebook.add(self.tab_tempo, text="Tempoanalyse")
+
+        self.tempo_tree = ttk.Treeview(
+            self.tab_tempo,
+            columns=("bewertung", "start", "end", "wpm", "woerter", "text"),
+            show="headings",
+        )
+
+        self.tempo_tree.heading("bewertung", text="Bewertung")
+        self.tempo_tree.heading("start", text="Start")
+        self.tempo_tree.heading("end", text="Ende")
+        self.tempo_tree.heading("wpm", text="WPM")
+        self.tempo_tree.heading("woerter", text="Wörter")
+        self.tempo_tree.heading("text", text="Text")
+
+        self.tempo_tree.column("bewertung", width=120, anchor="center")
+        self.tempo_tree.column("start", width=90, anchor="center")
+        self.tempo_tree.column("end", width=90, anchor="center")
+        self.tempo_tree.column("wpm", width=90, anchor="center")
+        self.tempo_tree.column("woerter", width=80, anchor="center")
+        self.tempo_tree.column("text", width=900, anchor="w")
+
+        self.tempo_tree.tag_configure("sehr_langsam", background="#d1ecf1")
+        self.tempo_tree.tag_configure("langsam", background="#e2f3f5")
+        self.tempo_tree.tag_configure("normal", background="#ffffff")
+        self.tempo_tree.tag_configure("schnell", background="#fff3cd")
+        self.tempo_tree.tag_configure("sehr_schnell", background="#f8d7da", foreground="#721c24")
+
+        scroll_y = ttk.Scrollbar(self.tab_tempo, orient="vertical", command=self.tempo_tree.yview)
+        scroll_x = ttk.Scrollbar(self.tab_tempo, orient="horizontal", command=self.tempo_tree.xview)
+
+        self.tempo_tree.configure(
+            yscrollcommand=scroll_y.set,
+            xscrollcommand=scroll_x.set,
+        )
+
+        self.tempo_tree.grid(row=0, column=0, sticky="nsew")
+        scroll_y.grid(row=0, column=1, sticky="ns")
+        scroll_x.grid(row=1, column=0, sticky="ew")
+
+    def _klassifiziere_tempo(self, wpm: float) -> str:
+        if wpm < 90:
+            return "sehr_langsam"
+        if wpm < 120:
+            return "langsam"
+        if wpm <= 165:
+            return "normal"
+        if wpm <= 190:
+            return "schnell"
+        return "sehr_schnell"
+
+
+    def _tempo_label(self, kategorie: str) -> str:
+        labels = {
+            "sehr_langsam": "sehr langsam",
+            "langsam": "langsam",
+            "normal": "normal",
+            "schnell": "schnell",
+            "sehr_schnell": "sehr schnell",
+        }
+        return labels.get(kategorie, kategorie)
+    
+    def _fill_tempo_view(self, result: AudioAnalyseResult):
+        self.tempo_tree.delete(*self.tempo_tree.get_children())
+
+        segmente = list(result.segmente)
+
+        # Auffällige zuerst: sehr schnell, schnell, sehr langsam, langsam, normal
+        gewicht = {
+            "sehr_schnell": 5,
+            "schnell": 4,
+            "sehr_langsam": 3,
+            "langsam": 2,
+            "normal": 1,
+        }
+
+        eintraege = []
+
+        for seg in segmente:
+            wpm = float(getattr(seg, "local_wpm", 0.0) or 0.0)
+            kat = self._klassifiziere_tempo(wpm)
+            eintraege.append((kat, seg))
+
+        eintraege.sort(
+            key=lambda x: (
+                -gewicht.get(x[0], 0),
+                -float(getattr(x[1], "local_wpm", 0.0) or 0.0),
+            )
+        )
+
+        for kat, seg in eintraege:
+            self.tempo_tree.insert(
+                "",
+                "end",
+                values=(
+                    self._tempo_label(kat),
+                    f"{seg.start:.3f}",
+                    f"{seg.end:.3f}",
+                    f"{seg.local_wpm:.2f}",
+                    seg.word_count,
+                    seg.text,
+                ),
+                tags=(kat,),
+            )

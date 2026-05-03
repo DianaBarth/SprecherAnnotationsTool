@@ -18,6 +18,8 @@ class PauseInfo:
     end: float
     duration: float
     kategorie: str = ""
+    text_davor: str = ""
+    text_danach: str = ""
 
 @dataclass
 class DiffEntry:
@@ -168,7 +170,7 @@ class AudioAnalyseService:
         wpm = round((wortanzahl / audio_dauer * 60.0), 2) if audio_dauer > 0 else 0.0
 
         self._report(progress_callback, "Pausen analysieren", 80)
-        pausen = self.extrahiere_pausen(segments, self.pause_threshold)
+        pausen = self.extrahiere_pausen(segments, self.pause_threshold, segments)
 
         self._report(progress_callback, "Segmente mit Originaltext vergleichen", 88)
         segmente = self.baue_segment_infos_mit_referenz(segments, referenz_text)
@@ -498,30 +500,39 @@ class AudioAnalyseService:
         return " ".join(teile).strip()
 
     def extrahiere_pausen(
-        self,
-        segments: Iterable[Any],
-        pause_threshold: Optional[float] = None,
-    ) -> list[PauseInfo]:
+    self,
+    segments: Iterable[Any],
+    pause_threshold: Optional[float] = None,
+    segments_list: Optional[list] = None,
+) -> list[PauseInfo]:
+        segments_list = list(segments_list or segments)
         threshold = self.pause_threshold if pause_threshold is None else pause_threshold
 
         pausen: list[PauseInfo] = []
-        prev_end: Optional[float] = None
 
-        for seg in segments:
-            start = float(getattr(seg, "start", 0.0) or 0.0)
-            end = float(getattr(seg, "end", 0.0) or 0.0)
+        for i in range(len(segments_list) - 1):
+            current_seg = segments_list[i]
+            next_seg = segments_list[i + 1]
 
-            if prev_end is not None:
-                delta = start - prev_end
-                if delta >= threshold:
-                    pausen.append(
-                        PauseInfo(
-                            start=round(prev_end, 3),
-                            end=round(start, 3),
-                            duration=round(delta, 3),
-                            kategorie=self.klassifiziere_pause(delta),
-                        )
+            end = float(getattr(current_seg, "end", 0.0) or 0.0)
+            start = float(getattr(next_seg, "start", 0.0) or 0.0)
+
+            delta = start - end
+
+            if delta >= threshold:
+                text_davor = (getattr(current_seg, "text", "") or "").strip()
+                text_danach = (getattr(next_seg, "text", "") or "").strip()
+
+                pausen.append(
+                    PauseInfo(
+                        start=round(end, 3),
+                        end=round(start, 3),
+                        duration=round(delta, 3),
+                        kategorie=self.klassifiziere_pause(delta),
+                        text_davor=text_davor[:200],
+                        text_danach=text_danach[:200],
                     )
+                )
             prev_end = end
 
         return pausen
