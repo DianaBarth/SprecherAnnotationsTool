@@ -288,6 +288,11 @@ def verarbeite_kapitel_und_speichere_json(eingabeordner, ausgabeordner, ausgewae
                 satz_ids.append(aktueller_satz_id)
                 satz_nr_im_abschnitt_liste.append(satz_nr_im_abschnitt)
 
+                # 🔥 NEU: Zeilenumbruch startet neuen Satz
+                global_satz_id += 1
+                aktueller_satz_id = global_satz_id
+                satz_nr_im_abschnitt += 1
+
                 i += 1
                 continue
 

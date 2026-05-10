@@ -48,6 +48,7 @@ class AnnotationRenderer:
 
         self.audioanalyse_anzeigen = False
         self.satzanalyse_map = {}
+        self.play_take_callback = None
 
 
     def _pdf_y_position(self, canvas, y_gui_pos, text_hoehe):
@@ -1140,13 +1141,18 @@ class AnnotationRenderer:
 
         if getattr(self, "audioanalyse_anzeigen", False) and start_satz_nr is not None:
             audio_text = self._baue_audioanalyse_text_fuer_take(
-                start_satz_nr=start_satz_nr,
-                end_satz_nr=end_satz_nr,
-            )
-            fehler_liste = self._baue_audioanalyse_fehler_fuer_take(
-                start_satz_nr=start_satz_nr,
-                end_satz_nr=end_satz_nr,
-            )
+            start_satz_nr=start_satz_nr,
+            end_satz_nr=end_satz_nr,
+            start_satz_id=take_info.get("start_satz_id"),
+            end_satz_id=take_info.get("end_satz_id"),
+        )
+
+        fehler_liste = self._baue_audioanalyse_fehler_fuer_take(
+            start_satz_nr=start_satz_nr,
+            end_satz_nr=end_satz_nr,
+            start_satz_id=take_info.get("start_satz_id"),
+            end_satz_id=take_info.get("end_satz_id"),
+        )
 
         text = f"Take {take_nr} - {wortanzahl} Wörter{audio_text}"
 
@@ -1189,6 +1195,7 @@ class AnnotationRenderer:
                 tags=("take_marker", "take_fehler")
             )
             y_offset += 15
+    
 
         extra_zeilen = min(len(fehler_liste), max_fehler)
         if len(fehler_liste) > max_fehler:
@@ -1196,6 +1203,26 @@ class AnnotationRenderer:
 
         self.y_pos += extra_zeilen * 15
         self.letzte_zeile_y_pos = self.y_pos
+
+        if getattr(self, "play_take_callback", None):
+            start_satz_nr = take_info.get("start_satz_nr")
+            end_satz_nr = take_info.get("end_satz_nr")
+
+            btn = tk.Button(
+                canvas,
+                text="🔊",
+                width=2,
+                command=lambda ti=dict(take_info): self.play_take_callback(ti)
+            )
+
+            canvas.create_window(
+                max(self.max_breite - 70, x + 300),
+                y,
+                anchor="nw",
+                window=btn,
+                tags=("take_marker", "take_play_button")
+            )
+
 
 
     def _baue_audioanalyse_text_fuer_satz(self, satz_id: int) -> str:
@@ -1232,37 +1259,46 @@ class AnnotationRenderer:
 
         return " | " + " | ".join(teile)
     
-    def _baue_audioanalyse_text_fuer_take(self, start_satz_nr, end_satz_nr=None):
+    def _baue_audioanalyse_text_fuer_take(
+        self,
+        start_satz_nr,
+        end_satz_nr=None,
+        start_satz_id=None,
+        end_satz_id=None,
+    ):
         if not getattr(self, "audioanalyse_anzeigen", False):
             return ""
 
         analyse_map = getattr(self, "satzanalyse_map", {}) or {}
         if not analyse_map:
-            return ""
+            return " | keine Audioanalyse"
 
         relevante = []
 
-        for sid, analyse in analyse_map.items():
-            ref_satz_nr = analyse.get("ref_satz_nr") or analyse.get("satz_nr")
-
-            if ref_satz_nr is None:
-                continue
+        for _, analyse in analyse_map.items():
+            try:
+                analyse_satz_id = int(analyse.get("satz_id"))
+            except Exception:
+                analyse_satz_id = None
 
             try:
-                ref_satz_nr = int(ref_satz_nr)
+                analyse_satz_nr = int(analyse.get("ref_satz_nr") or analyse.get("satz_nr"))
             except Exception:
-                continue
+                analyse_satz_nr = None
 
-            if ref_satz_nr < int(start_satz_nr):
-                continue
+            passt = False
 
-            if end_satz_nr is not None and ref_satz_nr > int(end_satz_nr):
-                continue
+            if start_satz_id is not None and end_satz_id is not None and analyse_satz_id is not None:
+                passt = int(start_satz_id) <= analyse_satz_id <= int(end_satz_id)
+            elif analyse_satz_nr is not None:
+                ende = int(end_satz_nr) if end_satz_nr is not None else int(start_satz_nr)
+                passt = int(start_satz_nr) <= analyse_satz_nr <= ende
 
-            relevante.append(analyse)
+            if passt:
+                relevante.append(analyse)
 
         if not relevante:
-            return ""
+            return " | keine Audiozuordnung"
 
         tempo_probleme = []
         pausen = []
@@ -1289,7 +1325,7 @@ class AnnotationRenderer:
                     "sehr_lang": 2,
                     "lang": 1,
                 }.get(p.get("kategorie"), 0),
-                reverse=True
+                reverse=True,
             )[0]
 
             teile.append(
@@ -1297,35 +1333,47 @@ class AnnotationRenderer:
             )
 
         if not teile:
-            return ""
+            return " | Audio ok"
 
         return " | " + " | ".join(teile)
-    
-    def _baue_audioanalyse_fehler_fuer_take(self, start_satz_nr, end_satz_nr=None):
+
+    def _baue_audioanalyse_fehler_fuer_take(
+        self,
+        start_satz_nr,
+        end_satz_nr=None,
+        start_satz_id=None,
+        end_satz_id=None,
+    ):
         if not getattr(self, "audioanalyse_anzeigen", False):
             return []
 
         analyse_map = getattr(self, "satzanalyse_map", {}) or {}
         fehler = []
 
-        for sid, analyse in analyse_map.items():
-            ref_satz_nr = analyse.get("ref_satz_nr") or analyse.get("satz_nr")
-
-            if ref_satz_nr is None:
-                continue
+        for _, analyse in analyse_map.items():
+            try:
+                analyse_satz_id = int(analyse.get("satz_id"))
+            except Exception:
+                analyse_satz_id = None
 
             try:
-                ref_satz_nr = int(ref_satz_nr)
+                analyse_satz_nr = int(analyse.get("ref_satz_nr") or analyse.get("satz_nr"))
             except Exception:
-                continue
+                analyse_satz_nr = None
 
-            if ref_satz_nr < int(start_satz_nr):
-                continue
+            passt = False
 
-            if end_satz_nr is not None and ref_satz_nr > int(end_satz_nr):
+            if start_satz_id is not None and end_satz_id is not None and analyse_satz_id is not None:
+                passt = int(start_satz_id) <= analyse_satz_id <= int(end_satz_id)
+            elif analyse_satz_nr is not None:
+                ende = int(end_satz_nr) if end_satz_nr is not None else int(start_satz_nr)
+                passt = int(start_satz_nr) <= analyse_satz_nr <= ende
+
+            if not passt:
                 continue
 
             for problem in analyse.get("probleme", []) or []:
-                fehler.append(str(problem))
+                fehler.append((analyse_satz_nr or 0, analyse_satz_id or 0, str(problem)))
 
-        return fehler
+        fehler.sort(key=lambda x: (x[0], x[1]))
+        return [text for _, _, text in fehler]

@@ -422,6 +422,7 @@ class AnnotationenEditor(ttk.Frame):
             else {}
         )
 
+        self.renderer.play_take_callback = self._play_take
         self.renderer.audioanalyse_anzeigen = self.audioanalyse_anzeigen_var.get()
 
         self.renderer.satzanalyse_map = (
@@ -1149,7 +1150,6 @@ class AnnotationenEditor(ttk.Frame):
 
         return "zeilenumbruch" in str(annotation).lower()
 
-
     def _berechne_take_umbruch_indices(self):
         MIN_WOERTER = 50
         OPTIMAL_MIN = 70
@@ -1158,95 +1158,146 @@ class AnnotationenEditor(ttk.Frame):
 
         breaks = {}
 
-        take_woerter = 0
         take_nr = 1
+        take_start_idx = 0
+        take_woerter = 0
 
-        aktueller_take_start_satz_nr = 1
-        satz_nr = 1
+        take_start_satz_id = None
+        take_start_satz_nr = None
+        letzter_satz_id = None
+        letzter_satz_nr = None
 
         kandidat_idx = None
         kandidat_wortzahl = None
+        kandidat_end_satz_id = None
         kandidat_end_satz_nr = None
 
+        def get_satz_id(eintrag):
+            wert = eintrag.get("SatzID")
+            try:
+                return int(wert)
+            except Exception:
+                return None
+
+        def get_satz_nr(eintrag):
+            wert = eintrag.get("SatzNrImAbschnitt")
+            try:
+                return int(wert)
+            except Exception:
+                return None
+
+        def naechster_sichtbarer_index(start_idx):
+            for j in range(start_idx, len(self.json_dicts)):
+                if str(self.json_dicts[j].get("token", "") or "").strip():
+                    return j
+            return None
+
+        def finde_naechsten_satz_start(start_idx):
+            for j in range(start_idx, len(self.json_dicts)):
+                e = self.json_dicts[j]
+                if str(e.get("token", "") or "").strip():
+                    return get_satz_id(e), get_satz_nr(e)
+            return None, None
+
+        def finalize_take(marker_idx, end_satz_id, end_satz_nr, wortzahl, grund):
+            if marker_idx is None:
+                return
+
+            breaks[marker_idx] = {
+                "take_nr": take_nr,
+                "wortanzahl": max(1, wortzahl),
+                "start_satz_id": take_start_satz_id,
+                "end_satz_id": end_satz_id,
+                "start_satz_nr": take_start_satz_nr,
+                "end_satz_nr": end_satz_nr,
+                "grund": grund,
+            }
+
+        first_sid, first_snr = finde_naechsten_satz_start(0)
+        take_start_satz_id = first_sid
+        take_start_satz_nr = first_snr or 1
+
         for idx, eintrag in enumerate(self.json_dicts):
-            if self._hat_echten_zeilenumbruch(eintrag):
-                if take_woerter > 0 and idx + 1 < len(self.json_dicts):
-                    end_satz_nr = max(aktueller_take_start_satz_nr, satz_nr)
+            sid = get_satz_id(eintrag)
+            snr = get_satz_nr(eintrag)
 
-                    take_nr += 1
-                    breaks[idx + 1] = {
-                        "take_nr": take_nr,
-                        "wortanzahl": take_woerter,
-                        "start_satz_nr": aktueller_take_start_satz_nr,
-                        "end_satz_nr": end_satz_nr,
-                        "grund": "manueller_zeilenumbruch",
-                    }
-
-                    aktueller_take_start_satz_nr = end_satz_nr + 1
-
-                take_woerter = 0
-                kandidat_idx = None
-                kandidat_wortzahl = None
-                kandidat_end_satz_nr = None
-                continue
+            if sid is not None:
+                letzter_satz_id = sid
+            if snr is not None:
+                letzter_satz_nr = snr
 
             if self._ist_wort_token(eintrag):
                 take_woerter += 1
 
+            if self._hat_echten_zeilenumbruch(eintrag):
+                # Zeilenumbruch zählt als Satz-/Layoutgrenze,
+                # beendet aber KEINEN Take.
+                continue
+
+
             if not self._ist_satzende(eintrag):
                 continue
 
-            aktueller_satz_nr = satz_nr
-            satz_nr += 1
-
             if OPTIMAL_MIN <= take_woerter <= OPTIMAL_MAX:
-                if idx + 1 < len(self.json_dicts):
-                    take_nr += 1
-                    breaks[idx + 1] = {
-                        "take_nr": take_nr,
-                        "wortanzahl": take_woerter,
-                        "start_satz_nr": aktueller_take_start_satz_nr,
-                        "end_satz_nr": aktueller_satz_nr,
-                        "grund": "optimal",
-                    }
+                finalize_take(
+                    marker_idx=take_start_idx,
+                    end_satz_id=letzter_satz_id,
+                    end_satz_nr=letzter_satz_nr,
+                    wortzahl=take_woerter,
+                    grund="optimal",
+                )
 
-                    aktueller_take_start_satz_nr = aktueller_satz_nr + 1
+                take_nr += 1
+                next_idx = naechster_sichtbarer_index(idx + 1)
+                take_start_idx = next_idx if next_idx is not None else idx + 1
 
+                take_start_satz_id, take_start_satz_nr = finde_naechsten_satz_start(idx + 1)
                 take_woerter = 0
+
                 kandidat_idx = None
                 kandidat_wortzahl = None
+                kandidat_end_satz_id = None
                 kandidat_end_satz_nr = None
                 continue
 
             if MIN_WOERTER <= take_woerter < OPTIMAL_MIN:
                 kandidat_idx = idx
                 kandidat_wortzahl = take_woerter
-                kandidat_end_satz_nr = aktueller_satz_nr
+                kandidat_end_satz_id = letzter_satz_id
+                kandidat_end_satz_nr = letzter_satz_nr
 
             if take_woerter >= MAX_WOERTER:
-                ziel_idx = kandidat_idx if kandidat_idx is not None else idx
-                wortzahl = kandidat_wortzahl if kandidat_wortzahl is not None else take_woerter
-                end_satz_nr = kandidat_end_satz_nr if kandidat_end_satz_nr is not None else aktueller_satz_nr
+                finalize_take(
+                    marker_idx=take_start_idx,
+                    end_satz_id=kandidat_end_satz_id or letzter_satz_id,
+                    end_satz_nr=kandidat_end_satz_nr or letzter_satz_nr,
+                    wortzahl=kandidat_wortzahl or take_woerter,
+                    grund="maximum",
+                )
 
-                if ziel_idx + 1 < len(self.json_dicts):
-                    take_nr += 1
-                    breaks[ziel_idx + 1] = {
-                        "take_nr": take_nr,
-                        "wortanzahl": wortzahl,
-                        "start_satz_nr": aktueller_take_start_satz_nr,
-                        "end_satz_nr": end_satz_nr,
-                        "grund": "maximum",
-                    }
+                take_nr += 1
+                next_idx = naechster_sichtbarer_index((kandidat_idx or idx) + 1)
+                take_start_idx = next_idx if next_idx is not None else idx + 1
 
-                    aktueller_take_start_satz_nr = end_satz_nr + 1
-
+                take_start_satz_id, take_start_satz_nr = finde_naechsten_satz_start((kandidat_idx or idx) + 1)
                 take_woerter = 0
+
                 kandidat_idx = None
                 kandidat_wortzahl = None
+                kandidat_end_satz_id = None
                 kandidat_end_satz_nr = None
 
+        if take_woerter > 0:
+            finalize_take(
+                marker_idx=take_start_idx,
+                end_satz_id=letzter_satz_id,
+                end_satz_nr=letzter_satz_nr,
+                wortzahl=take_woerter,
+                grund="ende",
+            )
+
         return breaks
-    
+
     def _lade_satzanalyse_map(self):
         try:
             audioanalyse_ordner = config.GLOBALORDNER.get("audioanalyse")
@@ -1271,3 +1322,121 @@ class AnnotationenEditor(ttk.Frame):
         except Exception as e:
             print(f"[Audioanalyse] Satzanalyse konnte nicht geladen werden: {e}")
             return {}
+        
+
+    def _get_take_audio_range(self, take_info):
+        satzanalyse = self._lade_satzanalyse_map()
+
+        start_satz_nr = take_info.get("start_satz_nr")
+        end_satz_nr = take_info.get("end_satz_nr")
+
+        if start_satz_nr is None or end_satz_nr is None:
+            return None
+
+        try:
+            # WICHTIG:
+            # Take-Satznummern nicht mehr pauschal -1 rechnen.
+            # Sie müssen zur ref_satz_nr aus der Satzanalyse passen.
+            start_satz_nr = int(start_satz_nr)
+            end_satz_nr = int(end_satz_nr)
+        except Exception:
+            return None
+
+        if end_satz_nr < start_satz_nr:
+            end_satz_nr = start_satz_nr
+
+        relevante_segmente = []
+
+        for analyse in satzanalyse.values():
+            ref_satz_nr = analyse.get("ref_satz_nr") or analyse.get("satz_nr")
+
+            if ref_satz_nr is None:
+                continue
+
+            try:
+                ref_satz_nr = int(ref_satz_nr)
+            except Exception:
+                continue
+
+            # inklusiv: Start UND Ende gehören zum Take
+            if start_satz_nr <= ref_satz_nr <= end_satz_nr:
+                if "start" in analyse and "end" in analyse:
+                    relevante_segmente.append(analyse)
+
+        print("[TAKE AUDIO]")
+        print(f"Take: {take_info}")
+        print(f"Start Satz: {start_satz_nr} | Ende Satz: {end_satz_nr}")
+        print(f"Segmente gefunden: {len(relevante_segmente)}")
+
+        for seg in relevante_segmente:
+            print(
+                f"  Satz {seg.get('ref_satz_nr') or seg.get('satz_nr')} | "
+                f"{float(seg.get('start', 0)):.2f}-{float(seg.get('end', 0)):.2f}"
+            )
+
+        if not relevante_segmente:
+            return None
+
+        start_time = min(float(seg["start"]) for seg in relevante_segmente)
+        end_time = max(float(seg["end"]) for seg in relevante_segmente)
+
+        print(f"[TAKE AUDIO RANGE] {start_time:.2f} - {end_time:.2f}")
+
+        return start_time, end_time
+
+    def _get_audio_path_for_current_json(self):
+        audio_ordner = config.GLOBALORDNER.get("audio")
+        if not audio_ordner:
+            return None
+
+        basis = Path(self.dateipfad_json).stem  # 002_001
+
+        for ext in (".wav", ".mp3", ".m4a", ".flac", ".ogg"):
+            pfad = Path(audio_ordner) / f"{basis}{ext}"
+            if pfad.is_file():
+                return pfad
+
+        return None
+    
+    def _play_take(self, take_info):
+        audio_path = self._get_audio_path_for_current_json()
+        if not audio_path:
+            messagebox.showwarning("Audio", "Keine passende Audiodatei gefunden.")
+            return
+
+        audio_range = self._get_take_audio_range(take_info)
+        if not audio_range:
+            messagebox.showwarning("Audio", "Kein Zeitbereich für diesen Take gefunden.")
+            return
+
+        start_s, end_s = audio_range
+
+        try:
+            import wave
+            import simpleaudio as sa
+            import threading
+
+            def worker():
+                with wave.open(str(audio_path), "rb") as wf:
+                    framerate = wf.getframerate()
+                    n_channels = wf.getnchannels()
+                    sampwidth = wf.getsampwidth()
+
+                    start_frame = int(start_s * framerate)
+                    end_frame = int(end_s * framerate)
+
+                    wf.setpos(start_frame)
+                    frames = wf.readframes(end_frame - start_frame)
+
+                    play_obj = sa.play_buffer(
+                        frames,
+                        num_channels=n_channels,
+                        bytes_per_sample=sampwidth,
+                        sample_rate=framerate,
+                    )
+                    play_obj.wait_done()
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        except Exception as e:
+            messagebox.showerror("Audio-Playback", str(e))

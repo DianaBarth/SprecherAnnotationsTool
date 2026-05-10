@@ -1168,8 +1168,26 @@ class AudioAnalyseTab(ttk.Frame):
 
     def _json_eintrag_ist_satzende(self, eintrag: dict) -> bool:
         token = str(eintrag.get("token", "") or "").strip()
-        return token in {".", "!", "?", "…"} or token.endswith((".", "!", "?", "…"))
+        annotation = eintrag.get("annotation", "")
 
+        if isinstance(annotation, dict):
+            hat_zeilenumbruch = "zeilenumbruch" in {
+                str(k).lower() for k in annotation.keys()
+            }
+        elif isinstance(annotation, list):
+            hat_zeilenumbruch = any(
+                str(a).lower() == "zeilenumbruch"
+                for a in annotation
+            )
+        else:
+            hat_zeilenumbruch = "zeilenumbruch" in str(annotation).lower()
+
+        return (
+            token in {".", "!", "?", "…"}
+            or token.endswith((".", "!", "?", "…"))
+            or hat_zeilenumbruch
+        )
+    
     def _build_tempo_tab(self):
         self.tab_tempo = ttk.Frame(self.result_notebook)
         self.tab_tempo.columnconfigure(0, weight=1)
